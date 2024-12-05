@@ -18,6 +18,10 @@ jobs:
   create-tag:
     runs-on: ubuntu-latest
     steps:
+      - name: Git checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: '0'
       - name: Check authorized user
         id: auth-check
         run: |
@@ -30,10 +34,6 @@ jobs:
             echo "User ${GITHUB_ACTOR} is not authorized to run this workflow."
             exit 1
           fi
-      - name: Git checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: '0'
       - name: Install podman
         shell: bash
         run: |
