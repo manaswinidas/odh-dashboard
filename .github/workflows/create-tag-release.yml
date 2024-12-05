@@ -15,7 +15,7 @@ env:
   QUAY_ODH_DASHBOARD_IMAGE_REPO: ${{ secrets.QUAY_ODH_DASHBOARD_IMAGE_REPO }}
 
 jobs:
-  delete-pr-quay-image:
+  create-tag:
     runs-on: ubuntu-latest
     steps:
       - name: Git checkout
@@ -34,7 +34,7 @@ jobs:
       - name: Create new release tag off of latest main-tag
         shell: bash
         run: |
-          podman tag ${QUAY_ODH_DASHBOARD_IMAGE_REPO}:${{ github.event.inputs.existingTag }} docker://${QUAY_ODH_DASHBOARD_IMAGE_REPO}:${{ github.event.inputs.releaseTag }}
+          podman tag dashbuilder:${{ github.event.inputs.existingTag }} ${QUAY_ODH_DASHBOARD_IMAGE_REPO}:${{ github.event.inputs.releaseTag }}
       - name: Login to quay.io
         shell: bash
         env:
