@@ -30,7 +30,7 @@ jobs:
       - name: Pull Quay repository
         shell: bash
         run: |
-          podman pull docker://${QUAY_ODH_DASHBOARD_IMAGE_REPO}
+          podman pull ${QUAY_ODH_DASHBOARD_IMAGE_REPO}
       - name: Create new release tag off of latest main-tag
         shell: bash
         run: |
@@ -45,4 +45,4 @@ jobs:
       - name: Push the latest release tag to Quay
         shell: bash
         run: |
-          podman push docker://${QUAY_ODH_DASHBOARD_IMAGE_REPO}:${{ github.event.inputs.releaseTag }}
+          podman push ${QUAY_ODH_DASHBOARD_IMAGE_REPO}:${{ github.event.inputs.releaseTag }}
