@@ -18,6 +18,18 @@ jobs:
   create-tag:
     runs-on: ubuntu-latest
     steps:
+      - name: Check authorized user
+        id: auth-check
+        run: |
+          AUTHORIZED_USERS_FILE=".github/authorized-tag-creators.txt"
+          if [[ ! -f "$AUTHORIZED_USERS_FILE" ]]; then
+            echo "Authorized users file not found!"
+            exit 1
+          fi
+          if ! grep -q "^${GITHUB_ACTOR}$" "$AUTHORIZED_USERS_FILE"; then
+            echo "User ${GITHUB_ACTOR} is not authorized to run this workflow."
+            exit 1
+          fi
       - name: Git checkout
         uses: actions/checkout@v4
         with:
