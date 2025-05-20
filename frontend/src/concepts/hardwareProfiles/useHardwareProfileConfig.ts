@@ -149,7 +149,7 @@ export const useHardwareProfileConfig = (
               (profile) => profile.metadata.name === existingHardwareProfileName,
             );
           } else {
-            selectedProfile = profiles.find(
+            selectedProfile = dashboardProfiles.find(
               (profile) => profile.metadata.name === existingHardwareProfileName,
             );
           }
