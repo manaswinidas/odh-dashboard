@@ -58,7 +58,7 @@ jobs:
       - name: Retrieve latest SHA from ${{ github.event.inputs.RELEASE_VERSION }}-odh-release branch
         shell: bash
         run: |
-          echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "SHORT_SHA=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
       - name: Pull Quay repository
         shell: bash
         run: |
