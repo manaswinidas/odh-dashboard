@@ -6,7 +6,7 @@ on:
         description: The release version in format vX.YY.Z
 
 env:
-  QUAY_ODH_DASHBOARD_IMAGE_REPO: quay.io/opendatahub/odh-dashboard
+  QUAY_ODH_DASHBOARD_IMAGE_REPO: quay.io/manaswinidas0/dashbuilder
 
 jobs:
   Setup:
