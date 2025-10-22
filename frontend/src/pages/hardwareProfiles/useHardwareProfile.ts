@@ -1,20 +1,21 @@
 import React from 'react';
-import { getHardwareProfile } from '~/api';
-import { HardwareProfileKind } from '~/k8sTypes';
+import { getHardwareProfile } from '#~/api';
+import { HardwareProfileKind } from '#~/k8sTypes';
 import useFetchState, {
   FetchState,
   FetchStateCallbackPromise,
   NotReadyError,
-} from '~/utilities/useFetchState';
+} from '#~/utilities/useFetchState';
 
 const useHardwareProfile = (
   namespace: string,
   name?: string,
 ): FetchState<HardwareProfileKind | null> => {
   const callback = React.useCallback<FetchStateCallbackPromise<HardwareProfileKind | null>>(() => {
-    if (!name) {
-      return Promise.reject(new NotReadyError('Hardware profile name is missing'));
+    if (!name || !namespace) {
+      return Promise.reject(new NotReadyError('Hardware profile name or namespace is missing'));
     }
+
     return getHardwareProfile(name, namespace);
   }, [name, namespace]);
 

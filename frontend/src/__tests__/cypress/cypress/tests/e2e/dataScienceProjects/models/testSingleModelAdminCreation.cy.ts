@@ -1,43 +1,36 @@
-import type { DataScienceProjectData } from '~/__tests__/cypress/cypress/types';
-import { deleteOpenShiftProject } from '~/__tests__/cypress/cypress/utils/oc_commands/project';
-import { loadDSPFixture } from '~/__tests__/cypress/cypress/utils/dataLoader';
-import { HTPASSWD_CLUSTER_ADMIN_USER } from '~/__tests__/cypress/cypress/utils/e2eUsers';
-import { projectListPage, projectDetails } from '~/__tests__/cypress/cypress/pages/projects';
+import type { DataScienceProjectData } from '#~/__tests__/cypress/cypress/types';
+import { deleteOpenShiftProject } from '#~/__tests__/cypress/cypress/utils/oc_commands/project';
+import { loadDSPFixture } from '#~/__tests__/cypress/cypress/utils/dataLoader';
+import { HTPASSWD_CLUSTER_ADMIN_USER } from '#~/__tests__/cypress/cypress/utils/e2eUsers';
+import { projectListPage, projectDetails } from '#~/__tests__/cypress/cypress/pages/projects';
 import {
   modelServingGlobal,
   inferenceServiceModal,
   modelServingSection,
-} from '~/__tests__/cypress/cypress/pages/modelServing';
+} from '#~/__tests__/cypress/cypress/pages/modelServing';
 import {
   checkInferenceServiceState,
   provisionProjectForModelServing,
   modelExternalTester,
-} from '~/__tests__/cypress/cypress/utils/oc_commands/modelServing';
-import {
-  retryableBefore,
-  wasSetupPerformed,
-} from '~/__tests__/cypress/cypress/utils/retryableHooks';
-import { attemptToClickTooltip } from '~/__tests__/cypress/cypress/utils/models';
+} from '#~/__tests__/cypress/cypress/utils/oc_commands/modelServing';
+import { retryableBefore } from '#~/__tests__/cypress/cypress/utils/retryableHooks';
+import { attemptToClickTooltip } from '#~/__tests__/cypress/cypress/utils/models';
+import { generateTestUUID } from '#~/__tests__/cypress/cypress/utils/uuidGenerator';
 
 let testData: DataScienceProjectData;
 let projectName: string;
 let modelName: string;
 let modelFilePath: string;
 const awsBucket = 'BUCKET_1' as const;
+const uuid = generateTestUUID();
 
-describe('Verify Admin Single Model Creation and Validation using the UI', () => {
-  retryableBefore(() => {
-    Cypress.on('uncaught:exception', (err) => {
-      if (err.message.includes('Error: secrets "ds-pipeline-config" already exists')) {
-        return false;
-      }
-      return true;
-    });
+describe('[Product Bug: RHOAIENG-35572] Verify Admin Single Model Creation and Validation using the UI', () => {
+  retryableBefore(() =>
     // Setup: Load test data and ensure clean state
-    return loadDSPFixture('e2e/dataScienceProjects/testSingleModelAdminCreation.yaml').then(
+    loadDSPFixture('e2e/dataScienceProjects/testSingleModelAdminCreation.yaml').then(
       (fixtureData: DataScienceProjectData) => {
         testData = fixtureData;
-        projectName = testData.projectSingleModelAdminResourceName;
+        projectName = `${testData.projectSingleModelAdminResourceName}-${uuid}`;
         modelName = testData.singleModelAdminName;
         modelFilePath = testData.modelOpenVinoPath;
 
@@ -52,20 +45,26 @@ describe('Verify Admin Single Model Creation and Validation using the UI', () =>
           'resources/yaml/data_connection_model_serving.yaml',
         );
       },
-    );
-  });
+    ),
+  );
   after(() => {
-    //Check if the Before Method was executed to perform the setup
-    if (!wasSetupPerformed()) return;
-
-    // Delete provisioned Project - 5 min timeout to accomadate increased time to delete a project with a model
-    deleteOpenShiftProject(projectName, { timeout: 300000 });
+    // Delete provisioned Project - wait for completion due to RHOAIENG-19969 to support test retries, 5 minute timeout
+    // TODO: Review this timeout once RHOAIENG-19969 is resolved
+    deleteOpenShiftProject(projectName, { wait: true, ignoreNotFound: true, timeout: 300000 });
   });
 
   it(
     'Verify that an Admin can Serve, Query a Single Model using both the UI and External links',
     {
-      tags: ['@Smoke', '@SmokeSet3', '@ODS-2626', '@Dashboard', '@Modelserving'],
+      tags: [
+        '@Smoke',
+        '@SmokeSet3',
+        '@ODS-2626',
+        '@Dashboard',
+        '@Modelserving',
+        '@NonConcurrent',
+        '@Bug',
+      ],
     },
     () => {
       cy.log('Model Name:', modelName);
@@ -74,12 +73,10 @@ describe('Verify Admin Single Model Creation and Validation using the UI', () =>
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
 
       // Project navigation
-      cy.step(
-        `Navigate to the Project list tab and search for ${testData.projectSingleModelAdminResourceName}`,
-      );
+      cy.step(`Navigate to the Project list tab and search for ${projectName}`);
       projectListPage.navigate();
-      projectListPage.filterProjectByName(testData.projectSingleModelAdminResourceName);
-      projectListPage.findProjectLink(testData.projectSingleModelAdminResourceName).click();
+      projectListPage.filterProjectByName(projectName);
+      projectListPage.findProjectLink(projectName).click();
 
       // Navigate to Model Serving tab and Deploy a Single Model
       cy.step('Navigate to Model Serving and click to Deploy a Single Model');
@@ -90,8 +87,8 @@ describe('Verify Admin Single Model Creation and Validation using the UI', () =>
       // Launch a Single Serving Model and select the required entries
       cy.step('Launch a Single Serving Model using Openvino');
       inferenceServiceModal.findModelNameInput().type(testData.singleModelAdminName);
-      inferenceServiceModal.findServingRuntimeTemplate().click();
-      inferenceServiceModal.findOpenVinoServingRuntime().click();
+      inferenceServiceModal.findServingRuntimeTemplateSearchSelector().click();
+      inferenceServiceModal.findGlobalScopedTemplateOption('OpenVINO Model Server').click();
       inferenceServiceModal.findModelFrameworkSelect().click();
       inferenceServiceModal.findOpenVinoIROpSet13().click();
 
@@ -103,22 +100,29 @@ describe('Verify Admin Single Model Creation and Validation using the UI', () =>
       inferenceServiceModal.findTokenAuthenticationCheckbox().should('not.be.checked');
       inferenceServiceModal.findLocationPathInput().type(modelFilePath);
       inferenceServiceModal.findSubmitButton().click();
-      modelServingSection.findModelServerName(testData.singleModelAdminName);
+      inferenceServiceModal.shouldBeOpen(false);
+      modelServingSection.findModelServerDeployedName(testData.singleModelAdminName);
 
       //Verify the model created
       cy.step('Verify that the Model is created Successfully on the backend and frontend');
-      checkInferenceServiceState(testData.singleModelAdminName, {
-        checkReady: true,
-        checkLatestDeploymentReady: true,
-      });
-      modelServingSection.findModelServerName(testData.singleModelAdminName);
+      // For KServe Raw deployments, we only need to check Ready condition
+      // LatestDeploymentReady is specific to Serverless deployments
+      checkInferenceServiceState(
+        testData.singleModelAdminName,
+        projectName,
+        {
+          checkReady: true,
+        },
+        'RawDeployment',
+      );
       // Note reload is required as status tooltip was not found due to a stale element
       cy.reload();
+      modelServingSection.findModelMetricsLink(testData.singleModelAdminName);
       attemptToClickTooltip();
 
       //Verify the Model is accessible externally
       cy.step('Verify the model is accessible externally');
-      modelExternalTester(modelName).then(({ url, response }) => {
+      modelExternalTester(modelName, projectName).then(({ url, response }) => {
         expect(response.status).to.equal(200);
 
         //verify the External URL Matches the Backend

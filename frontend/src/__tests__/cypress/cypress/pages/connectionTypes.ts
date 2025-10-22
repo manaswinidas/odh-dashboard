@@ -1,5 +1,5 @@
-import { appChrome } from '~/__tests__/cypress/cypress/pages/appChrome';
-import { Modal } from '~/__tests__/cypress/cypress/pages/components/Modal';
+import { appChrome } from '#~/__tests__/cypress/cypress/pages/appChrome';
+import { Modal } from '#~/__tests__/cypress/cypress/pages/components/Modal';
 import { TableRow } from './components/table';
 import { TableToolbar } from './components/TableToolbar';
 import { Contextual } from './components/Contextual';
@@ -43,17 +43,17 @@ class CreateConnectionTypeTableRow extends TableRow {
 
 class CreateConnectionTypePage {
   visitCreatePage() {
-    cy.visitWithLogin('/connectionTypes/create');
+    cy.visitWithLogin('/settings/environment-setup/connection-types/create');
     cy.findAllByText('Create connection type').should('exist');
   }
 
   visitDuplicatePage(name = 'existing') {
-    cy.visitWithLogin(`/connectionTypes/duplicate/${name}`);
+    cy.visitWithLogin(`/settings/environment-setup/connection-types/duplicate/${name}`);
     cy.findAllByText('Create connection type').should('exist');
   }
 
   visitEditPage(name = 'existing') {
-    cy.visitWithLogin(`/connectionTypes/edit/${name}`);
+    cy.visitWithLogin(`/settings/environment-setup/connection-types/edit/${name}`);
     cy.findAllByText('Edit connection type').should('exist');
   }
 
@@ -210,7 +210,7 @@ class ConnectionTypeRow extends TableRow {
 
 class ConnectionTypesPage {
   visit() {
-    cy.visitWithLogin('/connectionTypes');
+    cy.visitWithLogin('/settings/environment-setup/connection-types');
     this.wait();
   }
 
@@ -220,7 +220,11 @@ class ConnectionTypesPage {
   }
 
   findNavItem() {
-    return appChrome.findNavItem('Connection types');
+    return appChrome.findNavItem({
+      name: 'Connection types',
+      rootSection: 'Settings',
+      subSection: 'Environment setup',
+    });
   }
 
   navigate() {

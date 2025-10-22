@@ -1,9 +1,9 @@
-import { servingRuntimes } from '~/__tests__/cypress/cypress/pages/servingRuntimes';
-import { HTPASSWD_CLUSTER_ADMIN_USER } from '~/__tests__/cypress/cypress/utils/e2eUsers';
-import { getSingleModelPath } from '~/__tests__/cypress/cypress/utils/fileImportUtils';
-import { getSingleModelServingRuntimeInfo } from '~/__tests__/cypress/cypress/utils/fileParserUtil';
-import { cleanupTemplates } from '~/__tests__/cypress/cypress/utils/oc_commands/templates';
-import { retryableBefore } from '~/__tests__/cypress/cypress/utils/retryableHooks';
+import { servingRuntimes } from '#~/__tests__/cypress/cypress/pages/servingRuntimes';
+import { HTPASSWD_CLUSTER_ADMIN_USER } from '#~/__tests__/cypress/cypress/utils/e2eUsers';
+import { getSingleModelPath } from '#~/__tests__/cypress/cypress/utils/fileImportUtils';
+import { getSingleModelServingRuntimeInfo } from '#~/__tests__/cypress/cypress/utils/fileParserUtil';
+import { cleanupTemplates } from '#~/__tests__/cypress/cypress/utils/oc_commands/templates';
+import { retryableBefore } from '#~/__tests__/cypress/cypress/utils/retryableHooks';
 
 let modelServingSingleName: string;
 let metadataSingleDisplayName: string;
@@ -21,9 +21,7 @@ retryableBefore(() => {
     return true;
   });
   cy.wrap(null)
-    .then(() => {
-      return getSingleModelServingRuntimeInfo();
-    })
+    .then(() => getSingleModelServingRuntimeInfo())
     .then((info) => {
       // Load Single-Model serving runtime info before tests run
       modelServingSingleName = info.singleModelServingName;
@@ -38,7 +36,7 @@ retryableBefore(() => {
 describe('Verify Admins Can Import and Delete a Custom Single-Model Serving Runtime Template By Uploading A YAML file', () => {
   it(
     'Admin should access serving runtimes, import a yaml file and then delete',
-    { tags: ['@Smoke', '@SmokeSet2', '@ODS-2276', '@Dashboard'] },
+    { tags: ['@Smoke', '@SmokeSet2', '@ODS-2276', '@Dashboard', '@NonConcurrent'] },
     () => {
       // Authentication and navigation
       cy.step('Log into the application');
@@ -55,12 +53,13 @@ describe('Verify Admins Can Import and Delete a Custom Single-Model Serving Runt
       cy.log('Navigation successful | Searching for Add button');
       servingRuntimes.findAddButton().should('exist').and('be.visible').and('be.enabled').click();
 
-      cy.step('Select Single from Dropdown');
-      servingRuntimes.selectPlatform('Single-model serving platform');
-
       cy.step('Select API Protocol');
       servingRuntimes.findSelectAPIProtocolButton().click();
       servingRuntimes.selectAPIProtocol('REST');
+
+      cy.step('Select Model Types');
+      servingRuntimes.findSelectModelTypes().click();
+      servingRuntimes.findPredictiveModelOption().click();
 
       cy.step('Upload a Single-Model Serving runtime yaml file');
       const singleModelYaml = getSingleModelPath();
@@ -73,7 +72,9 @@ describe('Verify Admins Can Import and Delete a Custom Single-Model Serving Runt
         .click()
         .then(() => {
           // Wait for URL to change, indicating page transition
-          cy.url().should('include', '/servingRuntimes', { timeout: 30000 });
+          cy.url().should('include', '/settings/model-resources-operations/serving-runtimes', {
+            timeout: 30000,
+          });
         });
 
       // Edit the created model serving platform and delete

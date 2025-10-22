@@ -1,5 +1,5 @@
-import { StackCapability } from '~/concepts/areas/types';
-import { DataScienceClusterKind, K8sCondition } from '~/k8sTypes';
+import { StackCapability } from '#~/concepts/areas/types';
+import { DataScienceClusterKind, K8sCondition } from '#~/k8sTypes';
 
 export type MockDsc = {
   conditions?: K8sCondition[];
@@ -37,6 +37,11 @@ export const mockDsc = ({
           managementState: 'Managed',
           name: 'knative-serving',
         },
+      },
+      kueue: {
+        defaultClusterQueueName: 'default',
+        defaultLocalQueueName: 'default',
+        managementState: 'Managed',
       },
     },
   },

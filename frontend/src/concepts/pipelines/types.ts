@@ -1,4 +1,4 @@
-import { K8sAPIOptions } from '~/k8sTypes';
+import { K8sAPIOptions } from '#~/k8sTypes';
 import {
   ListPipelineRunsResourceKF,
   ListPipelineRecurringRunsResourceKF,
@@ -30,6 +30,7 @@ export type ArtifactStorage = {
   storage_path: string;
   uri: string;
   download_url?: string;
+  render_url?: string;
   namespace: string;
   artifact_type: string;
   artifact_size: string;
@@ -162,6 +163,7 @@ export type UploadPipeline = (
   name: string,
   description: string,
   fileContents: string,
+  displayName?: string,
 ) => Promise<PipelineKF>;
 export type UploadPipelineVersion = (
   opts: K8sAPIOptions,
@@ -169,6 +171,7 @@ export type UploadPipelineVersion = (
   description: string,
   fileContents: string,
   pipelineId: string,
+  displayName?: string,
 ) => Promise<PipelineVersionKF>;
 
 export type PipelineAPIs = {

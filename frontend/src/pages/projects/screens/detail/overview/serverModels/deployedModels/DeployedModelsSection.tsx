@@ -17,23 +17,23 @@ import {
 } from '@patternfly/react-core';
 import { useSearchParams } from 'react-router-dom';
 import { ExclamationCircleIcon } from '@patternfly/react-icons';
-import { ProjectObjectType, SectionType } from '~/concepts/design/utils';
-import { ProjectDetailsContext } from '~/pages/projects/ProjectDetailsContext';
+import { ProjectObjectType, SectionType } from '#~/concepts/design/utils';
+import { ProjectDetailsContext } from '#~/pages/projects/ProjectDetailsContext';
 import {
   getInferenceServiceFromServingRuntime,
   getProjectModelServingPlatform,
-} from '~/pages/modelServing/screens/projects/utils';
-import useServingPlatformStatuses from '~/pages/modelServing/useServingPlatformStatuses';
-import CollapsibleSection from '~/concepts/design/CollapsibleSection';
-import OverviewCard from '~/pages/projects/screens/detail/overview/components/OverviewCard';
-import AddModelFooter from '~/pages/projects/screens/detail/overview/serverModels/AddModelFooter';
-import { InferenceServiceKind } from '~/k8sTypes';
-import { ProjectSectionID } from '~/pages/projects/screens/detail/types';
-import ModelServingContextProvider from '~/pages/modelServing/ModelServingContext';
-import { isProjectNIMSupported } from '~/pages/modelServing/screens/projects/nimUtils';
-import { NamespaceApplicationCase } from '~/pages/projects/types';
-import ModelServingPlatformSelectButton from '~/pages/modelServing/screens/projects/ModelServingPlatformSelectButton';
-import ModelServingPlatformSelectErrorAlert from '~/pages/modelServing/screens/ModelServingPlatformSelectErrorAlert';
+} from '#~/pages/modelServing/screens/projects/utils';
+import useServingPlatformStatuses from '#~/pages/modelServing/useServingPlatformStatuses';
+import CollapsibleSection from '#~/concepts/design/CollapsibleSection';
+import OverviewCard from '#~/pages/projects/screens/detail/overview/components/OverviewCard';
+import AddModelFooter from '#~/pages/projects/screens/detail/overview/serverModels/AddModelFooter';
+import { InferenceServiceKind } from '#~/k8sTypes';
+import { ProjectSectionID } from '#~/pages/projects/screens/detail/types';
+import ModelServingContextProvider from '#~/pages/modelServing/ModelServingContext';
+import { isProjectNIMSupported } from '#~/pages/modelServing/screens/projects/nimUtils';
+import { NamespaceApplicationCase } from '#~/pages/projects/types';
+import ModelServingPlatformSelectButton from '#~/pages/modelServing/screens/projects/ModelServingPlatformSelectButton';
+import ModelServingPlatformSelectErrorAlert from '#~/concepts/modelServing/Platforms/ModelServingPlatformSelectErrorAlert.tsx';
 import DeployedModelsCard from './DeployedModelsCard';
 
 interface DeployedModelsSectionProps {
@@ -44,8 +44,14 @@ const DeployedModelsSection: React.FC<DeployedModelsSectionProps> = ({ isMultiPl
   const [queryParams, setQueryParams] = useSearchParams();
   const { currentProject } = React.useContext(ProjectDetailsContext);
   const {
-    inferenceServices: { data: inferenceServices, loaded: inferenceServicesLoaded },
-    servingRuntimes: { data: modelServers, loaded: modelServersLoaded },
+    inferenceServices: {
+      data: { items: inferenceServices },
+      loaded: inferenceServicesLoaded,
+    },
+    servingRuntimes: {
+      data: { items: modelServers },
+      loaded: modelServersLoaded,
+    },
   } = React.useContext(ProjectDetailsContext);
 
   const servingPlatformStatuses = useServingPlatformStatuses();
@@ -89,7 +95,7 @@ const DeployedModelsSection: React.FC<DeployedModelsSectionProps> = ({ isMultiPl
       <EmptyState
         headingLevel="h2"
         icon={ExclamationCircleIcon}
-        titleText="Problem loading deployed models"
+        titleText="Problem loading deployments"
       >
         <EmptyStateBody>{message}</EmptyStateBody>
       </EmptyState>
@@ -121,7 +127,7 @@ const DeployedModelsSection: React.FC<DeployedModelsSectionProps> = ({ isMultiPl
         <OverviewCard
           objectType={ProjectObjectType.deployedModels}
           sectionType={SectionType.serving}
-          title="Deployed models"
+          title="Deployments"
           headerInfo={
             <Flex gap={{ default: 'gapSm' }}>
               <Label>Multi-model serving enabled</Label>
@@ -150,7 +156,7 @@ const DeployedModelsSection: React.FC<DeployedModelsSectionProps> = ({ isMultiPl
                 Multiple models can be deployed from a single model server. Manage model servers and
                 and deploy models from the{' '}
                 <Button component="a" isInline variant="link" onClick={navToModels}>
-                  Models
+                  Deployments
                 </Button>{' '}
                 tab.
               </Content>
@@ -160,12 +166,12 @@ const DeployedModelsSection: React.FC<DeployedModelsSectionProps> = ({ isMultiPl
             <Flex gap={{ default: 'gapLg' }}>
               <FlexItem>
                 <Content>
-                  <Content component="small">No deployed models</Content>
+                  <Content component="small">No deployments</Content>
                 </Content>
               </FlexItem>
               <FlexItem>
                 <Button component="a" isInline variant="link" onClick={navToModels}>
-                  Go to <b>Models</b>
+                  Go to <b>Deployments</b>
                 </Button>
               </FlexItem>
             </Flex>
@@ -181,7 +187,7 @@ const DeployedModelsSection: React.FC<DeployedModelsSectionProps> = ({ isMultiPl
             isMultiPlatform ? ProjectObjectType.modelServer : ProjectObjectType.deployedModels
           }
           sectionType={isMultiPlatform ? SectionType.setup : SectionType.serving}
-          title={isMultiPlatform ? 'No model servers' : 'Deployed models'}
+          title={isMultiPlatform ? 'No model servers' : 'Deployments'}
           headerInfo={
             <Flex gap={{ default: 'gapSm' }}>
               <Label>

@@ -22,7 +22,7 @@ import {
   InnerScrollContainer,
   TrProps,
 } from '@patternfly/react-table';
-import { EitherNotBoth } from '~/typeHelpers';
+import { EitherNotBoth } from '#~/typeHelpers';
 import { GetColumnSort, SortableData } from './types';
 import { CHECKBOX_FIELD_ID, EXPAND_FIELD_ID, KEBAB_FIELD_ID } from './const';
 
@@ -42,6 +42,7 @@ type Props<DataType> = {
   onClearFilters?: () => void;
   bottomToolbarContent?: React.ReactElement<typeof ToolbarItem | typeof ToolbarGroup>;
   emptyTableView?: React.ReactNode;
+  alertContent?: React.ReactNode;
   caption?: string;
   footerRow?: (pageNumber: number) => React.ReactElement<typeof Tr> | null;
   selectAll?: {
@@ -99,6 +100,7 @@ const TableBase = <T,>({
   onClearFilters,
   bottomToolbarContent,
   emptyTableView,
+  alertContent,
   caption,
   disableRowRenderSupport,
   selectAll,
@@ -305,6 +307,8 @@ const TableBase = <T,>({
           </ToolbarContent>
         </Toolbar>
       )}
+
+      {alertContent && <div>{alertContent}</div>}
 
       {hasStickyColumns ? <InnerScrollContainer>{table}</InnerScrollContainer> : table}
 

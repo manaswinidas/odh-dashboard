@@ -1,30 +1,20 @@
-import yaml from 'js-yaml';
-import { HTPASSWD_CLUSTER_ADMIN_USER } from '~/__tests__/cypress/cypress/utils/e2eUsers';
-import { projectListPage } from '~/__tests__/cypress/cypress/pages/projects';
-import { notebookServer } from '~/__tests__/cypress/cypress/pages/notebookServer';
-import type { NotebookImageData } from '~/__tests__/cypress/cypress/types';
+import { HTPASSWD_CLUSTER_ADMIN_USER } from '#~/__tests__/cypress/cypress/utils/e2eUsers';
+import { projectListPage } from '#~/__tests__/cypress/cypress/pages/projects';
+import { notebookServer } from '#~/__tests__/cypress/cypress/pages/notebookServer';
 import {
   waitForPodReady,
   deleteNotebook,
-} from '~/__tests__/cypress/cypress/utils/oc_commands/baseCommands';
-import { retryableBefore } from '~/__tests__/cypress/cypress/utils/retryableHooks';
+} from '#~/__tests__/cypress/cypress/utils/oc_commands/baseCommands';
+import { retryableBefore } from '#~/__tests__/cypress/cypress/utils/retryableHooks';
 
-describe('[Product Bug:RHOAIENG-24546] Verify a Jupyter Notebook can be launched directly from the Data Science Project List View', () => {
-  let testData: NotebookImageData;
-
+describe('Verify a Jupyter Notebook can be launched directly from the Project List View', () => {
   retryableBefore(() => {
-    return cy
-      .fixture('e2e/dataScienceProjects/testNotebookCreation.yaml', 'utf8')
-      .then((yamlContent: string) => {
-        testData = yaml.load(yamlContent) as NotebookImageData;
-        // Check if a notebook is running and delete if it is
-        deleteNotebook('jupyter-nb');
-      });
+    deleteNotebook('jupyter-nb');
   });
 
   it(
-    'Verify User Can Access Jupyter Launcher From DS Project Page',
-    { tags: ['@Smoke', '@SmokeSet1', '@ODS-1877', '@Dashboard', '@Bug'] },
+    'Verify User Can Access Jupyter Launcher From Project Page',
+    { tags: ['@Smoke', '@SmokeSet1', '@ODS-1877', '@Dashboard', '@NonConcurrent'] },
     () => {
       // Authentication and navigation
       cy.step('Log into the application');
@@ -38,14 +28,6 @@ describe('[Product Bug:RHOAIENG-24546] Verify a Jupyter Notebook can be launched
       // Select a notebook image
       cy.step('Choose Code Server Image');
       notebookServer.findNotebookImage('code-server-notebook').click();
-
-      // Select the versions dropdown
-      cy.step('Select the code server versions dropdown');
-      notebookServer.findVersionsDropdown(testData.codeserverImageName).click();
-
-      // Select an image version
-      cy.step('Select the codeserver image version');
-      notebookServer.findNotebookVersion(testData.codeserverImageName).click();
 
       // Verify that 'Start Server button' is enabled
       cy.step('Check Start server button is enabled');

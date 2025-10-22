@@ -1,21 +1,23 @@
-import type { PVCReplacements } from '~/__tests__/cypress/cypress/types';
-import { projectDetails, projectListPage } from '~/__tests__/cypress/cypress/pages/projects';
+import type { PVCReplacements } from '#~/__tests__/cypress/cypress/types';
+import { projectDetails, projectListPage } from '#~/__tests__/cypress/cypress/pages/projects';
 import {
   workbenchPage,
   createSpawnerPage,
   attachExistingStorageModal,
-} from '~/__tests__/cypress/cypress/pages/workbench';
-import { clusterStorage } from '~/__tests__/cypress/cypress/pages/clusterStorage';
-import { HTPASSWD_CLUSTER_ADMIN_USER } from '~/__tests__/cypress/cypress/utils/e2eUsers';
-import { loadPVCFixture } from '~/__tests__/cypress/cypress/utils/dataLoader';
-import { createCleanProject } from '~/__tests__/cypress/cypress/utils/projectChecker';
-import { deleteOpenShiftProject } from '~/__tests__/cypress/cypress/utils/oc_commands/project';
-import { createPersistentVolumeClaim } from '~/__tests__/cypress/cypress/utils/oc_commands/presistentVolumeClaim';
-import { getOpenshiftDefaultStorageClass } from '~/__tests__/cypress/cypress/utils/oc_commands/storageClass';
+} from '#~/__tests__/cypress/cypress/pages/workbench';
+import { clusterStorage } from '#~/__tests__/cypress/cypress/pages/clusterStorage';
+import { HTPASSWD_CLUSTER_ADMIN_USER } from '#~/__tests__/cypress/cypress/utils/e2eUsers';
+import { loadPVCFixture } from '#~/__tests__/cypress/cypress/utils/dataLoader';
+import { createCleanProject } from '#~/__tests__/cypress/cypress/utils/projectChecker';
+import { deleteOpenShiftProject } from '#~/__tests__/cypress/cypress/utils/oc_commands/project';
+import { createPersistentVolumeClaim } from '#~/__tests__/cypress/cypress/utils/oc_commands/presistentVolumeClaim';
+import { getOpenshiftDefaultStorageClass } from '#~/__tests__/cypress/cypress/utils/oc_commands/storageClass';
+import { retryableBefore } from '#~/__tests__/cypress/cypress/utils/retryableHooks';
+import { generateTestUUID } from '#~/__tests__/cypress/cypress/utils/uuidGenerator';
 import {
-  retryableBefore,
-  wasSetupPerformed,
-} from '~/__tests__/cypress/cypress/utils/retryableHooks';
+  selectNotebookImageWithBackendFallback,
+  getImageStreamDisplayName,
+} from '#~/__tests__/cypress/cypress/utils/oc_commands/imageStreams';
 
 describe('Workbench and PVSs tests', () => {
   let projectName: string;
@@ -23,9 +25,10 @@ describe('Workbench and PVSs tests', () => {
   let PVCDisplayName: string;
   let PVCSize: string;
   let defaultStorageClass: string;
+  const uuid = generateTestUUID();
 
-  retryableBefore(() => {
-    return getOpenshiftDefaultStorageClass()
+  retryableBefore(() =>
+    getOpenshiftDefaultStorageClass()
       .then((result) => {
         if (result.code !== 0 || !result.stdout) {
           throw new Error(`Failed to get default storage class: ${result.stderr}`);
@@ -35,7 +38,7 @@ describe('Workbench and PVSs tests', () => {
         return loadPVCFixture('e2e/dataScienceProjects/testProjectWbPV.yaml');
       })
       .then((fixtureData: PVCReplacements) => {
-        projectName = fixtureData.NAMESPACE;
+        projectName = `${fixtureData.NAMESPACE}-${uuid}`;
         PVCName = fixtureData.PVC_NAME;
         PVCDisplayName = fixtureData.PVC_DISPLAY_NAME;
         PVCSize = fixtureData.PVC_SIZE;
@@ -59,25 +62,22 @@ describe('Workbench and PVSs tests', () => {
       })
       .then((commandResult) => {
         cy.log(`Persistent Volume Claim created: ${JSON.stringify(commandResult)}`);
-      });
-  });
+      }),
+  );
 
   after(() => {
-    //Check if the Before Method was executed to perform the setup
-    if (!wasSetupPerformed()) return;
-
-    // Delete provisioned Project
     if (projectName) {
       cy.log(`Deleting Project ${projectName} after the test has finished.`);
-      deleteOpenShiftProject(projectName);
+      deleteOpenShiftProject(projectName, { wait: false, ignoreNotFound: true });
     }
   });
 
   it(
     'Verify users can create a workbench and connect an existent PersistentVolume',
-    { tags: ['@Smoke', '@SmokeSet1', '@ODS-1814', '@Dashboard'] },
+    { tags: ['@Smoke', '@SmokeSet1', '@ODS-1814', '@Dashboard', '@Workbenches'] },
     () => {
       const workbenchName = projectName.replace('dsp-', '');
+      let selectedImageStream: string;
 
       // Authentication and navigation
       cy.step('Log into the application');
@@ -92,24 +92,38 @@ describe('Workbench and PVSs tests', () => {
       cy.step(`Create Workbench ${projectName} using storage ${PVCDisplayName}`);
       workbenchPage.findCreateButton().click();
       createSpawnerPage.getNameInput().fill(workbenchName);
-      createSpawnerPage.findNotebookImage('code-server-notebook').click();
-      createSpawnerPage.findAttachExistingStorageButton().click();
-      attachExistingStorageModal.verifyPSDropdownIsDisabled();
-      attachExistingStorageModal.verifyPSDropdownText(PVCDisplayName);
-      attachExistingStorageModal.findStandardPathInput().fill(workbenchName);
-      attachExistingStorageModal.findAttachButton().click();
-      createSpawnerPage.findSubmitButton().click();
 
-      cy.step(`Wait for Workbench ${workbenchName} to display a "Running" status`);
-      const notebookRow = workbenchPage.getNotebookRow(workbenchName);
-      notebookRow.expectStatusLabelToBe('Running', 120000);
-      notebookRow.shouldHaveNotebookImageName('code-server');
-      notebookRow.shouldHaveContainerSize('Small');
+      // Select notebook image with fallback
+      selectNotebookImageWithBackendFallback('code-server-notebook', createSpawnerPage).then(
+        (imageStreamName) => {
+          selectedImageStream = imageStreamName;
+          cy.log(`Selected imagestream: ${selectedImageStream}`);
 
-      cy.step(`Check the cluster storage ${PVCDisplayName} is now connected to ${workbenchName}`);
-      projectDetails.findSectionTab('cluster-storages').click();
-      const csRow = clusterStorage.getClusterStorageRow(PVCDisplayName);
-      csRow.findConnectedWorkbenches().should('have.text', workbenchName);
+          // Attach existing storage workflow
+          createSpawnerPage.findAttachExistingStorageButton().click();
+          attachExistingStorageModal.verifyPSDropdownIsDisabled();
+          attachExistingStorageModal.verifyPSDropdownText(PVCDisplayName);
+          attachExistingStorageModal.findStandardPathInput().fill(workbenchName);
+          attachExistingStorageModal.findAttachButton().click();
+          createSpawnerPage.findSubmitButton().click();
+
+          cy.step(`Wait for Workbench ${workbenchName} to display a "Running" status`);
+          const notebookRow = workbenchPage.getNotebookRow(workbenchName);
+          notebookRow.expectStatusLabelToBe('Running', 120000);
+
+          // Use dynamic image name verification based on what was actually selected
+          getImageStreamDisplayName(selectedImageStream).then((displayName) => {
+            notebookRow.shouldHaveNotebookImageName(displayName);
+
+            cy.step(
+              `Check the cluster storage ${PVCDisplayName} is now connected to ${workbenchName}`,
+            );
+            projectDetails.findSectionTab('cluster-storages').click();
+            const csRow = clusterStorage.getClusterStorageRow(PVCDisplayName);
+            csRow.findConnectedResources().should('have.text', workbenchName);
+          });
+        },
+      );
     },
   );
 });

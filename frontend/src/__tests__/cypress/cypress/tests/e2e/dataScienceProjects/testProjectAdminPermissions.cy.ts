@@ -1,29 +1,28 @@
-import type { DataScienceProjectData } from '~/__tests__/cypress/cypress/types';
-import { projectDetails, projectListPage } from '~/__tests__/cypress/cypress/pages/projects';
-import { permissions } from '~/__tests__/cypress/cypress/pages/permissions';
+import type { DataScienceProjectData } from '#~/__tests__/cypress/cypress/types';
+import { projectDetails, projectListPage } from '#~/__tests__/cypress/cypress/pages/projects';
+import { permissions } from '#~/__tests__/cypress/cypress/pages/permissions';
 import {
   HTPASSWD_CLUSTER_ADMIN_USER,
   LDAP_CONTRIBUTOR_GROUP,
   LDAP_CONTRIBUTOR_USER,
-} from '~/__tests__/cypress/cypress/utils/e2eUsers';
-import { loadDSPFixture } from '~/__tests__/cypress/cypress/utils/dataLoader';
-import { createCleanProject } from '~/__tests__/cypress/cypress/utils/projectChecker';
-import { deleteOpenShiftProject } from '~/__tests__/cypress/cypress/utils/oc_commands/project';
-import {
-  retryableBefore,
-  wasSetupPerformed,
-} from '~/__tests__/cypress/cypress/utils/retryableHooks';
+} from '#~/__tests__/cypress/cypress/utils/e2eUsers';
+import { loadDSPFixture } from '#~/__tests__/cypress/cypress/utils/dataLoader';
+import { createCleanProject } from '#~/__tests__/cypress/cypress/utils/projectChecker';
+import { deleteOpenShiftProject } from '#~/__tests__/cypress/cypress/utils/oc_commands/project';
+import { retryableBefore } from '#~/__tests__/cypress/cypress/utils/retryableHooks';
+import { generateTestUUID } from '#~/__tests__/cypress/cypress/utils/uuidGenerator';
 
 describe('Verify that users can provide admin project permissions to non-admin users/groups', () => {
   let testData: DataScienceProjectData;
   let projectName: string;
+  const uuid = generateTestUUID();
 
   // Setup: Load test data and ensure clean state
-  retryableBefore(() => {
-    return loadDSPFixture('e2e/dataScienceProjects/testProjectAdminPermissions.yaml')
+  retryableBefore(() =>
+    loadDSPFixture('e2e/dataScienceProjects/testProjectAdminPermissions.yaml')
       .then((fixtureData: DataScienceProjectData) => {
         testData = fixtureData;
-        projectName = testData.projectPermissionResourceName;
+        projectName = `${testData.projectPermissionResourceName}-${uuid}`;
         if (!projectName) {
           throw new Error('Project name is undefined or empty in the loaded fixture');
         }
@@ -32,16 +31,13 @@ describe('Verify that users can provide admin project permissions to non-admin u
       })
       .then(() => {
         cy.log(`Project ${projectName} confirmed to be created and verified successfully`);
-      });
-  });
+      }),
+  );
   after(() => {
-    //Check if the Before Method was executed to perform the setup
-    if (!wasSetupPerformed()) return;
-
     // Delete provisioned Project
     if (projectName) {
       cy.log(`Deleting Project ${projectName} after the test has finished.`);
-      deleteOpenShiftProject(projectName);
+      deleteOpenShiftProject(projectName, { wait: false, ignoreNotFound: true });
     }
   });
 
@@ -56,12 +52,10 @@ describe('Verify that users can provide admin project permissions to non-admin u
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
 
       // Project navigation, add user and provide admin permissions
-      cy.step(
-        `Navigate to the Project list tab and search for ${testData.projectPermissionResourceName}`,
-      );
+      cy.step(`Navigate to the Project list tab and search for ${projectName}`);
       projectListPage.navigate();
-      projectListPage.filterProjectByName(testData.projectPermissionResourceName);
-      projectListPage.findProjectLink(testData.projectPermissionResourceName).click();
+      projectListPage.filterProjectByName(projectName);
+      projectListPage.findProjectLink(projectName).click();
       projectDetails.findSectionTab('permissions').click();
 
       cy.step('Assign admin user Project Permissions');
@@ -84,7 +78,15 @@ describe('Verify that users can provide admin project permissions to non-admin u
   it(
     'Verify user can assign access permissions to user group',
     {
-      tags: ['@Smoke', '@SmokeSet1', '@ODS-2194', '@ODS-2201', '@ODS-2208', '@Dashboard'],
+      tags: [
+        '@Smoke',
+        '@SmokeSet1',
+        '@ODS-2194',
+        '@ODS-2201',
+        '@ODS-2208',
+        '@Dashboard',
+        '@NonConcurrent',
+      ],
     },
     () => {
       // Authentication and navigation
@@ -92,12 +94,10 @@ describe('Verify that users can provide admin project permissions to non-admin u
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
 
       // Project navigation, add group and provide admin permissions
-      cy.step(
-        `Navigate to the Project list tab and search for ${testData.projectPermissionResourceName}`,
-      );
+      cy.step(`Navigate to the Project list tab and search for ${projectName}`);
       projectListPage.navigate();
-      projectListPage.filterProjectByName(testData.projectPermissionResourceName);
-      projectListPage.findProjectLink(testData.projectPermissionResourceName).click();
+      projectListPage.filterProjectByName(projectName);
+      projectListPage.findProjectLink(projectName).click();
       projectDetails.findSectionTab('permissions').click();
 
       cy.step('Assign admin group Project Permissions');
@@ -114,7 +114,15 @@ describe('Verify that users can provide admin project permissions to non-admin u
   it(
     'Verify that user can access the created project with Admin rights',
     {
-      tags: ['@Smoke', '@SmokeSet1', '@ODS-2194', '@ODS-2201', '@ODS-2208', '@Dashboard'],
+      tags: [
+        '@Smoke',
+        '@SmokeSet1',
+        '@ODS-2194',
+        '@ODS-2201',
+        '@ODS-2208',
+        '@Dashboard',
+        '@NonConcurrent',
+      ],
     },
     () => {
       // Authentication and navigation
@@ -124,8 +132,8 @@ describe('Verify that users can provide admin project permissions to non-admin u
       // Project navigation and validate permissions tab is accessible
       cy.step('Verify that the user has access to the created project and can access Permissions');
       projectListPage.navigate();
-      projectListPage.filterProjectByName(testData.projectPermissionResourceName);
-      projectListPage.findProjectLink(testData.projectPermissionResourceName).click();
+      projectListPage.filterProjectByName(projectName);
+      projectListPage.findProjectLink(projectName).click();
       projectDetails.findSectionTab('permissions').click();
     },
   );

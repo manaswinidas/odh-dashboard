@@ -1,31 +1,35 @@
-import type { WBEditTestData, AWSS3BucketDetails } from '~/__tests__/cypress/cypress/types';
-import { projectDetails, projectListPage } from '~/__tests__/cypress/cypress/pages/projects';
+import type { WBEditTestData, AWSS3BucketDetails } from '#~/__tests__/cypress/cypress/types';
+import { projectDetails, projectListPage } from '#~/__tests__/cypress/cypress/pages/projects';
 import {
   workbenchPage,
   createSpawnerPage,
   notebookConfirmModal,
-  workbenchStatusModal,
-} from '~/__tests__/cypress/cypress/pages/workbench';
+} from '#~/__tests__/cypress/cypress/pages/workbench';
 import {
   HTPASSWD_CLUSTER_ADMIN_USER,
   LDAP_CONTRIBUTOR_USER,
-} from '~/__tests__/cypress/cypress/utils/e2eUsers';
-import { loadPVCEditFixture } from '~/__tests__/cypress/cypress/utils/dataLoader';
-import { createCleanProject } from '~/__tests__/cypress/cypress/utils/projectChecker';
+} from '#~/__tests__/cypress/cypress/utils/e2eUsers';
+import { loadPVCEditFixture } from '#~/__tests__/cypress/cypress/utils/dataLoader';
+import { createCleanProject } from '#~/__tests__/cypress/cypress/utils/projectChecker';
 import {
   deleteOpenShiftProject,
   addUserToProject,
-} from '~/__tests__/cypress/cypress/utils/oc_commands/project';
+} from '#~/__tests__/cypress/cypress/utils/oc_commands/project';
+import { retryableBefore } from '#~/__tests__/cypress/cypress/utils/retryableHooks';
 import {
-  retryableBefore,
-  wasSetupPerformed,
-} from '~/__tests__/cypress/cypress/utils/retryableHooks';
-import { addConnectionModal, connectionsPage } from '~/__tests__/cypress/cypress/pages/connections';
-import { deleteModal } from '~/__tests__/cypress/cypress/pages/components/DeleteModal';
-import { AWS_BUCKETS } from '~/__tests__/cypress/cypress/utils/s3Buckets';
-import { clusterStorage } from '~/__tests__/cypress/cypress/pages/clusterStorage';
+  addConnectionModal,
+  connectionsPage,
+} from '#~/__tests__/cypress/cypress/pages/connections';
+import { deleteModal } from '#~/__tests__/cypress/cypress/pages/components/DeleteModal';
+import { AWS_BUCKETS } from '#~/__tests__/cypress/cypress/utils/s3Buckets';
+import { clusterStorage } from '#~/__tests__/cypress/cypress/pages/clusterStorage';
+import { generateTestUUID } from '#~/__tests__/cypress/cypress/utils/uuidGenerator';
+import {
+  selectNotebookImageWithBackendFallback,
+  getImageStreamDisplayName,
+} from '#~/__tests__/cypress/cypress/utils/oc_commands/imageStreams';
 
-describe('Create, Delete and Edit - Workbench Tests', () => {
+describe('[Product Bug: RHOAIENG-31579] Create, Delete and Edit - Workbench Tests', () => {
   let editTestNamespace: string;
   let editedTestNamespace: string;
   let editedTestDescription: string;
@@ -35,30 +39,24 @@ describe('Create, Delete and Edit - Workbench Tests', () => {
   let s3Config: AWSS3BucketDetails;
   let s3AccessKey: string;
   let s3SecretKey: string;
+  const uuid = generateTestUUID();
 
   // Setup: Load test data and ensure clean state
-  retryableBefore(() => {
-    return loadPVCEditFixture('e2e/dataScienceProjects/testWorkbenchEditing.yaml')
+  retryableBefore(() =>
+    loadPVCEditFixture('e2e/dataScienceProjects/testWorkbenchEditing.yaml')
       .then((fixtureData: WBEditTestData) => {
-        editTestNamespace = fixtureData.editTestNamespace;
+        editTestNamespace = `${fixtureData.editTestNamespace}-${uuid}`;
         editedTestNamespace = fixtureData.editedTestNamespace;
         editedTestDescription = fixtureData.editedTestDescription;
         pvcEditDisplayName = fixtureData.pvcEditDisplayName;
         contributor = LDAP_CONTRIBUTOR_USER.USERNAME;
-        pvcStorageName = fixtureData.pvcStorageName;
+        pvcStorageName = `${fixtureData.pvcStorageName}-${uuid}-storage`;
         const bucketKey = 'BUCKET_1' as const;
         const bucketConfig = AWS_BUCKETS[bucketKey];
 
         s3Config = bucketConfig;
         s3AccessKey = AWS_BUCKETS.AWS_ACCESS_KEY_ID;
         s3SecretKey = AWS_BUCKETS.AWS_SECRET_ACCESS_KEY;
-
-        cy.log('S3 Configuration:');
-        cy.log(`Bucket Name: ${s3Config.NAME}`);
-        cy.log(`Bucket Region: ${s3Config.REGION}`);
-        cy.log(`Bucket Endpoint: ${s3Config.ENDPOINT}`);
-        cy.log(`Access Key ID: ${s3AccessKey.substring(0, 5)}...`);
-        cy.log(`Secret Access Key: ${s3SecretKey.substring(0, 5)}...`);
 
         if (!editTestNamespace) {
           throw new Error('Project name is undefined or empty in the loaded fixture');
@@ -69,24 +67,32 @@ describe('Create, Delete and Edit - Workbench Tests', () => {
       .then(() => {
         cy.log(`Project ${editTestNamespace} confirmed to be created and verified successfully`);
         addUserToProject(editTestNamespace, contributor, 'edit');
-      });
-  });
+      }),
+  );
   after(() => {
-    //Check if the Before Method was executed to perform the setup
-    if (!wasSetupPerformed()) return;
-
     // Delete provisioned Project
     if (editTestNamespace) {
       cy.log(`Deleting Project ${editTestNamespace} after the test has finished.`);
-      deleteOpenShiftProject(editTestNamespace);
+      deleteOpenShiftProject(editTestNamespace, { wait: false, ignoreNotFound: true });
     }
   });
 
   it(
-    'Editing Workbench Name and Description',
-    { tags: ['@Sanity', '@SanitySet1', '@ODS-1931', '@ODS-2218', '@Dashboard', '@Workbenches'] },
+    'Create Workbench from the launcher page and verify that it is created successfully.',
+    {
+      tags: [
+        '@Sanity',
+        '@SanitySet1',
+        '@ODS-1931',
+        '@ODS-2218',
+        '@Dashboard',
+        '@Workbenches',
+        '@Bug',
+      ],
+    },
     () => {
       const workbenchName = editTestNamespace.replace('dsp-', '');
+      let selectedImageStream: string;
 
       // Authentication and navigation
       cy.step('Log into the application');
@@ -103,46 +109,65 @@ describe('Create, Delete and Edit - Workbench Tests', () => {
       cy.step(`Create workbench ${editTestNamespace} using storage ${pvcEditDisplayName}`);
       workbenchPage.findCreateButton().click();
       createSpawnerPage.getNameInput().fill(workbenchName);
-      createSpawnerPage.findNotebookImage('code-server-notebook').click();
-      createSpawnerPage.findSubmitButton().click();
 
-      // Wait for workbench to run
-      cy.step(`Wait for workbench ${workbenchName} to display a "Running" status`);
-      const notebookRow = workbenchPage.getNotebookRow(workbenchName);
-      notebookRow.expectStatusLabelToBe('Running', 120000);
-      notebookRow.shouldHaveNotebookImageName('code-server');
-      notebookRow.shouldHaveContainerSize('Small');
+      // Select notebook image with fallback
+      selectNotebookImageWithBackendFallback('code-server-notebook', createSpawnerPage).then(
+        (imageStreamName) => {
+          selectedImageStream = imageStreamName;
+          cy.log(`Selected imagestream: ${selectedImageStream}`);
 
-      // Stop workbench
-      cy.step('Stop workbench and validate it has been stopped');
-      notebookRow.findNotebookStop().click();
-      notebookConfirmModal.findStopWorkbenchButton().click();
-      notebookRow.expectStatusLabelToBe('Stopped', 120000);
-      cy.reload();
+          createSpawnerPage.findSubmitButton().click();
 
-      notebookRow.findHaveNotebookStatusText().click();
-      workbenchStatusModal.getNotebookStatus('Stopped');
-      workbenchStatusModal.getModalCloseButton().click();
+          // Wait for workbench to run
+          cy.step(`Wait for workbench ${workbenchName} to display a "Running" status`);
+          const notebookRow = workbenchPage.getNotebookRow(workbenchName);
+          notebookRow.expectStatusLabelToBe('Running', 120000);
 
-      // Edit the workbench and update
-      cy.step('Editing the workbench - both the Name and Description');
-      notebookRow.findKebab().click();
-      notebookRow.findKebabAction('Edit workbench').click();
-      createSpawnerPage.getNameInput().clear().type(editedTestNamespace);
-      createSpawnerPage.getDescriptionInput().type(editedTestDescription);
-      createSpawnerPage.findSubmitButton().click();
+          // Use dynamic image name verification based on what was actually selected
+          getImageStreamDisplayName(selectedImageStream).then((displayName) => {
+            notebookRow.shouldHaveNotebookImageName(displayName);
 
-      // Verify that the workbench has been updated
-      cy.step('Verifying the Edited details display after updating');
-      const notebookEditedRow = workbenchPage.getNotebookRow(editedTestNamespace);
-      notebookEditedRow.findNotebookDescription(editedTestDescription);
-      notebookEditedRow.shouldHaveNotebookImageName('code-server');
-      notebookEditedRow.shouldHaveContainerSize('Small');
+            // Stop workbench
+            cy.step('Stop workbench and validate it has been stopped');
+            notebookRow.findNotebookStopToggle().click();
+            notebookConfirmModal.findStopWorkbenchButton().click();
+            notebookRow.expectStatusLabelToBe('Stopped', 120000);
+
+            // Edit the workbench and update
+            cy.step('Editing the workbench - both the Name and Description');
+            notebookRow.findKebab().click();
+            notebookRow.findKebabAction('Edit workbench').click();
+            createSpawnerPage.getNameInput().clear().type(editedTestNamespace);
+            createSpawnerPage.getDescriptionInput().type(editedTestDescription);
+            createSpawnerPage.findSubmitButton().click();
+
+            // Verify that the workbench has been updated
+            cy.step('Verifying the Edited details display after updating');
+            const notebookEditedRow = workbenchPage.getNotebookRow(editedTestNamespace);
+            notebookEditedRow.findNotebookDescription(editedTestDescription);
+
+            // Use dynamic image name verification for the edited workbench too
+            getImageStreamDisplayName(selectedImageStream).then((editedDisplayName) => {
+              notebookEditedRow.shouldHaveNotebookImageName(editedDisplayName);
+            });
+          });
+        },
+      );
     },
   );
   it(
     'Verify user can delete PV storage, data connection and workbench in a shared DS project',
-    { tags: ['@Sanity', '@SanitySet1', '@ODS-1931', '@ODS-2218', '@Dashboard', '@Workbenches'] },
+    {
+      tags: [
+        '@Sanity',
+        '@SanitySet1',
+        '@ODS-1931',
+        '@ODS-2218',
+        '@Dashboard',
+        '@Workbenches',
+        '@Bug',
+      ],
+    },
     () => {
       // Authentication and navigation
       cy.step('Log into the application');

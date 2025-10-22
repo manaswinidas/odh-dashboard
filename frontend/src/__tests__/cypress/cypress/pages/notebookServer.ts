@@ -7,7 +7,7 @@ enum EnvVarItemType {
 
 class NotebookServer {
   visit() {
-    cy.visitWithLogin('/notebookController/spawner');
+    cy.visitWithLogin('/notebook-controller/spawner');
     this.wait();
   }
 
@@ -65,11 +65,11 @@ class NotebookServer {
   }
 
   findStopServerButton() {
-    return cy.findByTestId('stop-nb-button');
+    return cy.findByTestId('stop-wb-button');
   }
 
   findStopNotebookServerButton() {
-    return cy.findByTestId('stop-nb-server-button');
+    return cy.findByTestId('stop-workbench-button');
   }
 
   findAcceleratorProfileSelect() {
@@ -109,7 +109,7 @@ class NotebookServer {
 
   findHardwareProfileSelectOptionValues() {
     return cy.findAllByRole('option').then((options) => {
-      const values = [...options].map((option) => option.textContent?.trim());
+      const values = [...options].map((option) => option.textContent.trim());
       return cy.wrap(values);
     });
   }

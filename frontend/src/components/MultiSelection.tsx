@@ -42,6 +42,7 @@ type MultiSelectionProps = {
   value?: SelectionOptions[];
   groupedValues?: GroupSelectionOptions[];
   setValue: (itemSelection: SelectionOptions[]) => void;
+  isScrollable?: boolean;
   toggleId?: string;
   inputId?: string;
   ariaLabel: string;
@@ -50,6 +51,8 @@ type MultiSelectionProps = {
   selectionRequired?: boolean;
   noSelectedOptionsMessage?: string;
   toggleTestId?: string;
+  /** Test ID for the dropdown list */
+  listTestId?: string;
   /** Flag to indicate if the typeahead select allows new items */
   isCreatable?: boolean;
   /** Flag to indicate if create option should be at top of typeahead */
@@ -68,6 +71,7 @@ export const MultiSelection: React.FC<MultiSelectionProps> = ({
   value = [],
   groupedValues = [],
   setValue,
+  isScrollable = false,
   placeholder,
   isDisabled,
   ariaLabel = 'Options menu',
@@ -75,6 +79,7 @@ export const MultiSelection: React.FC<MultiSelectionProps> = ({
   toggleId,
   inputId,
   toggleTestId,
+  listTestId,
   selectionRequired,
   noSelectedOptionsMessage = 'One or more options must be selected',
   isCreatable = false,
@@ -318,6 +323,7 @@ export const MultiSelection: React.FC<MultiSelectionProps> = ({
   return (
     <>
       <Select
+        isScrollable={isScrollable}
         id={id}
         isOpen={isOpen}
         selected={selected}
@@ -354,6 +360,7 @@ export const MultiSelection: React.FC<MultiSelectionProps> = ({
                     ref={null}
                     isSelected={option.selected}
                     description={option.description}
+                    isAriaDisabled={option.isAriaDisabled}
                   >
                     {option.name}
                   </SelectOption>
@@ -365,7 +372,7 @@ export const MultiSelection: React.FC<MultiSelectionProps> = ({
         ))}
         {selectOptions.length ||
         (createOption && (!isCreateOptionOnTop || groupOptions.length === 0)) ? (
-          <SelectList isAriaMultiselectable>
+          <SelectList isAriaMultiselectable data-testid={listTestId}>
             {createOption && isCreateOptionOnTop && groupOptions.length === 0 ? (
               <SelectOption value={createOption.id}>{createOption.name}</SelectOption>
             ) : null}
@@ -378,6 +385,7 @@ export const MultiSelection: React.FC<MultiSelectionProps> = ({
                 ref={null}
                 isSelected={option.selected}
                 description={option.description}
+                isAriaDisabled={option.isAriaDisabled}
               >
                 {option.name}
               </SelectOption>

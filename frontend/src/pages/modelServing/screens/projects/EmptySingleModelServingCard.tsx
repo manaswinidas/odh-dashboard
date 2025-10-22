@@ -8,9 +8,9 @@ import {
   Content,
   ContentVariants,
 } from '@patternfly/react-core';
-import { ProjectDetailsContext } from '~/pages/projects/ProjectDetailsContext';
-import ModelServingPlatformSelectButton from '~/pages/modelServing/screens/projects/ModelServingPlatformSelectButton';
-import { NamespaceApplicationCase } from '~/pages/projects/types';
+import { ProjectDetailsContext } from '#~/pages/projects/ProjectDetailsContext';
+import ModelServingPlatformSelectButton from '#~/pages/modelServing/screens/projects/ModelServingPlatformSelectButton';
+import { NamespaceApplicationCase } from '#~/pages/projects/types';
 
 type EmptySingleModelServingCardProps = {
   setErrorSelectingPlatform: (e?: Error) => void;
@@ -28,7 +28,7 @@ const EmptySingleModelServingCard: React.FC<EmptySingleModelServingCardProps> = 
         border: '1px solid var(--pf-t--global--border--color--default)',
         borderRadius: 16,
       }}
-      data-testid="single-serving-platform-card"
+      data-testid="kserve-platform-card"
     >
       <CardTitle>
         <Content component={ContentVariants.h2}>Single-model serving platform</Content>
@@ -44,7 +44,7 @@ const EmptySingleModelServingCard: React.FC<EmptySingleModelServingCardProps> = 
             servingPlatform={NamespaceApplicationCase.KSERVE_PROMOTION}
             setError={setErrorSelectingPlatform}
             variant="secondary"
-            data-testid="single-serving-select-button"
+            data-testid="kserve-select-button"
           />
         </Bullseye>
       </CardFooter>

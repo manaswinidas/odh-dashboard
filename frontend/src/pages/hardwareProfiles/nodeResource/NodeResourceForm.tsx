@@ -12,19 +12,19 @@ import {
   Stack,
   StackItem,
 } from '@patternfly/react-core';
-import { Identifier, IdentifierResourceType } from '~/types';
-import { UpdateObjectAtPropAndValue } from '~/pages/projects/types';
-import { UnitOption } from '~/utilities/valueUnits';
-import SimpleSelect from '~/components/SimpleSelect';
-import { asEnumMember } from '~/utilities/utils';
+import { Identifier, IdentifierResourceType } from '#~/types';
+import { UpdateObjectAtPropAndValue } from '#~/pages/projects/types';
+import { UnitOption } from '#~/utilities/valueUnits';
+import SimpleSelect, { SimpleSelectOption } from '#~/components/SimpleSelect';
+import { asEnumMember } from '#~/utilities/utils';
 import {
   DEFAULT_ACCELERATOR_SIZE,
   DEFAULT_CPU_SIZE,
   DEFAULT_MEMORY_SIZE,
   EMPTY_IDENTIFIER,
   HARDWARE_PROFILE_COLUMN_HELP_TOOLTIP,
-} from '~/pages/hardwareProfiles/nodeResource/const';
-import DashboardHelpTooltip from '~/concepts/dashboard/DashboardHelpTooltip';
+} from '#~/pages/hardwareProfiles/nodeResource/const';
+import DashboardHelpTooltip from '#~/concepts/dashboard/DashboardHelpTooltip';
 import {
   getValidationMessage,
   validateDefaultCount,
@@ -54,22 +54,37 @@ const NodeResourceForm: React.FC<NodeResourceFormProps> = ({
 
   return (
     <Form>
-      <FormGroup isRequired label="Resource label" fieldId="resource-label">
+      <FormGroup
+        isRequired
+        label="Resource name"
+        fieldId="resource-name"
+        labelHelp={
+          <DashboardHelpTooltip content={HARDWARE_PROFILE_COLUMN_HELP_TOOLTIP.resourceName} />
+        }
+      >
         <TextInput
-          id="node-resource-label-input"
+          id="node-resource-name-input"
           value={identifier.displayName || ''}
           onChange={(_, value) => setIdentifier('displayName', value)}
-          data-testid="node-resource-label-input"
+          data-testid="node-resource-name-input"
         />
       </FormGroup>
 
-      <FormGroup isRequired label="Resource identifier" fieldId="resource-identifier">
+      <FormGroup
+        isRequired
+        label="Resource identifier"
+        fieldId="resource-identifier"
+        labelHelp={
+          <DashboardHelpTooltip content={HARDWARE_PROFILE_COLUMN_HELP_TOOLTIP.resourceIdentifier} />
+        }
+      >
         <TextInput
           id="node-resource-identifier-input"
           value={identifier.identifier || ''}
           onChange={(_, value) => setIdentifier('identifier', value)}
           validated={validated}
           data-testid="node-resource-identifier-input"
+          placeholder="Example, nvidia.com/gpu"
         />
         {!isUniqueIdentifier && (
           <FormHelperText>
@@ -83,15 +98,24 @@ const NodeResourceForm: React.FC<NodeResourceFormProps> = ({
         )}
       </FormGroup>
 
-      <FormGroup isRequired label="Resource type" fieldId="resource-type">
+      <FormGroup
+        isRequired
+        label="Resource type"
+        fieldId="resource-type"
+        labelHelp={
+          <DashboardHelpTooltip content={HARDWARE_PROFILE_COLUMN_HELP_TOOLTIP.resourceType} />
+        }
+      >
         <SimpleSelect
           dataTestId="node-resource-type-select"
           isFullWidth
           options={[
-            ...Object.values(IdentifierResourceType).map((v) => ({
-              key: v,
-              label: v,
-            })),
+            ...Object.values(IdentifierResourceType).map(
+              (v): SimpleSelectOption => ({
+                key: v,
+                label: v,
+              }),
+            ),
             { key: 'Other', label: 'Other' },
           ]}
           value={identifier.resourceType || 'Other'}

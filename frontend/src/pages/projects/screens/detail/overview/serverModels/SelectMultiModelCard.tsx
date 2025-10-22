@@ -1,10 +1,10 @@
 import * as React from 'react';
 import { CardBody, CardFooter, Content } from '@patternfly/react-core';
-import { ProjectObjectType, SectionType } from '~/concepts/design/utils';
-import OverviewCard from '~/pages/projects/screens/detail/overview/components/OverviewCard';
-import ModelServingPlatformSelectButton from '~/pages/modelServing/screens/projects/ModelServingPlatformSelectButton';
-import { ProjectDetailsContext } from '~/pages/projects/ProjectDetailsContext';
-import { NamespaceApplicationCase } from '~/pages/projects/types';
+import { ProjectObjectType, SectionType } from '#~/concepts/design/utils';
+import OverviewCard from '#~/pages/projects/screens/detail/overview/components/OverviewCard';
+import ModelServingPlatformSelectButton from '#~/pages/modelServing/screens/projects/ModelServingPlatformSelectButton';
+import { ProjectDetailsContext } from '#~/pages/projects/ProjectDetailsContext';
+import { NamespaceApplicationCase } from '#~/pages/projects/types';
 
 type SelectMultiModelCardProps = {
   setErrorSelectingPlatform: (e?: Error) => void;
@@ -19,7 +19,7 @@ const SelectMultiModelCard: React.FC<SelectMultiModelCardProps> = ({
       objectType={ProjectObjectType.multiModel}
       sectionType={SectionType.serving}
       title="Multi-model serving platform"
-      data-testid="multi-serving-platform-card"
+      data-testid="model-mesh-platform-card"
     >
       <CardBody>
         <Content component="small">
@@ -35,7 +35,7 @@ const SelectMultiModelCard: React.FC<SelectMultiModelCardProps> = ({
           setError={setErrorSelectingPlatform}
           variant="link"
           isInline
-          data-testid="multi-serving-select-button"
+          data-testid="model-mesh-select-button"
         />
       </CardFooter>
     </OverviewCard>

@@ -1,7 +1,7 @@
-import { SortableData } from '~/components/table';
-import { getNotebookStatusPriority } from '~/pages/projects/utils';
-import { NotebookState } from '~/pages/projects/notebook/types';
-import { getDisplayNameFromK8sResource } from '~/concepts/k8s/utils';
+import { SortableData } from '#~/components/table';
+import { getNotebookStatusPriority } from '#~/pages/projects/utils';
+import { NotebookState } from '#~/pages/projects/notebook/types';
+import { getDisplayNameFromK8sResource } from '#~/concepts/k8s/utils';
 
 export const columns: SortableData<NotebookState>[] = [
   {
@@ -22,12 +22,6 @@ export const columns: SortableData<NotebookState>[] = [
     field: 'image',
     label: 'Workbench image',
     width: 20,
-    sortable: false,
-  },
-  {
-    field: 'size',
-    label: 'Container size',
-    width: 15,
     sortable: false,
   },
   {

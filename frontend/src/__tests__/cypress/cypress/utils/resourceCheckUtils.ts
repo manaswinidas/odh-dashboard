@@ -1,4 +1,4 @@
-import { resources } from '~/__tests__/cypress/cypress/pages/resources';
+import { resources } from '#~/__tests__/cypress/cypress/pages/resources';
 
 interface ResourceInfo {
   name: string;
@@ -46,9 +46,7 @@ export const checkResources = (resourceInfoList: ResourceInfo[]): void => {
     resources.getLearningCenterToolbar().findSearchInput().clear().type(resourceInfo.name);
 
     cy.wrap(null)
-      .then(() => {
-        return getCardWithWait(resourceInfo.metaDataName, 180000);
-      })
+      .then(() => getCardWithWait(resourceInfo.metaDataName, 180000))
       .then(() => {
         cy.log(`✅ Resource found: ${resourceInfo.name}`);
         // Additional actions can be performed here if needed

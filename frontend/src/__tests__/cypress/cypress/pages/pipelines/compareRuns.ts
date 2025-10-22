@@ -1,15 +1,21 @@
-import { TableRow } from '~/__tests__/cypress/cypress/pages/components/table';
-import { Contextual } from '~/__tests__/cypress/cypress/pages/components/Contextual';
+import { TableRow } from '#~/__tests__/cypress/cypress/pages/components/table';
+import { Contextual } from '#~/__tests__/cypress/cypress/pages/components/Contextual';
 
 class CompareRunsGlobal {
   visit(projectName: string, experimentId: string, runIds: string[] = []) {
     cy.visitWithLogin(
-      `/experiments/${projectName}/${experimentId}/compareRuns?compareRuns=${runIds.join(',')}`,
+      `/develop-train/experiments/${projectName}/${experimentId}/compare-runs?compareRuns=${runIds.join(
+        ',',
+      )}`,
     );
   }
 
   findInvalidRunsError() {
     return cy.findByTestId('compare-runs-invalid-number-runs');
+  }
+
+  findProjectNavigatorLink() {
+    return cy.findByTestId('project-navigator-link-in-breadcrumb');
   }
 }
 

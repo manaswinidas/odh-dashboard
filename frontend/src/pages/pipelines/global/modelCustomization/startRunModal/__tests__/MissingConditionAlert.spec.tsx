@@ -4,11 +4,11 @@ import userEvent from '@testing-library/user-event';
 import {
   ContinueCondition,
   useContinueState,
-} from '~/pages/pipelines/global/modelCustomization/startRunModal/useContinueState';
-import MissingConditionAlert from '~/pages/pipelines/global/modelCustomization/startRunModal/MissingConditionAlert';
+} from '#~/pages/pipelines/global/modelCustomization/startRunModal/useContinueState';
+import MissingConditionAlert from '#~/pages/pipelines/global/modelCustomization/startRunModal/MissingConditionAlert';
 import '@testing-library/jest-dom';
 
-jest.mock('~/pages/pipelines/global/modelCustomization/startRunModal/useContinueState', () => ({
+jest.mock('#~/pages/pipelines/global/modelCustomization/startRunModal/useContinueState', () => ({
   useContinueState: jest.fn(),
 }));
 
@@ -96,6 +96,8 @@ describe('MissingConditionAlert', () => {
     const button = screen.getByTestId('go-to-pipelines');
     await userEvent.click(button);
 
-    expect(navigateMock).toHaveBeenCalledWith(`/pipelines/${TEST_PROJECT}`);
+    expect(navigateMock).toHaveBeenCalledWith(
+      `/develop-train/pipelines/definitions/${TEST_PROJECT}`,
+    );
   });
 });

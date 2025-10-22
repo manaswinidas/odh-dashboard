@@ -1,61 +1,54 @@
 import React from 'react';
 import {
   Alert,
-  Flex,
-  FlexItem,
   FormGroup,
   FormSection,
-  Label,
   Popover,
   Radio,
   Skeleton,
   Stack,
   StackItem,
-  Truncate,
 } from '@patternfly/react-core';
 import { OutlinedQuestionCircleIcon } from '@patternfly/react-icons';
 import {
   Connection,
   ConnectionTypeConfigMapObj,
-  ConnectionTypeFieldType,
   ConnectionTypeValueType,
-} from '~/concepts/connectionTypes/types';
+} from '#~/concepts/connectionTypes/types';
+import { getResourceNameFromK8sResource } from '#~/concepts/k8s/utils';
 import {
-  getDescriptionFromK8sResource,
-  getDisplayNameFromK8sResource,
-  getResourceNameFromK8sResource,
-} from '~/concepts/k8s/utils';
-import ConnectionTypeForm from '~/concepts/connectionTypes/ConnectionTypeForm';
-import { useK8sNameDescriptionFieldData } from '~/concepts/k8s/K8sNameDescriptionField/K8sNameDescriptionField';
-import { isK8sNameDescriptionDataValid } from '~/concepts/k8s/K8sNameDescriptionField/utils';
-import {
-  assembleConnectionSecret,
-  filterEnabledConnectionTypes,
-  getConnectionTypeDisplayName,
   getConnectionTypeRef,
-  getDefaultValues,
-  isConnectionTypeDataField,
   isModelServingCompatible,
   ModelServingCompatibleTypes,
   S3ConnectionTypeKeys,
   withRequiredFields,
-} from '~/concepts/connectionTypes/utils';
-import { ConnectionDetailsHelperText } from '~/concepts/connectionTypes/ConnectionDetailsHelperText';
-import { useWatchConnectionTypes } from '~/utilities/useWatchConnectionTypes';
-import TypeaheadSelect, { TypeaheadSelectOption } from '~/components/TypeaheadSelect';
+} from '#~/concepts/connectionTypes/utils';
+import { useWatchConnectionTypes } from '#~/utilities/useWatchConnectionTypes';
 import {
   CreatingInferenceServiceObject,
   InferenceServiceStorageType,
   LabeledConnection,
-} from '~/pages/modelServing/screens/types';
-import { UpdateObjectAtPropAndValue } from '~/pages/projects/types';
-import { isModelPathValid } from '~/pages/modelServing/screens/projects/utils';
-import usePersistentData from '~/pages/projects/screens/detail/connections/usePersistentData';
-import DashboardPopupIconButton from '~/concepts/dashboard/DashboardPopupIconButton';
-import { AccessTypes } from '~/pages/projects/dataConnections/const';
+} from '#~/pages/modelServing/screens/types';
+import { UpdateObjectAtPropAndValue } from '#~/pages/projects/types';
+import { ExistingConnectionField } from '#~/concepts/connectionTypes/ExistingConnectionField';
+import {
+  NewConnectionField,
+  useNewConnectionField,
+  UseNewConnectionFieldData,
+} from '#~/concepts/connectionTypes/NewConnectionField';
+import {
+  getPVCFromURI,
+  getPVCNameFromURI,
+  isModelPathValid,
+  isPVCUri,
+} from '#~/pages/modelServing/screens/projects/utils';
+import DashboardPopupIconButton from '#~/concepts/dashboard/DashboardPopupIconButton';
+import { AccessTypes } from '#~/pages/projects/dataConnections/const';
+import { PersistentVolumeClaimKind } from '#~/k8sTypes';
 import ConnectionS3FolderPathField from './ConnectionS3FolderPathField';
 import ConnectionOciPathField from './ConnectionOciPathField';
 import { ConnectionOciAlert } from './ConnectionOciAlert';
+import { PvcSelect } from './PVCSelect';
 
 type ExistingConnectionFieldProps = {
   connectionTypes: ConnectionTypeConfigMapObj[];
@@ -69,7 +62,7 @@ type ExistingConnectionFieldProps = {
   setIsConnectionValid: (isValid: boolean) => void;
 };
 
-const ExistingConnectionField: React.FC<ExistingConnectionFieldProps> = ({
+const ExistingModelConnectionField: React.FC<ExistingConnectionFieldProps> = ({
   connectionTypes,
   projectConnections,
   selectedConnection,
@@ -80,50 +73,6 @@ const ExistingConnectionField: React.FC<ExistingConnectionFieldProps> = ({
   setModelUri,
   setIsConnectionValid,
 }) => {
-  const options: TypeaheadSelectOption[] = React.useMemo(
-    () =>
-      projectConnections.map((connection) => {
-        const { isRecommended } = connection;
-        const displayName = getDisplayNameFromK8sResource(connection.connection);
-
-        return {
-          content: displayName,
-          value: getResourceNameFromK8sResource(connection.connection),
-          dropdownLabel: (
-            <>
-              {isRecommended && (
-                <Label color="blue" isCompact>
-                  Recommended
-                </Label>
-              )}
-            </>
-          ),
-          description: (
-            <Flex direction={{ default: 'column' }} rowGap={{ default: 'rowGapNone' }}>
-              {getDescriptionFromK8sResource(connection.connection) && (
-                <FlexItem>
-                  <Truncate content={getDescriptionFromK8sResource(connection.connection)} />
-                </FlexItem>
-              )}
-              <FlexItem>
-                <Truncate
-                  content={`Type: ${
-                    getConnectionTypeDisplayName(connection.connection, connectionTypes) ||
-                    'Unknown'
-                  }`}
-                />
-              </FlexItem>
-            </Flex>
-          ),
-          isSelected:
-            !!selectedConnection &&
-            getResourceNameFromK8sResource(connection.connection) ===
-              getResourceNameFromK8sResource(selectedConnection),
-        };
-      }),
-    [connectionTypes, projectConnections, selectedConnection],
-  );
-
   const selectedConnectionType = React.useMemo(
     () =>
       connectionTypes.find(
@@ -132,18 +81,19 @@ const ExistingConnectionField: React.FC<ExistingConnectionFieldProps> = ({
     [connectionTypes, selectedConnection],
   );
 
+  // todo lift up into hook
   React.useEffect(() => {
     setIsConnectionValid(
       !!selectedConnection && isModelPathValid(selectedConnection, folderPath, modelUri),
     );
   }, [folderPath, modelUri, selectedConnection, setIsConnectionValid]);
-
   return (
     <>
-      <FormGroup
-        label="Connection"
-        isRequired
-        className="pf-v6-u-mb-lg"
+      <ExistingConnectionField
+        connectionTypes={connectionTypes}
+        projectConnections={projectConnections}
+        selectedConnection={selectedConnection}
+        onSelect={onSelect}
         labelHelp={
           <Popover
             aria-label="Hoverable popover"
@@ -156,34 +106,11 @@ const ExistingConnectionField: React.FC<ExistingConnectionFieldProps> = ({
           </Popover>
         }
       >
-        <Flex direction={{ default: 'row' }} spaceItems={{ default: 'spaceItemsSm' }}>
-          <FlexItem grow={{ default: 'grow' }}>
-            <TypeaheadSelect
-              selectOptions={options}
-              onSelect={(_, value) => {
-                const newConnection = projectConnections.find(
-                  (c) => getResourceNameFromK8sResource(c.connection) === value,
-                );
-                if (newConnection) {
-                  onSelect(newConnection.connection);
-                }
-              }}
-              popperProps={{ appendTo: 'inline' }}
-              previewDescription={false}
-            />
-          </FlexItem>
-          <FlexItem>
-            <ConnectionDetailsHelperText
-              connection={selectedConnection}
-              connectionType={selectedConnectionType}
-            />
-          </FlexItem>
-        </Flex>
         {selectedConnectionType &&
           isModelServingCompatible(selectedConnectionType, ModelServingCompatibleTypes.OCI) && (
             <ConnectionOciAlert />
           )}
-      </FormGroup>
+      </ExistingConnectionField>
       {selectedConnection &&
         isModelServingCompatible(
           selectedConnection,
@@ -209,147 +136,80 @@ type NewConnectionFieldProps = {
   initialNewConnectionValues: {
     [key: string]: ConnectionTypeValueType;
   };
+  initialConnectionName?: string;
   setNewConnection: (connection: Connection) => void;
   modelUri?: string;
   setModelUri: (uri?: string) => void;
   setIsConnectionValid: (isValid: boolean) => void;
 };
 
-const NewConnectionField: React.FC<NewConnectionFieldProps> = ({
+const NewModelConnectionField: React.FC<NewConnectionFieldProps> = ({
   connectionTypes,
   data,
   setData,
   initialNewConnectionType,
   initialNewConnectionValues,
+  initialConnectionName,
   setNewConnection,
   modelUri,
   setModelUri,
   setIsConnectionValid,
 }) => {
-  const enabledConnectionTypes = React.useMemo(
-    () => filterEnabledConnectionTypes(connectionTypes),
-    [connectionTypes],
-  );
-  const [selectedConnectionType, setSelectedConnectionType] = React.useState<
-    ConnectionTypeConfigMapObj | undefined
-  >(
-    initialNewConnectionType ||
-      (enabledConnectionTypes.length === 1
-        ? withRequiredFields(connectionTypes[0], S3ConnectionTypeKeys)
-        : undefined),
-  );
-  const { data: nameDescData, onDataChange: setNameDescData } = useK8sNameDescriptionFieldData();
-  const [connectionValues, setConnectionValues] = React.useState<{
-    [key: string]: ConnectionTypeValueType;
-  }>(
-    enabledConnectionTypes.length === 1
-      ? getDefaultValues(enabledConnectionTypes[0])
-      : initialNewConnectionValues,
-  );
-
-  React.useEffect(() => {
-    if (initialNewConnectionType) {
-      setSelectedConnectionType(initialNewConnectionType);
-      setConnectionValues(initialNewConnectionValues);
+  const s3BucketRequired = ((ct) =>
+    withRequiredFields(ct, S3ConnectionTypeKeys) ??
+    ct) satisfies UseNewConnectionFieldData['extraConnectionTypeModifiers'];
+  const accessTypeHasPush = ((field, error, value) => {
+    if (field.envVar === 'ACCESS_TYPE' && Array.isArray(value)) {
+      if (value.includes(AccessTypes.PUSH) && !value.includes(AccessTypes.PULL)) {
+        return 'Access type must include pull';
+      }
     }
-  }, [initialNewConnectionType, initialNewConnectionValues]);
+    return null;
+  }) satisfies UseNewConnectionFieldData['extraValidation'];
 
-  const [connectionErrors, setConnectionErrors] = React.useState<{
-    [key: string]: boolean | string;
-  }>({});
-  const isFormValid = React.useMemo(
-    () =>
-      !!selectedConnectionType &&
-      isK8sNameDescriptionDataValid(nameDescData) &&
-      !selectedConnectionType.data?.fields?.find(
-        (field) =>
-          isConnectionTypeDataField(field) &&
-          field.required &&
-          !connectionValues[field.envVar] &&
-          field.type !== ConnectionTypeFieldType.Boolean,
-      ) &&
-      !Object.values(connectionErrors).find((e) => !!e),
-    [selectedConnectionType, nameDescData, connectionValues, connectionErrors],
+  const newConnectionData = useNewConnectionField(
+    data.project,
+    connectionTypes,
+    initialConnectionName,
+    initialNewConnectionType,
+    initialNewConnectionValues,
+    s3BucketRequired,
+    accessTypeHasPush,
   );
 
+  // todo: remove / lift up to a useConnectionSection hook
   React.useEffect(() => {
-    let newConnection;
-    if (selectedConnectionType) {
-      newConnection = assembleConnectionSecret(
-        data.project,
-        getResourceNameFromK8sResource(selectedConnectionType),
-        nameDescData,
-        connectionValues,
-      );
-      setNewConnection(newConnection);
+    if (newConnectionData.selectedConnectionType && newConnectionData.newConnection) {
+      setNewConnection(newConnectionData.newConnection);
+      setData('storage', {
+        ...data.storage,
+        type: InferenceServiceStorageType.NEW_STORAGE,
+      });
     }
     setIsConnectionValid(
-      isFormValid &&
-        !!newConnection &&
-        isModelPathValid(newConnection, data.storage.path, modelUri),
+      newConnectionData.isFormValid &&
+        !!newConnectionData.newConnection &&
+        isModelPathValid(newConnectionData.newConnection, data.storage.path, modelUri),
     );
   }, [
-    connectionValues,
+    newConnectionData.selectedConnectionType,
+    newConnectionData.newConnection,
+    newConnectionData.isFormValid,
     data.project,
-    connectionErrors,
     data.storage.path,
     modelUri,
-    isFormValid,
-    nameDescData,
-    selectedConnectionType,
+    data.storage,
     setIsConnectionValid,
     setNewConnection,
+    setData,
   ]);
-
-  const { changeSelectionType } = usePersistentData({
-    setConnectionValues,
-    setConnectionErrors,
-    setSelectedConnectionType,
-    connectionValues,
-    selectedConnectionType,
-  });
 
   return (
     <FormSection>
-      <ConnectionTypeForm
-        options={enabledConnectionTypes}
-        connectionType={selectedConnectionType}
-        setConnectionType={(type) => {
-          setSelectedConnectionType(
-            withRequiredFields(
-              connectionTypes.find((t) => getResourceNameFromK8sResource(t) === type),
-              S3ConnectionTypeKeys,
-            ),
-          );
-          const obj = connectionTypes.find((c) => c.metadata.name === type);
-          changeSelectionType(obj);
-        }}
-        connectionNameDesc={nameDescData}
-        setConnectionNameDesc={setNameDescData}
-        connectionValues={connectionValues}
-        onChange={(field, value) =>
-          setConnectionValues((prev) => ({ ...prev, [field.envVar]: value }))
-        }
-        onValidate={(field, error, value) => {
-          let newError = error;
-          if (field.envVar === 'ACCESS_TYPE' && Array.isArray(value)) {
-            if (value.includes(AccessTypes.PUSH) && !value.includes(AccessTypes.PULL)) {
-              newError = 'Access type must include pull';
-            }
-          }
-          setConnectionErrors((prev) => ({ ...prev, [field.envVar]: newError }));
-        }}
-        connectionErrors={connectionErrors}
-        Alert={
-          selectedConnectionType &&
-          isModelServingCompatible(selectedConnectionType, ModelServingCompatibleTypes.OCI) ? (
-            <ConnectionOciAlert />
-          ) : undefined
-        }
-      />
-      {selectedConnectionType &&
+      <NewConnectionField newConnectionData={newConnectionData} />
+      {newConnectionData.selectedConnectionType &&
         isModelServingCompatible(
-          selectedConnectionType,
+          newConnectionData.selectedConnectionType,
           ModelServingCompatibleTypes.S3ObjectStorage,
         ) && (
           <ConnectionS3FolderPathField
@@ -357,12 +217,15 @@ const NewConnectionField: React.FC<NewConnectionFieldProps> = ({
             setFolderPath={(path) => setData('storage', { ...data.storage, path })}
           />
         )}
-      {selectedConnectionType &&
-        isModelServingCompatible(selectedConnectionType, ModelServingCompatibleTypes.OCI) &&
-        (typeof connectionValues.OCI_HOST === 'string' ||
-          typeof connectionValues.OCI_HOST === 'undefined') && (
+      {newConnectionData.selectedConnectionType &&
+        isModelServingCompatible(
+          newConnectionData.selectedConnectionType,
+          ModelServingCompatibleTypes.OCI,
+        ) &&
+        (typeof newConnectionData.connectionValues.OCI_HOST === 'string' ||
+          typeof newConnectionData.connectionValues.OCI_HOST === 'undefined') && (
           <ConnectionOciPathField
-            ociHost={connectionValues.OCI_HOST}
+            ociHost={newConnectionData.connectionValues.OCI_HOST}
             modelUri={modelUri}
             setModelUri={setModelUri}
             isNewConnection
@@ -386,9 +249,11 @@ type Props = {
   loaded?: boolean;
   loadError?: Error | undefined;
   connections?: LabeledConnection[];
+  pvcs?: PersistentVolumeClaimKind[];
   connectionTypeFilter?: (ct: ConnectionTypeConfigMapObj) => boolean;
 };
 
+// todo convert 'data' into a generic 'modelLocation' obj
 export const ConnectionSection: React.FC<Props> = ({
   existingUriOption,
   data,
@@ -401,16 +266,42 @@ export const ConnectionSection: React.FC<Props> = ({
   loaded,
   loadError,
   connections,
+  pvcs,
   connectionTypeFilter = () => true,
 }) => {
   const [modelServingConnectionTypes] = useWatchConnectionTypes(true);
+
   const connectionTypes = React.useMemo(
     () => modelServingConnectionTypes.filter(connectionTypeFilter),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [modelServingConnectionTypes],
   );
-
   const hasImagePullSecret = React.useMemo(() => !!data.imagePullSecrets, [data.imagePullSecrets]);
+
+  const pvcNameFromUri: string | undefined = React.useMemo(() => {
+    // Get the PVC name from the URI if it's a PVC URI
+    if (existingUriOption && isPVCUri(existingUriOption)) {
+      return getPVCNameFromURI(existingUriOption);
+    }
+    return undefined;
+  }, [existingUriOption]);
+
+  const selectedPVC = React.useMemo(
+    () =>
+      pvcs?.find((pvc) => {
+        // If user has selected a PVC connection, use that
+        if (data.storage.pvcConnection) {
+          return pvc.metadata.name === data.storage.pvcConnection;
+        }
+        // Otherwise, if we have an existing URI, try to find the PVC from that
+        if (existingUriOption) {
+          return pvc.metadata.name === pvcNameFromUri;
+        }
+        // If there's no selected PVC and no URI, there is no selected PVC
+        return undefined;
+      }),
+    [pvcs, data.storage.pvcConnection, existingUriOption, pvcNameFromUri],
+  );
 
   const selectedConnection = React.useMemo(
     () =>
@@ -426,6 +317,70 @@ export const ConnectionSection: React.FC<Props> = ({
     }
   }, [selectedConnection, connection, setConnection]);
 
+  const [prefillComplete, setPrefillComplete] = React.useState(false);
+  const didInitialPVCPrefill = React.useRef(false);
+  const foundPVC = React.useRef(false);
+
+  const handlePVCPrefill = React.useCallback(
+    (uri: string) => {
+      const isPVC = isPVCUri(uri);
+      const editPVC = isPVC ? getPVCFromURI(uri, pvcs) : undefined;
+
+      if (editPVC) {
+        setData('storage', {
+          ...data.storage,
+          pvcConnection: editPVC.metadata.name,
+          type: InferenceServiceStorageType.PVC_STORAGE,
+          uri: existingUriOption,
+        });
+        foundPVC.current = true;
+      } else if (pvcNameFromUri) {
+        setData('storage', {
+          ...data.storage,
+          type: InferenceServiceStorageType.PVC_STORAGE,
+          uri: existingUriOption,
+        });
+      } else {
+        setData('storage', {
+          ...data.storage,
+          type: InferenceServiceStorageType.EXISTING_URI,
+          uri: existingUriOption,
+        });
+      }
+      didInitialPVCPrefill.current = true;
+      setPrefillComplete(true);
+    },
+    [pvcs, existingUriOption, data.storage, setData],
+  );
+
+  React.useEffect(() => {
+    if (!loaded) {
+      return;
+    }
+
+    // Only prefill if not already done
+    if (!didInitialPVCPrefill.current) {
+      // If editing, and storage type is already set to something other than URI/PVC, just mark as complete
+      if (
+        data.storage.type === InferenceServiceStorageType.EXISTING_STORAGE ||
+        data.storage.type === InferenceServiceStorageType.NEW_STORAGE
+      ) {
+        didInitialPVCPrefill.current = true;
+        setPrefillComplete(true);
+        return;
+      }
+
+      // Otherwise, handle PVC/URI prefill
+      if (existingUriOption !== undefined && pvcNameFromUri) {
+        handlePVCPrefill(existingUriOption);
+      }
+
+      // If nothing to prefill, just mark as complete
+      didInitialPVCPrefill.current = true;
+      setPrefillComplete(true);
+    }
+  }, [loaded, pvcs, existingUriOption, data.storage, setData, handlePVCPrefill]);
+
   if (loadError) {
     return (
       <Alert title="Error loading connections" variant="danger">
@@ -434,13 +389,12 @@ export const ConnectionSection: React.FC<Props> = ({
     );
   }
 
-  if (!loaded) {
+  if (!loaded || !prefillComplete) {
     return <Skeleton />;
   }
-
   return (
     <>
-      {existingUriOption && !hasImagePullSecret && (
+      {existingUriOption && !hasImagePullSecret && !pvcNameFromUri && (
         <Radio
           id="existing-uri-radio"
           name="existing-uri-radio"
@@ -459,89 +413,215 @@ export const ConnectionSection: React.FC<Props> = ({
           body={data.storage.type === InferenceServiceStorageType.EXISTING_URI && data.storage.uri}
         />
       )}
-      <Radio
-        name="existing-connection-radio"
-        id="existing-connection-radio"
-        data-testid="existing-connection-radio"
-        label="Existing connection"
-        isChecked={data.storage.type === InferenceServiceStorageType.EXISTING_STORAGE}
-        onChange={() => {
-          setConnection(undefined);
-          setData('storage', {
-            ...data.storage,
-            type: InferenceServiceStorageType.EXISTING_STORAGE,
-            uri: undefined,
-            alert: undefined,
-          });
-        }}
-        body={
-          data.storage.type === InferenceServiceStorageType.EXISTING_STORAGE &&
-          connections && (
-            <ExistingConnectionField
-              connectionTypes={connectionTypes}
-              projectConnections={connections}
-              selectedConnection={selectedConnection?.connection}
-              onSelect={(selection) => {
-                setConnection(selection);
+      {connections?.length !== 0 ? (
+        <>
+          <Radio
+            name="existing-connection-radio"
+            id="existing-connection-radio"
+            data-testid="existing-connection-radio"
+            label="Existing connection"
+            isChecked={data.storage.type === InferenceServiceStorageType.EXISTING_STORAGE}
+            onChange={() => {
+              setConnection(undefined);
+              setData('storage', {
+                ...data.storage,
+                type: InferenceServiceStorageType.EXISTING_STORAGE,
+                uri: undefined,
+                alert: undefined,
+              });
+            }}
+            body={
+              data.storage.type === InferenceServiceStorageType.EXISTING_STORAGE &&
+              connections && (
+                <ExistingModelConnectionField
+                  connectionTypes={connectionTypes}
+                  projectConnections={connections}
+                  selectedConnection={selectedConnection?.connection}
+                  onSelect={(selection) => {
+                    setConnection(selection);
+                    setData('storage', {
+                      ...data.storage,
+                      dataConnection: getResourceNameFromK8sResource(selection),
+                      // Clear the URI when switching connections
+                      uri:
+                        data.storage.dataConnection &&
+                        getResourceNameFromK8sResource(selection) !== data.storage.dataConnection
+                          ? undefined
+                          : data.storage.uri,
+                    });
+                  }}
+                  folderPath={data.storage.path}
+                  setFolderPath={(path) => setData('storage', { ...data.storage, path })}
+                  modelUri={data.storage.uri}
+                  setModelUri={(uri) => setData('storage', { ...data.storage, uri })}
+                  setIsConnectionValid={setIsConnectionValid}
+                />
+              )
+            }
+          />
+          <Radio
+            name="new-connection-radio"
+            id="new-connection-radio"
+            data-testid="new-connection-radio"
+            label="Create connection"
+            isChecked={data.storage.type === InferenceServiceStorageType.NEW_STORAGE}
+            onChange={() => {
+              setConnection(undefined);
+              setData('storage', {
+                ...data.storage,
+                type: InferenceServiceStorageType.NEW_STORAGE,
+                dataConnection: '',
+                uri: undefined,
+                alert: undefined,
+              });
+            }}
+            body={
+              data.storage.type === InferenceServiceStorageType.NEW_STORAGE && (
+                <Stack hasGutter>
+                  {data.storage.alert && (
+                    <StackItem>
+                      <Alert
+                        isInline
+                        variant={data.storage.alert.type}
+                        title={data.storage.alert.title}
+                      >
+                        {data.storage.alert.message}
+                      </Alert>
+                    </StackItem>
+                  )}
+                  <NewModelConnectionField
+                    connectionTypes={connectionTypes}
+                    data={data}
+                    setData={setData}
+                    initialNewConnectionType={initialNewConnectionType}
+                    initialNewConnectionValues={initialNewConnectionValues}
+                    initialConnectionName={data.storage.dataConnection}
+                    setNewConnection={setConnection}
+                    modelUri={data.storage.uri}
+                    setModelUri={(uri) => setData('storage', { ...data.storage, uri })}
+                    setIsConnectionValid={setIsConnectionValid}
+                  />
+                </Stack>
+              )
+            }
+          />
+          {(pvcs && pvcs.length > 0) || pvcNameFromUri ? (
+            <Radio
+              label="Existing cluster storage"
+              name="pvc-serving-radio"
+              id="pvc-serving-radio"
+              data-testid="pvc-serving-radio"
+              isChecked={data.storage.type === InferenceServiceStorageType.PVC_STORAGE}
+              onChange={() => {
+                setConnection(undefined);
                 setData('storage', {
                   ...data.storage,
-                  dataConnection: getResourceNameFromK8sResource(selection),
+                  type: InferenceServiceStorageType.PVC_STORAGE,
+                  uri: undefined,
+                  alert: undefined,
                 });
               }}
-              folderPath={data.storage.path}
-              setFolderPath={(path) => setData('storage', { ...data.storage, path })}
+              body={
+                data.storage.type === InferenceServiceStorageType.PVC_STORAGE && (
+                  <PvcSelect
+                    pvcs={pvcs}
+                    selectedPVC={selectedPVC}
+                    onSelect={(selection?: PersistentVolumeClaimKind | undefined) => {
+                      setData('storage', {
+                        ...data.storage,
+                        type: InferenceServiceStorageType.PVC_STORAGE,
+                        pvcConnection: selection?.metadata.name ?? '',
+                      });
+                    }}
+                    setModelUri={(uri) => setData('storage', { ...data.storage, uri })}
+                    setIsConnectionValid={setIsConnectionValid}
+                    existingUriOption={existingUriOption}
+                    pvcNameFromUri={pvcNameFromUri}
+                  />
+                )
+              }
+            />
+          ) : null}
+        </>
+      ) : pvcs && pvcs.length === 0 ? ( // No connections and no pvcs
+        <FormGroup
+          name="new-connection"
+          id="new-connection"
+          data-testid="new-connection"
+          className="pf-v6-u-mb-lg"
+        >
+          <Stack hasGutter>
+            {data.storage.alert && (
+              <StackItem>
+                <Alert isInline variant={data.storage.alert.type} title={data.storage.alert.title}>
+                  {data.storage.alert.message}
+                </Alert>
+              </StackItem>
+            )}
+            <NewModelConnectionField
+              connectionTypes={connectionTypes}
+              data={data}
+              setData={setData}
+              initialNewConnectionType={initialNewConnectionType}
+              initialNewConnectionValues={initialNewConnectionValues}
+              initialConnectionName={data.storage.dataConnection}
+              setNewConnection={setConnection}
               modelUri={data.storage.uri}
               setModelUri={(uri) => setData('storage', { ...data.storage, uri })}
               setIsConnectionValid={setIsConnectionValid}
             />
-          )
-        }
-      />
-      <Radio
-        name="new-connection-radio"
-        id="new-connection-radio"
-        data-testid="new-connection-radio"
-        label="Create connection"
-        className="pf-v6-u-mb-lg"
-        isChecked={data.storage.type === InferenceServiceStorageType.NEW_STORAGE}
-        onChange={() => {
-          setConnection(undefined);
-          setData('storage', {
-            ...data.storage,
-            type: InferenceServiceStorageType.NEW_STORAGE,
-            uri: undefined,
-            alert: undefined,
-          });
-        }}
-        body={
-          data.storage.type === InferenceServiceStorageType.NEW_STORAGE && (
-            <Stack hasGutter>
-              {data.storage.alert && (
-                <StackItem>
-                  <Alert
-                    isInline
-                    variant={data.storage.alert.type}
-                    title={data.storage.alert.title}
-                  >
-                    {data.storage.alert.message}
-                  </Alert>
-                </StackItem>
-              )}
-              <NewConnectionField
-                connectionTypes={connectionTypes}
-                data={data}
-                setData={setData}
-                initialNewConnectionType={initialNewConnectionType}
-                initialNewConnectionValues={initialNewConnectionValues}
-                setNewConnection={setConnection}
-                modelUri={data.storage.uri}
-                setModelUri={(uri) => setData('storage', { ...data.storage, uri })}
-                setIsConnectionValid={setIsConnectionValid}
-              />
-            </Stack>
-          )
-        }
-      />
+          </Stack>
+        </FormGroup>
+      ) : (
+        // No connections, but there are pvcs
+        <Radio
+          name="new-connection-radio"
+          id="new-connection-radio"
+          data-testid="new-connection-radio"
+          label="Create connection"
+          className="pf-v6-u-mb-lg"
+          isChecked={data.storage.type === InferenceServiceStorageType.NEW_STORAGE}
+          onChange={() => {
+            setConnection(undefined);
+            setData('storage', {
+              ...data.storage,
+              type: InferenceServiceStorageType.NEW_STORAGE,
+              dataConnection: '',
+              uri: undefined,
+              alert: undefined,
+            });
+          }}
+          body={
+            data.storage.type === InferenceServiceStorageType.NEW_STORAGE && (
+              <Stack hasGutter>
+                {data.storage.alert && (
+                  <StackItem>
+                    <Alert
+                      isInline
+                      variant={data.storage.alert.type}
+                      title={data.storage.alert.title}
+                    >
+                      {data.storage.alert.message}
+                    </Alert>
+                  </StackItem>
+                )}
+                <NewModelConnectionField
+                  connectionTypes={connectionTypes}
+                  data={data}
+                  setData={setData}
+                  initialNewConnectionType={initialNewConnectionType}
+                  initialNewConnectionValues={initialNewConnectionValues}
+                  initialConnectionName={data.storage.dataConnection}
+                  setNewConnection={setConnection}
+                  modelUri={data.storage.uri}
+                  setModelUri={(uri) => setData('storage', { ...data.storage, uri })}
+                  setIsConnectionValid={setIsConnectionValid}
+                />
+              </Stack>
+            )
+          }
+        />
+      )}
     </>
   );
 };

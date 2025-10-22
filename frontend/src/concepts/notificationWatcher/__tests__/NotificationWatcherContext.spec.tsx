@@ -2,13 +2,14 @@ import React, { act } from 'react';
 import { render, waitFor } from '@testing-library/react';
 import {
   FinalNotificationWatcherResponse,
+  NotificationResponseStatus,
   NotificationWatcherContext,
   NotificationWatcherContextProvider,
   NotificationWatcherResponse,
-} from '~/concepts/notificationWatcher/NotificationWatcherContext';
-import useNotification from '~/utilities/useNotification';
+} from '#~/concepts/notificationWatcher/NotificationWatcherContext';
+import useNotification from '#~/utilities/useNotification';
 
-jest.mock('~/utilities/useNotification', () => {
+jest.mock('#~/utilities/useNotification', () => {
   const mock = {
     success: jest.fn(),
     error: jest.fn(),
@@ -30,7 +31,7 @@ const createCallbackMock = ({
 }) => {
   const callbackMock = jest.fn();
   Array.from({ length: repollCount }).forEach(() =>
-    callbackMock.mockResolvedValueOnce({ status: 'repoll' }),
+    callbackMock.mockResolvedValueOnce({ status: NotificationResponseStatus.REPOLL }),
   );
   callbackMock.mockResolvedValueOnce(finalResponse);
   return callbackMock;
@@ -66,7 +67,7 @@ describe('NotificationWatcherContextProvider', () => {
 
   it("should trigger 'success' notification", async () => {
     const finalResponse: FinalNotificationWatcherResponse = {
-      status: 'success',
+      status: NotificationResponseStatus.SUCCESS,
       title: 'Success Title',
       message: 'Success Message',
     };
@@ -87,7 +88,7 @@ describe('NotificationWatcherContextProvider', () => {
 
   it("should trigger 'error' notification", async () => {
     const finalResponse: NotificationWatcherResponse = {
-      status: 'error',
+      status: NotificationResponseStatus.ERROR,
       title: 'Error Title',
       message: 'Error Message',
       actions: [{ title: 'Action', onClick: jest.fn() }],
@@ -108,7 +109,9 @@ describe('NotificationWatcherContextProvider', () => {
   });
 
   it("should not do anything if the reported status is 'stop'", async () => {
-    const callbackMock = createCallbackMock({ finalResponse: { status: 'stop' } });
+    const callbackMock = createCallbackMock({
+      finalResponse: { status: NotificationResponseStatus.STOP },
+    });
 
     renderTestComponent([callbackMock]);
 
@@ -127,7 +130,7 @@ describe('NotificationWatcherContextProvider', () => {
     const callbackDelay = 1000;
 
     const finalResponse: NotificationWatcherResponse = {
-      status: 'success',
+      status: NotificationResponseStatus.SUCCESS,
       title: 'Repoll with delay Success Title',
       message: 'Repoll with delay Success Message',
       actions: [{ title: 'Action', onClick: jest.fn() }],
@@ -137,7 +140,7 @@ describe('NotificationWatcherContextProvider', () => {
 
     renderTestComponent([callbackMock], callbackDelay);
 
-    expect(callbackMock).toHaveBeenCalledTimes(0);
+    expect(callbackMock).toHaveBeenCalledTimes(1);
 
     act(() => {
       jest.advanceTimersByTime(repollCount * callbackDelay);
@@ -158,7 +161,7 @@ describe('NotificationWatcherContextProvider', () => {
 
   it("should retry when response is 'repoll' (single callback)", async () => {
     const finalResponse: NotificationWatcherResponse = {
-      status: 'success',
+      status: NotificationResponseStatus.SUCCESS,
       title: 'Repoll Success Title',
       message: 'Repoll Success Message',
       actions: [{ title: 'Action', onClick: jest.fn() }],
@@ -184,7 +187,7 @@ describe('NotificationWatcherContextProvider', () => {
     const callbackMocks = repollCounts.map((repollCount) =>
       createCallbackMock({
         finalResponse: {
-          status: 'success',
+          status: NotificationResponseStatus.SUCCESS,
           title: `${repollCount}x Repoll Success Title`,
           message: `${repollCount}x Repoll Success Message`,
         },
@@ -253,10 +256,10 @@ describe('NotificationWatcherContextProvider', () => {
             callback: async () => {
               try {
                 await callbackMock();
-                return { status: 'repoll' };
+                return { status: NotificationResponseStatus.REPOLL };
               } catch (err) {
                 errorTracker(err);
-                return { status: 'stop' };
+                return { status: NotificationResponseStatus.STOP };
               }
             },
             callbackDelay: 0,

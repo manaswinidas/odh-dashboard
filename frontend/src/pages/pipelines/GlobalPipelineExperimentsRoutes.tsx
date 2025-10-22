@@ -1,27 +1,30 @@
 import * as React from 'react';
 import { Navigate, Route } from 'react-router-dom';
-import ProjectsRoutes from '~/concepts/projects/ProjectsRoutes';
-import GlobalPipelineCoreLoader from '~/pages/pipelines/global/GlobalPipelineCoreLoader';
+import ProjectsRoutes from '#~/concepts/projects/ProjectsRoutes';
+import TitleWithIcon from '#~/concepts/design/TitleWithIcon';
+import { ProjectObjectType } from '#~/concepts/design/utils';
+import GlobalPipelineCoreLoader from '#~/pages/pipelines/global/GlobalPipelineCoreLoader';
 import {
   ExperimentListTabs,
   experimentsPageDescription,
   experimentsPageTitle,
-} from '~/pages/pipelines/global/experiments/const';
-import GlobalExperiments from '~/pages/pipelines/global/experiments/GlobalExperiments';
-import { experimentsBaseRoute } from '~/routes';
-import ExperimentContextProvider from '~/pages/pipelines/global/experiments/ExperimentContext';
-import ExperimentPipelineRuns from '~/pages/pipelines/global/experiments/ExperimentPipelineRuns';
-import ExperimentPipelineRunsTabs from '~/pages/pipelines/global/experiments/ExperimentPipelineRunsTabs';
-import { PipelineRunType } from '~/pages/pipelines/global/runs';
-import ExperimentPipelineRunDetails from '~/pages/pipelines/global/experiments/ExperimentPipelineRunDetails';
-import ExperimentPipelineRecurringRunDetails from '~/pages/pipelines/global/experiments/ExperimentPipelineRecurringRunDetails';
+} from '#~/pages/pipelines/global/experiments/const';
+import GlobalExperiments from '#~/pages/pipelines/global/experiments/GlobalExperiments';
+import { experimentsBaseRoute } from '#~/routes/pipelines/experiments';
+import ExperimentContextProvider from '#~/pages/pipelines/global/experiments/ExperimentContext';
+import ExperimentPipelineRuns from '#~/pages/pipelines/global/experiments/ExperimentPipelineRuns';
+import ExperimentPipelineRunsTabs from '#~/pages/pipelines/global/experiments/ExperimentPipelineRunsTabs';
+import { PipelineRunType } from '#~/pages/pipelines/global/runs/types';
+import ExperimentPipelineRunDetails from '#~/pages/pipelines/global/experiments/ExperimentPipelineRunDetails';
+import ExperimentPipelineRecurringRunDetails from '#~/pages/pipelines/global/experiments/ExperimentPipelineRecurringRunDetails';
 import {
   ExperimentCreateRunPage,
   ExperimentCreateSchedulePage,
-} from '~/pages/pipelines/global/experiments/ExperimentCreateRunPage';
-import PipelineAvailabilityLoader from '~/pages/pipelines/global/pipelines/PipelineAvailabilityLoader';
-import ExperimentDuplicateRunPage from '~/pages/pipelines/global/experiments/ExperimentDuplicateRunPage';
-import ExperimentDuplicateRecurringRunPage from '~/pages/pipelines/global/experiments/ExperimentDuplicateRecurringRunPage';
+} from '#~/pages/pipelines/global/experiments/ExperimentCreateRunPage';
+import PipelineAvailabilityLoader from '#~/pages/pipelines/global/pipelines/PipelineAvailabilityLoader';
+import ExperimentDuplicateRunPage from '#~/pages/pipelines/global/experiments/ExperimentDuplicateRunPage';
+import { buildV2RedirectRoutes } from '#~/utilities/v2Redirect';
+import ExperimentDuplicateRecurringRunPage from '#~/pages/pipelines/global/experiments/ExperimentDuplicateRecurringRunPage';
 import { ExperimentCoreDetails } from './global/GlobalPipelineCoreDetails';
 import {
   ExperimentComparePipelineRunsLoader,
@@ -29,6 +32,7 @@ import {
 } from './global/experiments/compareRuns/GlobalComparePipelineRunsLoader';
 import CompareRunsPage from './global/experiments/compareRuns/CompareRunsPage';
 import ManageRunsPage from './global/experiments/compareRuns/ManageRunsPage';
+import { experimentsV2RedirectMap } from './v2Redirects';
 
 const GlobalPipelineExperimentsRoutes: React.FC = () => (
   <ProjectsRoutes>
@@ -36,7 +40,12 @@ const GlobalPipelineExperimentsRoutes: React.FC = () => (
       path="/:namespace?/*"
       element={
         <GlobalPipelineCoreLoader
-          title={experimentsPageTitle}
+          title={
+            <TitleWithIcon
+              title={experimentsPageTitle}
+              objectType={ProjectObjectType.pipelineExperiment}
+            />
+          }
           description={experimentsPageDescription}
           getInvalidRedirectPath={experimentsBaseRoute}
         />
@@ -112,17 +121,18 @@ const GlobalPipelineExperimentsRoutes: React.FC = () => (
             />
           </Route>
           <Route
-            path="compareRuns"
+            path="compare-runs"
             element={
               <ExperimentComparePipelineRunsLoader BreadcrumbDetailsComponent={CompareRunsPage} />
             }
           />
           <Route
-            path="compareRuns/add"
+            path="compare-runs/add"
             element={
               <ExperimentManagePipelineRunsLoader BreadcrumbDetailsComponent={ManageRunsPage} />
             }
           />
+          {buildV2RedirectRoutes(experimentsV2RedirectMap)}
           <Route path="*" element={<Navigate to="./runs" />} />
         </Route>
       </Route>

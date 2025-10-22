@@ -18,11 +18,11 @@ import { ZodIssue } from 'zod';
 import {
   FineTunePageSections,
   fineTunePageSectionTitles,
-} from '~/pages/pipelines/global/modelCustomization/const';
-import { createRunRoute } from '~/routes';
-import { usePipelinesAPI } from '~/concepts/pipelines/context';
-import { PipelineKF, PipelineVersionKF } from '~/concepts/pipelines/kfTypes';
-import FormSection from '~/components/pf-overrides/FormSection';
+} from '#~/pages/pipelines/global/modelCustomization/const';
+import { createRunRoute } from '#~/routes/pipelines/runs';
+import { usePipelinesAPI } from '#~/concepts/pipelines/context';
+import { PipelineKF, PipelineVersionKF } from '#~/concepts/pipelines/kfTypes';
+import FormSection from '#~/components/pf-overrides/FormSection';
 
 type PipelineDetailsSectionProps = {
   ilabPipeline: PipelineKF | null;
@@ -105,8 +105,12 @@ export const PipelineDetailsSection: React.FC<PipelineDetailsSectionProps> = ({
                             </Button>
                           </ActionListItem>
                           <ActionListItem>
-                            <Button variant="link" isInline onClick={() => navigate('/pipelines')}>
-                              Go to <b>Pipelines</b>
+                            <Button
+                              variant="link"
+                              isInline
+                              onClick={() => navigate('/develop-train/pipelines/definitions')}
+                            >
+                              Go to <b>Pipeline definitions</b>
                             </Button>
                           </ActionListItem>
                         </ActionList>

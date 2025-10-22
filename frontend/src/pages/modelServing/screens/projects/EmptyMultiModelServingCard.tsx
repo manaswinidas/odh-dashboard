@@ -8,9 +8,9 @@ import {
   Content,
   ContentVariants,
 } from '@patternfly/react-core';
-import { ProjectDetailsContext } from '~/pages/projects/ProjectDetailsContext';
-import ModelServingPlatformSelectButton from '~/pages/modelServing/screens/projects/ModelServingPlatformSelectButton';
-import { NamespaceApplicationCase } from '~/pages/projects/types';
+import { ProjectDetailsContext } from '#~/pages/projects/ProjectDetailsContext';
+import ModelServingPlatformSelectButton from '#~/pages/modelServing/screens/projects/ModelServingPlatformSelectButton';
+import { NamespaceApplicationCase } from '#~/pages/projects/types';
 
 type EmptyMultiModelServingCardProps = {
   setErrorSelectingPlatform: (e?: Error) => void;
@@ -27,7 +27,7 @@ const EmptyMultiModelServingCard: React.FC<EmptyMultiModelServingCardProps> = ({
         border: '1px solid var(--pf-t--global--border--color--default)',
         borderRadius: 16,
       }}
-      data-testid="multi-serving-platform-card"
+      data-testid="model-mesh-platform-card"
     >
       <CardTitle>
         <Content>
@@ -45,7 +45,7 @@ const EmptyMultiModelServingCard: React.FC<EmptyMultiModelServingCardProps> = ({
             servingPlatform={NamespaceApplicationCase.MODEL_MESH_PROMOTION}
             setError={setErrorSelectingPlatform}
             variant="secondary"
-            data-testid="multi-serving-select-button"
+            data-testid="model-mesh-select-button"
           />
         </Bullseye>
       </CardFooter>

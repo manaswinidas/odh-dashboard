@@ -1,32 +1,40 @@
-import { mockProjectK8sResource } from '~/__mocks__/mockProjectK8sResource';
+import { mockProjectK8sResource } from '#~/__mocks__/mockProjectK8sResource';
 import {
   createNIMPVC,
   createNIMSecret,
   fetchNIMModelNames,
   getCreateInferenceServiceLabels,
   getProjectModelServingPlatform,
+  getPVCFromURI,
+  getModelPathFromUri,
   getUrlFromKserveInferenceService,
-} from '~/pages/modelServing/screens/projects/utils';
-import { ServingPlatformStatuses } from '~/pages/modelServing/screens/types';
-import { ServingRuntimePlatform } from '~/types';
-import { mockInferenceServiceK8sResource } from '~/__mocks__/mockInferenceServiceK8sResource';
-import { createPvc, createSecret } from '~/api';
-import { PersistentVolumeClaimKind, ServingRuntimeKind } from '~/k8sTypes';
+  isCurrentServingPlatformEnabled,
+  isValueFromEnvVar,
+  isPVCUri,
+  getPVCNameFromURI,
+} from '#~/pages/modelServing/screens/projects/utils';
+import { ServingPlatformStatuses } from '#~/pages/modelServing/screens/types';
+import { ServingRuntimePlatform } from '#~/types';
+import { mockInferenceServiceK8sResource } from '#~/__mocks__/mockInferenceServiceK8sResource';
+import { createPvc, createSecret } from '#~/api';
+import { PersistentVolumeClaimKind, ServingRuntimeKind } from '#~/k8sTypes';
 import {
   getNIMData,
   getNIMResource,
   updateServingRuntimeTemplate,
-} from '~/pages/modelServing/screens/projects/nimUtils';
+} from '#~/pages/modelServing/screens/projects/nimUtils';
+import { AccessMode } from '#~/pages/storageClasses/storageEnums';
+import { mockPVCK8sResource } from '#~/__mocks__/mockPVCK8sResource';
 
-jest.mock('~/api', () => ({
+jest.mock('#~/api', () => ({
   getSecret: jest.fn(),
   createSecret: jest.fn(),
   createPvc: jest.fn(),
   getInferenceServiceContext: jest.fn(),
 }));
 
-jest.mock('~/pages/modelServing/screens/projects/nimUtils', () => ({
-  ...jest.requireActual('~/pages/modelServing/screens/projects/nimUtils'),
+jest.mock('#~/pages/modelServing/screens/projects/nimUtils', () => ({
+  ...jest.requireActual('#~/pages/modelServing/screens/projects/nimUtils'),
   getNIMData: jest.fn(),
   getNIMResource: jest.fn(),
 }));
@@ -390,7 +398,7 @@ describe('createNIMPVC', () => {
       namespace: projectName,
     },
     spec: {
-      accessModes: ['ReadWriteOnce'],
+      accessModes: [AccessMode.RWO],
       resources: {
         requests: {
           storage: pvcSize,
@@ -516,5 +524,120 @@ describe('updateServingRuntimeTemplate', () => {
     const result = updateServingRuntimeTemplate(servingRuntimeWithoutVolumeMounts, pvcName);
 
     expect(result.spec.containers[0].volumeMounts).toBeUndefined();
+  });
+});
+
+describe('isCurrentServingPlatformEnabled', () => {
+  const baseStatuses = {
+    kServe: { enabled: true, installed: true },
+    kServeNIM: { enabled: false, installed: false },
+    modelMesh: { enabled: true, installed: true },
+    platformEnabledCount: 2,
+    refreshNIMAvailability: async () => true,
+  };
+
+  it('returns true if currentPlatform is single and kServe is enabled', () => {
+    expect(isCurrentServingPlatformEnabled(ServingRuntimePlatform.SINGLE, baseStatuses)).toBe(true);
+  });
+
+  it('returns false if currentPlatform is single and kServe is disabled', () => {
+    const statuses = { ...baseStatuses, kServe: { enabled: false, installed: true } };
+    expect(isCurrentServingPlatformEnabled(ServingRuntimePlatform.SINGLE, statuses)).toBe(false);
+  });
+
+  it('returns true if currentPlatform is multi and modelMesh is enabled', () => {
+    expect(isCurrentServingPlatformEnabled(ServingRuntimePlatform.MULTI, baseStatuses)).toBe(true);
+  });
+
+  it('returns false if currentPlatform is multi and modelMesh is disabled', () => {
+    const statuses = { ...baseStatuses, modelMesh: { enabled: false, installed: true } };
+    expect(isCurrentServingPlatformEnabled(ServingRuntimePlatform.MULTI, statuses)).toBe(false);
+  });
+
+  it('returns false if currentPlatform is undefined', () => {
+    expect(isCurrentServingPlatformEnabled(undefined, baseStatuses)).toBe(false);
+  });
+});
+
+describe('isValueFrom', () => {
+  it('should return true if the value is from a valueFrom envVar', () => {
+    expect(
+      isValueFromEnvVar({
+        valueFrom: {
+          secretKeyRef: {
+            name: 'test',
+            key: '',
+          },
+        },
+        name: '',
+      }),
+    ).toBe(true);
+  });
+
+  it('should return false if the value is not from a valueFrom envVar', () => {
+    expect(
+      isValueFromEnvVar({
+        value: 'test',
+        name: '',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('getPVCFromURI', () => {
+  it('should return the PVC from the URI', () => {
+    const uri = 'pvc://pvc-1/model-path';
+    const pvcs = [
+      mockPVCK8sResource({ name: 'pvc-1', uid: 'pvc-1-uid' }),
+      mockPVCK8sResource({ name: 'pvc-2', uid: 'pvc-2-uid' }),
+    ];
+    expect(getPVCFromURI(uri, pvcs)).toEqual(
+      mockPVCK8sResource({ name: 'pvc-1', uid: 'pvc-1-uid' }),
+    );
+  });
+  it('should return undefined if the pvc is not found', () => {
+    const uri = 'pvc://pvc-3/model-path';
+    const pvcs = [
+      mockPVCK8sResource({ name: 'pvc-1', uid: 'pvc-1-uid' }),
+      mockPVCK8sResource({ name: 'pvc-2', uid: 'pvc-2-uid' }),
+    ];
+    expect(getPVCFromURI(uri, pvcs)).toBeUndefined();
+  });
+});
+
+describe('getModelPathFromUri', () => {
+  it('should return the model path', () => {
+    const uri = 'pvc://pvc-1/model-path';
+    expect(getModelPathFromUri(uri)).toEqual('model-path');
+  });
+  it('should return an empty string if the URI is not a valid URI', () => {
+    const uri = 'not a uri';
+    expect(getModelPathFromUri(uri)).toEqual('');
+  });
+});
+
+describe('isPVCUri', () => {
+  it('should return true if the URI is a PVC URI', () => {
+    const uri = 'pvc://pvc-1/model-path';
+    expect(isPVCUri(uri)).toEqual(true);
+  });
+  it('should return false if the URI is not a PVC URI', () => {
+    const uri = 'not a uri';
+    expect(isPVCUri(uri)).toEqual(false);
+  });
+});
+
+describe('getPVCNameFromURI', () => {
+  it('should return the PVC name from the URI', () => {
+    const uri = 'pvc://pvc-1/model-path';
+    expect(getPVCNameFromURI(uri)).toEqual('pvc-1');
+  });
+  it('should return an empty string if the URI is not a valid URI', () => {
+    const uri = 'not a uri';
+    expect(getPVCNameFromURI(uri)).toEqual('');
+  });
+  it('should return an empty string if the URI is not a PVC URI', () => {
+    const uri = 'http://pvc-1/model-path';
+    expect(getPVCNameFromURI(uri)).toEqual('');
   });
 });

@@ -1,6 +1,6 @@
-import { SimpleSelectOption } from '~/components/SimpleSelect';
-import { SortableData } from '~/components/table';
-import { Toleration, TolerationEffect, TolerationOperator } from '~/types';
+import { SimpleSelectOption } from '#~/components/SimpleSelect';
+import { SortableData } from '#~/components/table';
+import { Toleration, TolerationEffect, TolerationOperator } from '#~/types';
 
 export const tolerationColumns: SortableData<Toleration>[] = [
   {
@@ -37,10 +37,14 @@ export const tolerationColumns: SortableData<Toleration>[] = [
 
 export const EMPTY_TOLERATION: Toleration = {
   key: '',
-  operator: TolerationOperator.EQUAL,
 };
 
 export const operatorDropdownOptions: SimpleSelectOption[] = [
+  {
+    key: '',
+    label: 'None',
+    isPlaceholder: true,
+  },
   {
     key: TolerationOperator.EQUAL,
     label: TolerationOperator.EQUAL,

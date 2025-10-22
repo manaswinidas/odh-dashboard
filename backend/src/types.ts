@@ -1,7 +1,6 @@
 import k8s, { V1ConfigMap, V1Secret } from '@kubernetes/client-node';
 import { User } from '@kubernetes/client-node/dist/config_types';
-import { FastifyInstance, FastifyRequest } from 'fastify';
-import { RouteGenericInterface } from 'fastify/types/route';
+import type { FastifyInstance, FastifyRequest, RouteGenericInterface } from 'fastify';
 import { EitherNotBoth } from './typeHelpers';
 
 export type OperatorStatus = {
@@ -13,6 +12,7 @@ export type OperatorStatus = {
 
 export type DashboardConfig = K8sResourceCommon & {
   spec: {
+    // Optional in CRD -- normalized when cached in ResourceWatcher
     dashboardConfig: {
       enablement: boolean;
       disableInfo: boolean;
@@ -37,8 +37,6 @@ export type DashboardConfig = K8sResourceCommon & {
       disableKServeMetrics: boolean;
       disableKServeRaw: boolean;
       disableModelMesh: boolean;
-      disableAcceleratorProfiles: boolean;
-      disableHardwareProfiles: boolean;
       disableDistributedWorkloads: boolean;
       disableModelCatalog: boolean;
       disableModelRegistry: boolean;
@@ -49,28 +47,24 @@ export type DashboardConfig = K8sResourceCommon & {
       disableNIMModelServing: boolean;
       disableAdminConnectionTypes: boolean;
       disableFineTuning: boolean;
+      disableKueue: boolean;
+      disableLMEval: boolean;
+      disableFeatureStore: boolean;
     };
-    /** @deprecated -- replacing this with Platform Auth resource -- remove when this is no longer in the CRD */
-    groupsConfig?: {
-      /** @deprecated -- see above */
-      adminGroups: string;
-      /** @deprecated -- see above */
-      allowedGroups: string;
-    };
+    // Intentionally disjointed from the CRD, we should move away from this code-wise now; CRD later
+    // groupsConfig?: {
     notebookSizes?: NotebookSize[];
     modelServerSizes?: ModelServerSize[];
     notebookController?: {
       enabled: boolean;
       pvcSize?: string;
-      notebookNamespace?: string;
-      notebookTolerationSettings?: {
-        enabled: boolean;
-        key: string;
-      };
+      // Intentionally disjointed from the CRD, we should move away from this code-wise now; CRD later
+      // notebookNamespace?: string;
       storageClassName?: string;
     };
     templateOrder?: string[];
     templateDisablement?: string[];
+    hardwareProfileOrder?: string[];
   };
 };
 
@@ -96,16 +90,10 @@ export type NotebookSize = {
   notUserDefined?: boolean;
 };
 
-export type NotebookTolerationSettings = {
-  enabled: boolean;
-  key: string;
-};
-
 export type ClusterSettings = {
   pvcSize: number;
   cullerTimeout: number;
   userTrackingEnabled: boolean;
-  notebookTolerationSettings: NotebookTolerationSettings | null;
   modelServingPlatformEnabled: {
     kServe: boolean;
     modelMesh: boolean;
@@ -256,22 +244,6 @@ export type ConsoleLinkKind = {
   };
 } & K8sResourceCommon;
 
-export type KfDefApplication = {
-  kustomizeConfig: {
-    repoRef: {
-      name: string;
-      path: string;
-    };
-  };
-  name: string;
-};
-
-export type KfDefResource = K8sResourceCommon & {
-  spec: {
-    applications: KfDefApplication[];
-  };
-};
-
 export type KubeStatus = {
   currentContext: string;
   currentUser: User;
@@ -302,7 +274,15 @@ export type KubeFastifyInstance = FastifyInstance & {
 
 // TODO: constant-ize the x-forwarded header
 export type OauthFastifyRequest<Data extends RouteGenericInterface = RouteGenericInterface> =
-  FastifyRequest<{ Headers?: { 'x-forwarded-access-token'?: string } & Data['Headers'] } & Data>;
+  FastifyRequest<
+    {
+      Headers?: {
+        'x-forwarded-access-token'?: string;
+        'x-auth-request-user'?: string;
+        'x-auth-request-groups'?: string;
+      } & Data['Headers'];
+    } & Data
+  >;
 
 /*
  * Common types, should be kept up to date with frontend types
@@ -339,6 +319,11 @@ export type OdhApplication = {
       variableHelpText?: { [key: string]: string };
       variables?: { [key: string]: string };
       inProgressText?: string;
+      warningValidation?: {
+        field: string;
+        validationRegex?: string;
+        message: string;
+      };
     };
     enableCR: {
       field?: string;
@@ -356,7 +341,6 @@ export type OdhApplication = {
     img: string;
     shownOnEnabledPage: boolean | null;
     isEnabled: boolean | null;
-    kfdefApplications: string[];
     link: string | null;
     provider: string;
     quickStart: string | null;
@@ -433,7 +417,7 @@ export type NotebookAffinity = {
 
 export type Volume = {
   name: string;
-  emptyDir?: Record<string, any>; // eslint-disable-line
+  emptyDir?: Record<string, any>;
   persistentVolumeClaim?: {
     claimName: string;
   };
@@ -478,32 +462,6 @@ export type NotebookList = {
   metadata: Record<string, unknown>;
   items: Notebook[];
 } & K8sResourceCommon;
-
-export type Route = {
-  apiVersion?: string;
-  kind?: string;
-  metadata: {
-    name: string;
-    namespace: string;
-    annotations?: { [key: string]: string };
-  };
-  spec: {
-    host: string;
-    port: {
-      targetPort: string;
-    };
-    tls: {
-      insecureEdgeTerminationPolicy: string;
-      termination: string;
-    };
-    to: {
-      kind: string;
-      name: string;
-      weight: number;
-    };
-    wildcardPolicy: string;
-  };
-};
 
 export type ODHSegmentKey = {
   segmentKey: string;
@@ -628,14 +586,6 @@ export type ImageTagInfo = {
 };
 
 export type ImageType = 'byon' | 'jupyter' | 'other';
-
-export type StorageClassConfig = {
-  displayName: string;
-  isEnabled: boolean;
-  isDefault: boolean;
-  lastModified: string;
-  description?: string;
-};
 
 export type PersistentVolumeClaimKind = {
   apiVersion?: string;
@@ -1019,27 +969,44 @@ export enum KnownLabels {
   DATA_CONNECTION_AWS = 'opendatahub.io/managed',
   CONNECTION_TYPE = 'opendatahub.io/connection-type',
   LABEL_SELECTOR_MODEL_REGISTRY = 'component=model-registry',
+  KUEUE_MANAGED = 'kueue.openshift.io/managed',
 }
 
-type ComponentNames =
-  | 'codeflare'
-  | 'data-science-pipelines-operator'
-  | 'kserve'
-  | 'model-mesh'
-  // Bug: https://github.com/opendatahub-io/opendatahub-operator/issues/641
-  | 'odh-dashboard'
-  | 'ray'
-  | 'workbenches';
+export type ManagementState = 'Managed' | 'Unmanaged' | 'Removed';
+
+// Base component status shared by all components
+export type DataScienceClusterComponentStatus = {
+  managementState?: ManagementState;
+  releases?: Array<{
+    name: string;
+    version?: string;
+    repoUrl?: string;
+  }>;
+};
 
 export type DataScienceClusterKindStatus = {
   components?: {
-    modelregistry?: {
+    [key: string]: DataScienceClusterComponentStatus;
+  } & {
+    /** Status of KServe, including deployment mode and serverless configuration. */
+    kserve?: DataScienceClusterComponentStatus & {
+      defaultDeploymentMode?: string;
+      serverlessMode?: string;
+    };
+    /** Status of Model Registry, including its namespace configuration. */
+    modelregistry?: DataScienceClusterComponentStatus & {
       registriesNamespace?: string;
+    };
+    workbenches?: DataScienceClusterComponentStatus & {
+      workbenchNamespace?: string;
     };
   };
   conditions: K8sCondition[];
-  installedComponents: { [key in ComponentNames]?: boolean };
   phase?: string;
+  release?: {
+    name: string;
+    version?: string;
+  };
 };
 
 export type DataScienceClusterKind = K8sResourceCommon & {
@@ -1112,6 +1079,11 @@ export type DSPipelineExternalStorageKind = {
   };
 };
 
+export enum DSPipelineAPIServerPipelineStore {
+  KUBERNETES = 'kubernetes',
+  DATABASE = 'database',
+}
+
 export type DSPipelineKind = K8sResourceCommon & {
   metadata: {
     name: string;
@@ -1127,6 +1099,7 @@ export type DSPipelineKind = K8sResourceCommon & {
         name: string;
       }>;
       enableSamplePipeline: boolean;
+      pipelineStore?: DSPipelineAPIServerPipelineStore;
     }>;
     database?: Partial<{
       externalDB: Partial<{
@@ -1295,6 +1268,7 @@ export type NIMAccountKind = K8sResourceCommon & {
       name: string;
     };
     conditions?: K8sCondition[];
+    lastAccountCheck?: string;
   };
 };
 
@@ -1323,3 +1297,55 @@ export type AuthKind = K8sResourceCommon & {
     allowedGroups: string[];
   };
 };
+
+export type FeatureStoreKind = K8sResourceCommon & {
+  metadata: {
+    name: string;
+    namespace: string;
+    annotations?: Record<string, string>;
+  };
+  spec: {
+    feastProject: string;
+    services: Record<string, any>;
+    authz?: {
+      kubernetes?: {
+        roles?: string[];
+      };
+      oidc?: {
+        secretRef: {
+          name: string;
+        };
+      };
+    };
+    cronJob?: Record<string, never>;
+    volumes?: Record<string, never>[];
+  };
+  status?: {
+    applied?: {
+      cronJob?: {
+        concurrencyPolicy: string;
+        containerConfigs: {
+          commands: string[];
+          image: string;
+        };
+        schedule: string;
+        startingDeadlineSeconds: number;
+        suspend: boolean;
+      };
+      feastProject: string;
+      services?: Record<string, any>;
+    };
+    clientConfigMap?: string;
+    conditions?: K8sCondition[];
+    cronJob?: string;
+    feastVersion?: string;
+    phase?: string;
+    serviceHostnames?: Record<string, string>;
+  };
+};
+
+export enum OdhPlatformType {
+  OPEN_DATA_HUB = 'Open Data Hub',
+  SELF_MANAGED_RHOAI = 'OpenShift AI Self-Managed',
+  MANAGED_RHOAI = 'OpenShift AI Cloud Service',
+} // Reference: https://github.com/red-hat-data-services/rhods-operator/blob/main/pkg/cluster/const.go

@@ -1,58 +1,86 @@
-import { DashboardCommonConfig } from '~/k8sTypes';
+import { DashboardCommonConfig } from '#~/k8sTypes';
 import {
   StackCapability,
-  StackComponent,
   SupportedArea,
   SupportedAreasState,
   DataScienceStackComponent,
 } from './types';
 
-export const allFeatureFlags: string[] = Object.keys({
+export const techPreviewFlags = {
+  disableModelRegistry: true,
+} satisfies Partial<DashboardCommonConfig>;
+
+export const devTemporaryFeatureFlags = {
+  disableKueue: true,
+  disableLlamaStackChatBot: true, // internal dev only
+  disableProjectScoped: true,
+  disableModelAsService: true,
+} satisfies Partial<DashboardCommonConfig>;
+
+// Group 1: Core Dashboard Features
+export const coreDashboardFlags = {
   enablement: false,
   disableInfo: false,
   disableSupport: false,
-  disableClusterManager: false,
-  disableTracking: false,
-  disableBYONImageStream: false,
-  disableISVBadges: false,
-  disableAppLauncher: false,
-  disableUserManagement: false,
   disableHome: false,
+  disableAppLauncher: false,
+  disableTracking: false,
+  disableISVBadges: false,
+} satisfies Partial<DashboardCommonConfig>;
+
+// Group 2: Project & User Management Features
+export const projectManagementFlags = {
   disableProjects: false,
-  disableModelServing: false,
-  disableProjectScoped: true,
   disableProjectSharing: false,
+  disableUserManagement: false,
+  disableClusterManager: false,
+  disableBYONImageStream: false,
+  disableAdminConnectionTypes: false,
+  disableStorageClasses: false,
+} satisfies Partial<DashboardCommonConfig>;
+
+// Group 3: Model Serving & AI/ML Infrastructure
+export const modelServingFlags = {
+  disableModelServing: false,
   disableCustomServingRuntimes: false,
-  disablePipelines: false,
-  disableTrustyBiasMetrics: false,
-  disablePerformanceMetrics: false,
+  disableServingRuntimeParams: false,
   disableKServe: false,
   disableKServeAuth: false,
   disableKServeMetrics: false,
   disableKServeRaw: false,
   disableModelMesh: false,
-  disableAcceleratorProfiles: false,
-  disableHardwareProfiles: false,
-  disableDistributedWorkloads: false,
-  disableModelCatalog: true,
-  disableModelRegistry: false,
-  disableModelRegistrySecureDB: false,
-  disableServingRuntimeParams: false,
-  disableStorageClasses: false,
   disableNIMModelServing: false,
-  disableAdminConnectionTypes: false,
+  disablePerformanceMetrics: false,
+  disableTrustyBiasMetrics: false,
+} satisfies Partial<DashboardCommonConfig>;
+
+// Group 4: Advanced AI/ML Features & Pipelines
+export const advancedAIMLFlags = {
+  disablePipelines: false,
+  disableDistributedWorkloads: false,
+  disableModelCatalog: false,
+  disableModelRegistrySecureDB: false,
+  disableFeatureStore: false,
   disableFineTuning: true,
-} satisfies DashboardCommonConfig);
+  disableLMEval: true,
+  disableModelTraining: true,
+} satisfies Partial<DashboardCommonConfig>;
+
+// Combined feature flags object
+const allFeatureFlagsConfig = {
+  ...devTemporaryFeatureFlags,
+  ...techPreviewFlags,
+  ...coreDashboardFlags,
+  ...projectManagementFlags,
+  ...modelServingFlags,
+  ...advancedAIMLFlags,
+} satisfies DashboardCommonConfig;
+
+export const definedFeatureFlags: string[] = Object.keys(allFeatureFlagsConfig);
 
 export const SupportedAreasStateMap: SupportedAreasState = {
   [SupportedArea.BYON]: {
     featureFlags: ['disableBYONImageStream'],
-  },
-  [SupportedArea.ACCELERATOR_PROFILES]: {
-    featureFlags: ['disableAcceleratorProfiles'],
-  },
-  [SupportedArea.HARDWARE_PROFILES]: {
-    featureFlags: ['disableHardwareProfiles'],
   },
   [SupportedArea.CLUSTER_SETTINGS]: {
     featureFlags: ['disableClusterManager'],
@@ -66,7 +94,7 @@ export const SupportedAreasStateMap: SupportedAreasState = {
   },
   [SupportedArea.DS_PIPELINES]: {
     featureFlags: ['disablePipelines'],
-    requiredComponents: [StackComponent.DS_PIPELINES],
+    requiredComponents: [DataScienceStackComponent.DS_PIPELINES],
   },
   [SupportedArea.HOME]: {
     featureFlags: ['disableHome'],
@@ -74,21 +102,16 @@ export const SupportedAreasStateMap: SupportedAreasState = {
   [SupportedArea.DS_PROJECTS_VIEW]: {
     featureFlags: ['disableProjects'],
   },
+  [SupportedArea.MODEL_AS_SERVICE]: {
+    featureFlags: ['disableModelAsService'],
+  },
   [SupportedArea.DS_PROJECT_SCOPED]: {
     featureFlags: ['disableProjectScoped'],
-    reliantAreas: [
-      SupportedArea.WORKBENCHES,
-      SupportedArea.HARDWARE_PROFILES,
-      SupportedArea.MODEL_SERVING,
-    ],
+    reliantAreas: [SupportedArea.WORKBENCHES, SupportedArea.MODEL_SERVING],
   },
   [SupportedArea.DS_PROJECTS_PERMISSIONS]: {
     featureFlags: ['disableProjectSharing'],
     reliantAreas: [SupportedArea.DS_PROJECTS_VIEW],
-  },
-  [SupportedArea.K_SERVE]: {
-    featureFlags: ['disableKServe'],
-    requiredComponents: [StackComponent.K_SERVE],
   },
   [SupportedArea.K_SERVE_AUTH]: {
     featureFlags: ['disableKServeAuth'],
@@ -105,7 +128,7 @@ export const SupportedAreasStateMap: SupportedAreasState = {
   },
   [SupportedArea.MODEL_MESH]: {
     featureFlags: ['disableModelMesh'],
-    requiredComponents: [StackComponent.MODEL_MESH],
+    requiredComponents: [DataScienceStackComponent.MODEL_MESH_SERVING],
   },
   [SupportedArea.MODEL_SERVING]: {
     featureFlags: ['disableModelServing'],
@@ -115,12 +138,12 @@ export const SupportedAreasStateMap: SupportedAreasState = {
   },
   [SupportedArea.WORKBENCHES]: {
     // featureFlags: [], // TODO: We want to disable, no flag exists today
-    requiredComponents: [StackComponent.WORKBENCHES],
+    requiredComponents: [DataScienceStackComponent.WORKBENCHES],
     reliantAreas: [SupportedArea.DS_PROJECTS_VIEW],
   },
   [SupportedArea.BIAS_METRICS]: {
     featureFlags: ['disableTrustyBiasMetrics'],
-    requiredComponents: [StackComponent.TRUSTY_AI],
+    requiredComponents: [DataScienceStackComponent.TRUSTY_AI],
     reliantAreas: [SupportedArea.MODEL_SERVING],
   },
   [SupportedArea.PERFORMANCE_METRICS]: {
@@ -128,12 +151,16 @@ export const SupportedAreasStateMap: SupportedAreasState = {
     reliantAreas: [SupportedArea.MODEL_SERVING],
   },
   [SupportedArea.TRUSTY_AI]: {
-    requiredComponents: [StackComponent.TRUSTY_AI],
+    requiredComponents: [DataScienceStackComponent.TRUSTY_AI],
     reliantAreas: [SupportedArea.BIAS_METRICS],
   },
   [SupportedArea.DISTRIBUTED_WORKLOADS]: {
     featureFlags: ['disableDistributedWorkloads'],
-    requiredComponents: [StackComponent.KUEUE],
+    requiredComponents: [DataScienceStackComponent.KUEUE],
+  },
+  [SupportedArea.KUEUE]: {
+    featureFlags: ['disableKueue'],
+    requiredComponents: [DataScienceStackComponent.KUEUE],
   },
   [SupportedArea.MODEL_CATALOG]: {
     featureFlags: ['disableModelCatalog'],
@@ -141,8 +168,7 @@ export const SupportedAreasStateMap: SupportedAreasState = {
   },
   [SupportedArea.MODEL_REGISTRY]: {
     featureFlags: ['disableModelRegistry'],
-    requiredComponents: [StackComponent.MODEL_REGISTRY],
-    requiredCapabilities: [StackCapability.SERVICE_MESH, StackCapability.SERVICE_MESH_AUTHZ],
+    requiredComponents: [DataScienceStackComponent.MODEL_REGISTRY],
   },
   [SupportedArea.SERVING_RUNTIME_PARAMS]: {
     featureFlags: ['disableServingRuntimeParams'],
@@ -167,13 +193,33 @@ export const SupportedAreasStateMap: SupportedAreasState = {
       SupportedArea.MODEL_REGISTRY,
     ],
   },
+  [SupportedArea.LLAMA_STACK_CHAT_BOT]: {
+    featureFlags: ['disableLlamaStackChatBot'],
+    reliantAreas: [SupportedArea.MODEL_SERVING],
+    //TODO: Add Llama Stack component when details known.
+  },
+  [SupportedArea.LM_EVAL]: {
+    featureFlags: ['disableLMEval'],
+    reliantAreas: [SupportedArea.MODEL_REGISTRY, SupportedArea.MODEL_SERVING],
+  },
+  [SupportedArea.FEATURE_STORE]: {
+    featureFlags: ['disableFeatureStore'],
+    requiredComponents: [DataScienceStackComponent.FEAST_OPERATOR],
+  },
+  [SupportedArea.MODEL_TRAINING]: {
+    featureFlags: ['disableModelTraining'],
+    requiredComponents: [
+      DataScienceStackComponent.TRAINING_OPERATOR,
+      DataScienceStackComponent.KUEUE,
+    ],
+  },
 };
 
 /** Maps each DataScienceStackComponent to its human-readable name **/
 export const DataScienceStackComponentMap: Record<string, string> = {
   [DataScienceStackComponent.CODE_FLARE]: 'CodeFlare',
   [DataScienceStackComponent.DASHBOARD]: 'Dashboard',
-  [DataScienceStackComponent.DS_PIPELINES]: 'Data science pipelines',
+  [DataScienceStackComponent.DS_PIPELINES]: 'Pipelines',
   [DataScienceStackComponent.KUEUE]: 'Kueue',
   [DataScienceStackComponent.MODEL_REGISTRY]: 'Model registry',
   [DataScienceStackComponent.FEAST_OPERATOR]: 'Feast operator',

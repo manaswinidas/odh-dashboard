@@ -3,11 +3,16 @@ import {
   getServingRuntimeOrReturnEmpty,
   resourcesArePositive,
   setUpTokenAuth,
-} from '~/pages/modelServing/utils';
-import { mockServingRuntimeK8sResource } from '~/__mocks__/mockServingRuntimeK8sResource';
-import { ContainerResources } from '~/types';
-import { mockServiceAccountK8sResource } from '~/__mocks__/mockServiceAccountK8sResource';
-import { mockRoleBindingK8sResource } from '~/__mocks__/mockRoleBindingK8sResource';
+  isOciModelUri,
+  getInferenceServiceStoppedStatus,
+  getServingRuntimeVersionStatus,
+  getModelServingPVCAnnotations,
+} from '#~/pages/modelServing/utils';
+import { mockServingRuntimeK8sResource } from '#~/__mocks__/mockServingRuntimeK8sResource';
+import { mockPVCK8sResource } from '#~/__mocks__/mockPVCK8sResource';
+import { ContainerResources } from '#~/types';
+import { mockServiceAccountK8sResource } from '#~/__mocks__/mockServiceAccountK8sResource';
+import { mockRoleBindingK8sResource } from '#~/__mocks__/mockRoleBindingK8sResource';
 import {
   createRole,
   createRoleBinding,
@@ -16,13 +21,14 @@ import {
   getRole,
   getRoleBinding,
   getServiceAccount,
-} from '~/api';
-import { mock404Error } from '~/__mocks__/mockK8sStatus';
-import { mockInferenceServiceK8sResource } from '~/__mocks__/mockInferenceServiceK8sResource';
-import { mockRoleK8sResource } from '~/__mocks__/mockRoleK8sResource';
+} from '#~/api';
+import { mock404Error } from '#~/__mocks__/mockK8sStatus';
+import { mockInferenceServiceK8sResource } from '#~/__mocks__/mockInferenceServiceK8sResource';
+import { mockRoleK8sResource } from '#~/__mocks__/mockRoleK8sResource';
+import { ServingRuntimeVersionStatusLabel } from '#~/pages/modelServing/screens/const';
 
-jest.mock('~/api', () => ({
-  ...jest.requireActual('~/api'),
+jest.mock('#~/api', () => ({
+  ...jest.requireActual('#~/api'),
   getServiceAccount: jest.fn(),
   createServiceAccount: jest.fn(),
   getRoleBinding: jest.fn(),
@@ -292,5 +298,81 @@ describe('getServingRuntimeSizeOrReturnEmpty', () => {
     };
     const servingRuntime = mockServingRuntimeK8sResource({ resources });
     expect(getServingRuntimeOrReturnEmpty(servingRuntime)).toBe(resources);
+  });
+});
+
+describe('isOciModelUri', () => {
+  it('returns true for oci:// URIs', () => {
+    expect(isOciModelUri('oci://my-model')).toBe(true);
+  });
+  it('returns false for non-oci URIs', () => {
+    expect(isOciModelUri('s3://my-model')).toBe(false);
+    expect(isOciModelUri(undefined)).toBe(false);
+    expect(isOciModelUri('')).toBe(false);
+  });
+});
+
+describe('getInferenceServiceStoppedStatus', () => {
+  it('should return running status when model is running', () => {
+    const inferenceService = mockInferenceServiceK8sResource({});
+
+    expect(getInferenceServiceStoppedStatus(inferenceService)).toEqual({
+      inferenceService,
+      isStopped: false,
+      isRunning: true,
+    });
+  });
+
+  it('should return stopped status when model is stopped', () => {
+    const inferenceService = mockInferenceServiceK8sResource({});
+    inferenceService.metadata.annotations ??= {};
+    inferenceService.metadata.annotations['serving.kserve.io/stop'] = 'true';
+
+    expect(getInferenceServiceStoppedStatus(inferenceService)).toEqual({
+      inferenceService,
+      isStopped: true,
+      isRunning: false,
+    });
+  });
+});
+
+describe('getServingRuntimeVersionStatus', () => {
+  it('should return undefined if servingRuntimeVersion or templateVersion is undefined', () => {
+    expect(getServingRuntimeVersionStatus(undefined, undefined)).toBeUndefined();
+  });
+
+  it('should return latest if servingRuntimeVersion and templateVersion are the same', () => {
+    expect(getServingRuntimeVersionStatus('1.0.0', '1.0.0')).toBe(
+      ServingRuntimeVersionStatusLabel.LATEST,
+    );
+  });
+
+  it('should return outdated if servingRuntimeVersion and templateVersion are different', () => {
+    expect(getServingRuntimeVersionStatus('1.0.0', '2.0.0')).toBe(
+      ServingRuntimeVersionStatusLabel.OUTDATED,
+    );
+  });
+});
+
+describe('getModelServingPVCAnnotations', () => {
+  it('should return the right annotations', () => {
+    const pvc = mockPVCK8sResource({
+      annotations: {
+        'dashboard.opendatahub.io/model-name': 'test-model',
+        'dashboard.opendatahub.io/model-path': 'test-path',
+      },
+    });
+    expect(getModelServingPVCAnnotations(pvc)).toEqual({
+      modelName: 'test-model',
+      modelPath: 'test-path',
+    });
+  });
+
+  it('should return null if annotations are not present', () => {
+    const pvc = mockPVCK8sResource({});
+    expect(getModelServingPVCAnnotations(pvc)).toEqual({
+      modelName: null,
+      modelPath: null,
+    });
   });
 });

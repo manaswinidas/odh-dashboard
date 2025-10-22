@@ -1,5 +1,5 @@
-import { mockDashboardConfig } from '~/__mocks__';
-import { modelCustomizationLandingPage } from '~/__tests__/cypress/cypress/pages/pipelines';
+import { mockDashboardConfig } from '#~/__mocks__';
+import { modelCustomizationLandingPage } from '#~/__tests__/cypress/cypress/pages/pipelines';
 
 type HandlersProps = {
   disableFineTuning?: boolean;
@@ -21,7 +21,6 @@ describe('Model Customization Landing Page', () => {
         disableFineTuning: true,
       });
       modelCustomizationLandingPage.visit(false);
-      modelCustomizationLandingPage.findNavItem().should('not.exist');
       modelCustomizationLandingPage.findNotFoundPage().should('exist');
     });
 
@@ -30,7 +29,6 @@ describe('Model Customization Landing Page', () => {
         disableFineTuning: false,
       });
       modelCustomizationLandingPage.visit();
-      modelCustomizationLandingPage.findNavItem().should('exist');
       modelCustomizationLandingPage.findPage();
     });
   });
@@ -56,7 +54,7 @@ describe('Model Customization Landing Page', () => {
           name: 'go-to-pipelines',
         })
         .click();
-      cy.url().should('include', '/pipelines');
+      cy.url().should('include', '/develop-train/pipelines/definitions');
     });
   });
 
@@ -81,7 +79,7 @@ describe('Model Customization Landing Page', () => {
           name: 'go-to-pipeline-runs',
         })
         .click();
-      cy.url().should('include', '/pipelineRuns');
+      cy.url().should('include', '/develop-train/pipelines/runs');
     });
 
     it('should go to Model Registry when the button is clicked', () => {
@@ -95,7 +93,7 @@ describe('Model Customization Landing Page', () => {
           name: 'go-to-model-registry',
         })
         .click();
-      cy.url().should('include', '/modelRegistry');
+      cy.url().should('include', '/ai-hub/registry');
     });
   });
 

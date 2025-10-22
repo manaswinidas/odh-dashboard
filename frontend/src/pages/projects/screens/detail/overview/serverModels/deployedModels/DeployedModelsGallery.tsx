@@ -11,22 +11,22 @@ import {
 } from '@patternfly/react-core';
 import { useNavigate } from 'react-router-dom';
 import { SearchIcon } from '@patternfly/react-icons';
-import { ProjectDetailsContext } from '~/pages/projects/ProjectDetailsContext';
-import { ProjectSectionID } from '~/pages/projects/screens/detail/types';
-import { isModelMesh } from '~/pages/modelServing/utils';
-import { getPodsForKserve, getPodsForModelMesh } from '~/api';
+import { ProjectDetailsContext } from '#~/pages/projects/ProjectDetailsContext';
+import { ProjectSectionID } from '#~/pages/projects/screens/detail/types';
+import { isModelMesh } from '#~/pages/modelServing/utils';
+import { getPodsForKserve, getPodsForModelMesh } from '#~/api';
 import {
-  checkModelStatus,
+  checkModelPodStatus,
   getInferenceServiceModelState,
-} from '~/pages/modelServing/screens/global/utils';
-import { InferenceServiceModelState, ModelStatus } from '~/pages/modelServing/screens/types';
-import { InferenceServiceKind, ServingRuntimeKind } from '~/k8sTypes';
+} from '#~/concepts/modelServingKServe/kserveStatusUtils';
+import { ModelDeploymentState, ModelStatus } from '#~/pages/modelServing/screens/types';
+import { InferenceServiceKind, ServingRuntimeKind } from '#~/k8sTypes';
 import DeployedModelCard from './DeployedModelCard';
 
-const SUCCESS_STATUSES = [InferenceServiceModelState.LOADED, InferenceServiceModelState.STANDBY];
-const FAILED_STATUSES = [InferenceServiceModelState.FAILED_TO_LOAD];
+const SUCCESS_STATUSES = [ModelDeploymentState.LOADED, ModelDeploymentState.STANDBY];
+const FAILED_STATUSES = [ModelDeploymentState.FAILED_TO_LOAD];
 
-type InferenceServiceStates = { [key: string]: InferenceServiceModelState };
+type InferenceServiceStates = { [key: string]: ModelDeploymentState };
 
 interface DeployedModelsGalleryProps {
   deployedModels: InferenceServiceKind[];
@@ -54,7 +54,7 @@ const DeployedModelsGallery: React.FC<DeployedModelsGalleryProps> = ({
 
     const updateServiceState = (inferenceService: InferenceServiceKind, status?: ModelStatus) => {
       const state = status?.failedToSchedule
-        ? InferenceServiceModelState.FAILED_TO_LOAD
+        ? ModelDeploymentState.FAILED_TO_LOAD
         : getInferenceServiceModelState(inferenceService);
 
       setInferenceServiceStates((prev) => {
@@ -71,7 +71,7 @@ const DeployedModelsGallery: React.FC<DeployedModelsGalleryProps> = ({
             ? getPodsForKserve
             : getPodsForModelMesh)(namespace, deployedModel.spec.predictor.model?.runtime ?? '');
           if (!canceled) {
-            updateServiceState(deployedModel, checkModelStatus(modelPods[0]));
+            updateServiceState(deployedModel, checkModelPodStatus(modelPods[0]));
           }
         } catch (e) {
           updateServiceState(deployedModel);

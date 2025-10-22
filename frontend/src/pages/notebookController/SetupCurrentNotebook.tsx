@@ -1,8 +1,9 @@
 import * as React from 'react';
-import { NotebookRunningState } from '~/types';
-import useWatchNotebooksForUsers from '~/utilities/useWatchNotebooksForUsers';
-import ApplicationsPage from '~/pages/ApplicationsPage';
-import { useSpecificNotebookUserState } from '~/utilities/notebookControllerUtils';
+import { NotebookRunningState } from '#~/types';
+import useWatchNotebooksForUsers from '#~/utilities/useWatchNotebooksForUsers';
+import ApplicationsPage from '#~/pages/ApplicationsPage';
+import { useSpecificNotebookUserState } from '#~/utilities/notebookControllerUtils';
+import { getRoutePathForWorkbench } from '#~/concepts/notebooks/utils';
 import { NotebookContextStorage, SetNotebookState } from './notebookControllerContextTypes';
 import useNamespaces from './useNamespaces';
 
@@ -17,10 +18,10 @@ const SetupCurrentNotebook: React.FC<SetupCurrentNotebookProps> = ({
   currentNotebook,
   setNotebookState,
 }) => {
-  const { notebookNamespace } = useNamespaces();
+  const { workbenchNamespace } = useNamespaces();
   const { user: username } = useSpecificNotebookUserState(currentNotebook ?? null);
   const { notebooks, loaded, loadError, forceRefresh, setPollInterval } = useWatchNotebooksForUsers(
-    notebookNamespace,
+    workbenchNamespace,
     [username],
   );
   const notebookRunningState: NotebookRunningState | undefined = loaded
@@ -29,7 +30,12 @@ const SetupCurrentNotebook: React.FC<SetupCurrentNotebookProps> = ({
   const notebook = notebookRunningState?.notebook;
   const isCurrentlyRunning = notebookRunningState?.isRunning;
   const currentPodUID = notebookRunningState?.podUID;
-  const currentLink = notebookRunningState?.notebookLink;
+
+  // Generate workbench link using same-origin relative path
+  const currentLink =
+    notebook?.metadata.namespace && notebook.metadata.name
+      ? getRoutePathForWorkbench(notebook.metadata.namespace, notebook.metadata.name)
+      : '';
 
   React.useEffect(() => {
     if (notebook !== undefined && isCurrentlyRunning !== undefined) {
@@ -38,7 +44,7 @@ const SetupCurrentNotebook: React.FC<SetupCurrentNotebookProps> = ({
         current: notebook,
         currentIsRunning: isCurrentlyRunning,
         currentPodUID: currentPodUID || '',
-        currentLink: currentLink || '',
+        currentLink,
         requestRefresh: (speed?: number) => {
           forceRefresh();
           setPollInterval(speed);

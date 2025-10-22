@@ -1,5 +1,5 @@
-import { SortableData } from '~/components/table';
-import { Artifact as MlmdArtifact } from '~/third_party/mlmd';
+import { SortableData } from '#~/components/table';
+import { Artifact as MlmdArtifact } from '#~/third_party/mlmd';
 
 export enum FilterOptions {
   Artifact = 'name',
@@ -54,3 +54,6 @@ export enum ArtifactDetailsTabKey {
   Overview = 'overview',
   LineageExplorer = 'lineage-explorer',
 }
+
+export const artifactsPageTitle = 'Artifacts';
+export const artifactsPageDescription = 'View your artifacts and their metadata.';

@@ -10,8 +10,8 @@ import {
   Content,
 } from '@patternfly/react-core';
 import { ArrowRightIcon } from '@patternfly/react-icons';
-import getStartedImage from '~/images/AI_ML-illustration-Blog-thumbnail.svg';
-import WhosMyAdministrator from '~/components/WhosMyAdministrator';
+import getStartedImage from '#~/images/AI_ML-illustration-Blog-thumbnail.svg';
+import WhosMyAdministrator from '#~/components/WhosMyAdministrator';
 
 type EmptyProjectsCardProps = {
   allowCreate: boolean;
@@ -35,8 +35,8 @@ const EmptyProjectsCard: React.FC<EmptyProjectsCardProps> = ({ allowCreate, onCr
               <Content>
                 <Content component="h1">Start by creating your project</Content>
                 <Content component="p">
-                  From workbenches to model servers, your data science project can be organized and
-                  customized to meet your needs.
+                  From workbenches to model servers, your project can be organized and customized to
+                  meet your needs.
                   {!allowCreate ? ' To request a project, contact your administrator.' : null}
                 </Content>
               </Content>

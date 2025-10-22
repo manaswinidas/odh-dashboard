@@ -1,12 +1,17 @@
-import { IdentifierResourceType, TolerationEffect, TolerationOperator } from '~/types';
-import { mockK8sResourceList } from '~/__mocks__/mockK8sResourceList';
+import {
+  IdentifierResourceType,
+  SchedulingType,
+  TolerationEffect,
+  TolerationOperator,
+} from '#~/types';
+import { mockK8sResourceList } from '#~/__mocks__/mockK8sResourceList';
 import {
   HardwareProfileModel,
-  AcceleratorProfileModel,
-} from '~/__tests__/cypress/cypress/utils/models';
-import { asProductAdminUser } from '~/__tests__/cypress/cypress/utils/mockUsers';
-import { mockHardwareProfile } from '~/__mocks__/mockHardwareProfile';
-import { mockAcceleratorProfile } from '~/__mocks__/mockAcceleratorProfile';
+  WorkloadPriorityClassModel,
+  DataScienceClusterModel,
+} from '#~/__tests__/cypress/cypress/utils/models';
+import { asProductAdminUser } from '#~/__tests__/cypress/cypress/utils/mockUsers';
+import { mockHardwareProfile } from '#~/__mocks__/mockHardwareProfile';
 import {
   createHardwareProfile,
   createNodeResourceModal,
@@ -17,14 +22,15 @@ import {
   editNodeResourceModal,
   editNodeSelectorModal,
   editTolerationModal,
-  hardwareProfile,
-  legacyHardwareProfile,
-} from '~/__tests__/cypress/cypress/pages/hardwareProfile';
-import { migrationModal } from '~/__tests__/cypress/cypress/pages/components/MigrationModal';
-import { mock200Status, mockDashboardConfig } from '~/__mocks__';
+} from '#~/__tests__/cypress/cypress/pages/hardwareProfile';
+
+import { mockDashboardConfig } from '#~/__mocks__';
+import { mockWorkloadPriorityClassK8sResource as mockWorkloadPriorityClass } from '#~/__mocks__/mockWorkloadPriorityClassK8Resource';
+import { mockDsc } from '#~/__mocks__/mockDsc';
 
 type HandlersProps = {
   isPresent?: boolean;
+  withLocalQueue?: boolean;
 };
 
 const initIntercepts = ({ isPresent = true }: HandlersProps) => {
@@ -76,6 +82,46 @@ const initIntercepts = ({ isPresent = true }: HandlersProps) => {
   );
 };
 
+function makeProfile({ withLocalQueue = false } = {}) {
+  return mockHardwareProfile({
+    name: 'test-hardware-profile',
+    namespace: 'opendatahub',
+    displayName: 'Test Hardware Profile',
+    description: 'Test description',
+    schedulingType: withLocalQueue ? SchedulingType.QUEUE : SchedulingType.NODE,
+    localQueueName: 'test-queue',
+    priorityClass: 'high',
+    tolerations: [
+      {
+        key: 'nvidia.com/gpu',
+        operator: TolerationOperator.EXISTS,
+        effect: TolerationEffect.NO_SCHEDULE,
+      },
+    ],
+    nodeSelector: { 'test-key': 'test-value' },
+  });
+}
+
+function setupIntercepts({ disableKueue = false, isPresent = true, withLocalQueue = false } = {}) {
+  cy.interceptOdh('GET /api/config', mockDashboardConfig({ disableKueue }));
+
+  cy.interceptK8sList(
+    { model: WorkloadPriorityClassModel },
+    mockK8sResourceList([
+      mockWorkloadPriorityClass({ name: 'high', description: 'High priority', value: 1000 }),
+      mockWorkloadPriorityClass({ name: 'medium', description: 'Medium priority', value: 500 }),
+      mockWorkloadPriorityClass({ name: 'low', description: 'Low priority', value: 100 }),
+    ]),
+  );
+
+  cy.interceptK8s(
+    { model: HardwareProfileModel, ns: 'opendatahub', name: 'test-hardware-profile' },
+    isPresent ? makeProfile({ withLocalQueue }) : { statusCode: 404 },
+  );
+
+  cy.interceptK8sList({ model: DataScienceClusterModel }, mockK8sResourceList([mockDsc({})]));
+}
+
 describe('Manage Hardware Profile', () => {
   beforeEach(() => {
     asProductAdminUser();
@@ -123,8 +169,12 @@ describe('Manage Hardware Profile', () => {
     createHardwareProfile.findSubmitButton().click();
 
     cy.wait('@createHardwareProfile').then((interception) => {
-      expect(interception.request.body.spec.displayName).to.be.eql('Test hardware profile');
-      expect(interception.request.body.spec.description).to.be.eql('Test description');
+      expect(
+        interception.request.body.metadata.annotations['opendatahub.io/display-name'],
+      ).to.be.eql('Test hardware profile');
+      expect(
+        interception.request.body.metadata.annotations['opendatahub.io/description'],
+      ).to.be.eql('Test description');
     });
   });
 
@@ -150,6 +200,26 @@ describe('Manage Hardware Profile', () => {
     createNodeResourceModal.findNodeResourceSubmitButton().click();
     // test that values were added correctly
     createHardwareProfile.getNodeResourceTableRow('test-gpu').shouldHaveResourceLabel('Test GPU');
+
+    // make a new one; a test-ack that should be deletable - no dialog should show up
+    createHardwareProfile.findAddNodeResourceButton().click();
+    // fill in form required fields
+    createNodeResourceModal.findNodeResourceSubmitButton().should('be.disabled');
+    createNodeResourceModal.findNodeResourceLabelInput().fill('Test Ack');
+    createNodeResourceModal.findNodeResourceIdentifierInput().fill('test-ack');
+    createNodeResourceModal.findNodeResourceTypeSelect().should('contain.text', 'Other');
+    createNodeResourceModal.findNodeResourceSubmitButton().should('be.enabled');
+    createNodeResourceModal.findNodeResourceSubmitButton().click();
+    // test that values were added correctly
+    createHardwareProfile.getNodeResourceTableRow('test-ack').shouldHaveResourceLabel('Test Ack');
+
+    // now; delete it; no dialog should show:
+    createHardwareProfile.getNodeResourceTableRow('test-ack').findDeleteAction().click();
+    createHardwareProfile.findNodeResourceDeletionDialog().should('not.exist');
+    createHardwareProfile.findNodeResourceTableAlert().should('not.exist');
+
+    // Assert that the row does not exist
+    createHardwareProfile.hasNodeResourceRow('test-ack').should('be.false');
 
     // test edit node resource
     createHardwareProfile.getNodeResourceTableRow('cpu').findEditAction().click();
@@ -206,6 +276,11 @@ describe('Manage Hardware Profile', () => {
 
     // test deleting the last CPU trigger the alert shown
     createHardwareProfile.getNodeResourceTableRow('cpu').findDeleteAction().click();
+    createHardwareProfile.findNodeResourceDeletionDialog().should('exist');
+    createHardwareProfile.findNodeResourceDeletionDialogDeleteButton().click();
+    createHardwareProfile.findNodeResourceDeletionDialog().should('not.exist');
+    createHardwareProfile.findSubmitButton().should('be.enabled');
+
     createHardwareProfile.findNodeResourceTableAlert().should('exist');
     createHardwareProfile.findAddNodeResourceButton().click();
     createNodeResourceModal.findNodeResourceLabelInput().fill('CPU');
@@ -216,8 +291,40 @@ describe('Manage Hardware Profile', () => {
 
     createHardwareProfile.findNodeResourceTableAlert().should('not.exist');
 
-    // test deleting the last Memory trigger the alert shown
+    // add an extra memory:
+    createHardwareProfile.findAddNodeResourceButton().click();
+    createNodeResourceModal.findNodeResourceLabelInput().fill('extra-memory');
+    createNodeResourceModal.findNodeResourceIdentifierInput().fill('extra-memory');
+    createNodeResourceModal.findNodeResourceTypeSelect().findSelectOption('Memory').click();
+    createNodeResourceModal.findNodeResourceSubmitButton().should('be.enabled');
+    createNodeResourceModal.findNodeResourceSubmitButton().click();
+
+    createHardwareProfile.hasNodeResourceRow('extra-memory').should('be.true');
+
+    // test deleting one of the two memory slots does NOT trigger an alert (or the dialog):
+    createHardwareProfile.getNodeResourceTableRow('extra-memory').findDeleteAction().click();
+
+    createHardwareProfile.findNodeResourceDeletionDialog().should('not.exist');
+    createHardwareProfile.findNodeResourceTableAlert().should('not.exist');
+    // Assert that the row does not exist
+    createHardwareProfile.hasNodeResourceRow('extra-memory').should('be.false');
+
+    // now: test deleting the last Memory trigger the alert shown
     createHardwareProfile.getNodeResourceTableRow('memory').findDeleteAction().click();
+    createHardwareProfile.findNodeResourceDeletionDialog().should('exist');
+    createHardwareProfile.findSubmitButton().should('be.enabled');
+
+    // first; cancel; should be a no-op (row still there, no alert shown)
+    createHardwareProfile.findNodeResourceDeletionDialogCancelButton().click();
+    createHardwareProfile.hasNodeResourceRow('memory').should('be.true');
+    createHardwareProfile.findNodeResourceTableAlert().should('not.exist');
+
+    // now; do it again and actually delete it:
+    createHardwareProfile.getNodeResourceTableRow('memory').findDeleteAction().click();
+    createHardwareProfile.findNodeResourceDeletionDialog().should('exist');
+    createHardwareProfile.findNodeResourceDeletionDialogDeleteButton().click();
+    createHardwareProfile.findNodeResourceDeletionDialog().should('not.exist');
+
     createHardwareProfile.findNodeResourceTableAlert().should('exist');
     createHardwareProfile.findAddNodeResourceButton().click();
     createNodeResourceModal.findNodeResourceLabelInput().fill('MEMORY');
@@ -324,7 +431,7 @@ describe('Manage Hardware Profile', () => {
     createHardwareProfile.findSubmitButton().click();
 
     cy.wait('@createHardwareProfile').then((interception) => {
-      expect(interception.request.body.spec.nodeSelector).to.be.eql({
+      expect(interception.request.body.spec.scheduling.node.nodeSelector).to.be.eql({
         'new-test-node-selector': 'new-test-value',
       });
     });
@@ -369,7 +476,7 @@ describe('Manage Hardware Profile', () => {
     createTolerationModal.findTolerationSubmitButton().click();
     createHardwareProfile
       .getTolerationTableRow('toleration-key')
-      .shouldHaveOperator('Equal')
+      .shouldHaveOperator('-')
       .shouldHaveEffect('-')
       .shouldHaveTolerationSeconds('-');
     // test edit toleration
@@ -406,7 +513,7 @@ describe('Manage Hardware Profile', () => {
     createHardwareProfile.findSubmitButton().click();
 
     cy.wait('@createHardwareProfile').then((interception) => {
-      expect(interception.request.body.spec.tolerations).to.be.eql([]);
+      expect(interception.request.body.spec.scheduling.node.tolerations).to.be.eql([]);
     });
   });
 
@@ -458,6 +565,11 @@ describe('Manage Hardware Profile', () => {
     editHardwareProfile.k8sNameDescription.findDescriptionInput().fill('Updated description');
     editHardwareProfile.findSubmitButton().click();
     cy.wait('@updatedHardwareProfile').then((interception) => {
+      expect(interception.request.body.metadata.annotations).to.contain({
+        'opendatahub.io/display-name': 'Test Hardware Profile',
+        'opendatahub.io/description': 'Updated description',
+        'opendatahub.io/disabled': 'false',
+      });
       expect(interception.request.body.spec).to.eql({
         identifiers: [
           {
@@ -477,17 +589,19 @@ describe('Manage Hardware Profile', () => {
             resourceType: IdentifierResourceType.CPU,
           },
         ],
-        displayName: 'Test Hardware Profile',
-        enabled: true,
-        tolerations: [
-          {
-            key: 'nvidia.com/gpu',
-            operator: 'Exists',
-            effect: 'NoSchedule',
+        scheduling: {
+          type: SchedulingType.NODE,
+          node: {
+            tolerations: [
+              {
+                key: 'nvidia.com/gpu',
+                operator: 'Exists',
+                effect: 'NoSchedule',
+              },
+            ],
+            nodeSelector: {},
           },
-        ],
-        nodeSelector: {},
-        description: 'Updated description',
+        },
       });
     });
   });
@@ -534,6 +648,10 @@ describe('Manage Hardware Profile', () => {
       .fill('duplicate hardware profile');
     duplicateHardwareProfile.findSubmitButton().should('be.enabled').click();
     cy.wait('@createHardwareProfile').then((interception) => {
+      expect(interception.request.body.metadata.annotations).to.contain({
+        'opendatahub.io/display-name': 'duplicate hardware profile',
+        'opendatahub.io/disabled': 'false',
+      });
       expect(interception.request.body.spec).to.eql({
         identifiers: [
           {
@@ -560,17 +678,19 @@ describe('Manage Hardware Profile', () => {
             defaultCount: 1,
           },
         ],
-        displayName: 'duplicate hardware profile',
-        enabled: true,
-        tolerations: [
-          {
-            key: 'nvidia.com/gpu',
-            operator: 'Exists',
-            effect: 'NoSchedule',
+        scheduling: {
+          type: 'Node',
+          node: {
+            tolerations: [
+              {
+                key: 'nvidia.com/gpu',
+                operator: 'Exists',
+                effect: 'NoSchedule',
+              },
+            ],
+            nodeSelector: {},
           },
-        ],
-        nodeSelector: {},
-        description: '',
+        },
       });
     });
   });
@@ -615,203 +735,292 @@ describe('Manage Hardware Profile', () => {
       .shouldHaveResourceIdentifier('test-identifier2');
   });
 
-  it('migrate hardware profile', () => {
-    // mocked model server size
-    const modelServerSize = {
-      name: 'Test Model Server Size',
-      resources: { requests: { cpu: '2', memory: '2Gi' }, limits: { cpu: '3', memory: '3Gi' } },
-    };
-    // mocked notebook size
-    const notebookSize = {
-      name: 'Test Notebook Size',
-      resources: { requests: { cpu: '1', memory: '1Gi' }, limits: { cpu: '2', memory: '2Gi' } },
-    };
-    // mock dashboard config
-    const dashboardConfig = mockDashboardConfig({
-      modelServerSizes: [modelServerSize],
-      notebookSizes: [notebookSize],
-    });
+  describe('Kueue enabled', () => {
+    beforeEach(() => setupIntercepts({ disableKueue: false }));
 
-    cy.interceptOdh('GET /api/config', dashboardConfig);
+    it('creating a new hardware profile', () => {
+      createHardwareProfile.visit();
+      createHardwareProfile.k8sNameDescription.findDisplayNameInput().fill('Test hardware profile');
 
-    const originalAcceleratorProfile = mockAcceleratorProfile({
-      namespace: 'opendatahub',
-      name: 'legacy-hardware-profile',
-      displayName: 'Legacy Hardware Profile',
-      description: 'Legacy profile to be migrated',
-      identifier: 'nvidia.com/gpu',
-      enabled: true,
-      tolerations: [
+      // The default workload allocation strategy pick should be 'Local queue'
+      createHardwareProfile.findLocalQueueRadio().should('be.checked');
+
+      // The default local queue value is 'default'
+      createHardwareProfile.findLocalQueueInput().should('have.value', 'default');
+
+      // The default workload priority is None, and is optional
+      createHardwareProfile.findWorkloadPrioritySelect().should('contain.text', 'None');
+
+      // The workload priority dropdown should show all the workload priorities available
+      createHardwareProfile.findWorkloadPrioritySelect().click();
+      cy.findByTestId('None').should('exist');
+      cy.findByTestId('high').should('exist');
+      cy.findByTestId('medium').should('exist');
+      cy.findByTestId('low').should('exist');
+      cy.findByTestId('None').click();
+
+      // Should be able to select node selectors and tolerations radio button
+      createHardwareProfile.findNodeStrategyRadio().click();
+      createHardwareProfile.findNodeStrategyRadio().should('be.checked');
+
+      // Should be able to add node selectors and tolerations to the table
+      createHardwareProfile.findAddNodeSelectorButton().click();
+      createNodeSelectorModal.findNodeSelectorKeyInput().fill('test-key');
+      createNodeSelectorModal.findNodeSelectorValueInput().fill('test-value');
+      createNodeSelectorModal.findNodeSelectorSubmitButton().click();
+      createHardwareProfile.getNodeSelectorTableRow('test-key').shouldHaveValue('test-value');
+
+      createHardwareProfile.findAddTolerationButton().click();
+      createTolerationModal.findTolerationKeyInput().fill('test-key');
+      createTolerationModal.findTolerationSubmitButton().click();
+      createHardwareProfile.getTolerationTableRow('test-key').shouldHaveOperator('-');
+
+      // Switch back to local queue and set values
+      createHardwareProfile.findLocalQueueRadio().click();
+      createHardwareProfile.findLocalQueueInput().fill('my-queue');
+      createHardwareProfile.selectWorkloadPriority('high');
+
+      cy.interceptK8s(
+        'POST',
         {
-          key: 'nvidia.com/gpu',
-          operator: TolerationOperator.EXISTS,
-          effect: TolerationEffect.NO_SCHEDULE,
+          model: HardwareProfileModel,
+          ns: 'opendatahub',
+          name: 'test-hardware-profile',
         },
-      ],
-    });
+        mockHardwareProfile({ name: 'test-hardware-profile', namespace: 'opendatahub' }),
+      ).as('createHardwareProfile');
 
-    // Mock the accelerator profile that will be migrated
-    cy.interceptK8sList(
-      { model: AcceleratorProfileModel, ns: 'opendatahub' },
-      mockK8sResourceList([originalAcceleratorProfile]),
-    );
+      createHardwareProfile.findSubmitButton().click();
 
-    const migratedServingHardwareProfile = mockHardwareProfile({
-      namespace: 'opendatahub',
-      name: `${originalAcceleratorProfile.metadata.name}-serving`,
-      displayName: originalAcceleratorProfile.spec.displayName,
-      description: originalAcceleratorProfile.spec.description,
-      annotations: {
-        'opendatahub.io/dashboard-feature-visibility': '["model-serving","pipelines"]',
-      },
-      identifiers: [
-        {
-          displayName: 'CPU',
-          identifier: 'cpu',
-          minCount: modelServerSize.resources.requests.cpu,
-          maxCount: modelServerSize.resources.limits.cpu,
-          defaultCount: modelServerSize.resources.requests.cpu,
-          resourceType: IdentifierResourceType.CPU,
-        },
-        {
-          displayName: 'Memory',
-          identifier: 'memory',
-          minCount: modelServerSize.resources.requests.memory,
-          maxCount: modelServerSize.resources.limits.memory,
-          defaultCount: modelServerSize.resources.requests.memory,
-          resourceType: IdentifierResourceType.MEMORY,
-        },
-        {
-          displayName: originalAcceleratorProfile.spec.identifier,
-          identifier: originalAcceleratorProfile.spec.identifier,
-          minCount: 1,
-          defaultCount: 1,
-        },
-      ],
-      tolerations: originalAcceleratorProfile.spec.tolerations,
-    });
-
-    const migratedNotebooksHardwareProfile = mockHardwareProfile({
-      namespace: 'opendatahub',
-      name: `${originalAcceleratorProfile.metadata.name}-notebooks`,
-      annotations: {
-        'opendatahub.io/dashboard-feature-visibility': '["workbench"]',
-      },
-      displayName: originalAcceleratorProfile.spec.displayName,
-      description: originalAcceleratorProfile.spec.description,
-      identifiers: [
-        {
-          displayName: 'CPU',
-          identifier: 'cpu',
-          minCount: notebookSize.resources.requests.cpu,
-          maxCount: notebookSize.resources.limits.cpu,
-          defaultCount: notebookSize.resources.requests.cpu,
-        },
-        {
-          displayName: 'Memory',
-          identifier: 'memory',
-          minCount: notebookSize.resources.requests.memory,
-          maxCount: notebookSize.resources.limits.memory,
-          defaultCount: notebookSize.resources.requests.memory,
-        },
-        {
-          displayName: originalAcceleratorProfile.spec.identifier,
-          identifier: originalAcceleratorProfile.spec.identifier,
-          minCount: 0,
-          defaultCount: 1,
-        },
-      ],
-      tolerations: [
-        ...(originalAcceleratorProfile.spec.tolerations || []),
-        {
-          key: 'NotebooksOnlyChange',
-          operator: TolerationOperator.EXISTS,
-          effect: TolerationEffect.NO_SCHEDULE,
-        },
-      ],
-    });
-
-    // Mock the API calls for migration
-    cy.interceptK8s(
-      'DELETE',
-      { model: AcceleratorProfileModel, ns: 'opendatahub', name: 'legacy-hardware-profile' },
-      mock200Status({}),
-    ).as('deleteSource');
-
-    // Mock the creation of the new hardware profiles
-    cy.interceptK8s('POST', { model: HardwareProfileModel, ns: 'opendatahub' }, (req) => {
-      // Check if the request body has the specific annotation
-      const annotations =
-        req.body.metadata?.annotations?.['opendatahub.io/dashboard-feature-visibility'];
-
-      if (annotations?.includes('model-serving')) {
-        req.reply(migratedServingHardwareProfile);
-      } else if (annotations?.includes('workbench')) {
-        req.reply(migratedNotebooksHardwareProfile);
-      }
-    }).as('create');
-
-    // Visit the hardware profiles page
-    hardwareProfile.visit();
-
-    // expand the migrated hardware profiles section
-    legacyHardwareProfile.findExpandButton().click();
-
-    // Find the legacy hardware profile row
-    const legacyProfileRow = legacyHardwareProfile.getRow('Legacy Hardware Profile');
-
-    // Click the edit action
-    legacyProfileRow.findKebabAction('Edit').click();
-
-    // submit manage hardware profile form
-    editHardwareProfile.findSubmitButton().click();
-
-    // submit migration modal
-    migrationModal.findSubmitButton().should('be.enabled').click();
-
-    // assert the creation of the new hardware profiles
-    cy.wait('@deleteSource');
-    cy.wait('@create').then((interception) => {
-      // Assert individually the properties that include random values
-      const { name, annotations } = interception.request.body.metadata;
-      expect(annotations).to.have.property('opendatahub.io/modified-date');
-
-      const actual = Cypress._.omit(
-        interception.request.body,
-        'metadata.annotations["opendatahub.io/modified-date"]',
-        'metadata.name',
-      );
-
-      const visibility =
-        interception.request.body.metadata?.annotations?.[
-          'opendatahub.io/dashboard-feature-visibility'
-        ];
-
-      if (visibility?.includes('model-serving')) {
-        expect(name).to.match(new RegExp(`${originalAcceleratorProfile.metadata.name}-.*-serving`));
-        expect(actual).to.eql({
-          ...migratedServingHardwareProfile,
-          metadata: {
-            namespace: 'opendatahub',
-            annotations: {
-              'opendatahub.io/dashboard-feature-visibility': '["model-serving","pipelines"]',
-            },
+      cy.wait('@createHardwareProfile').then((interception) => {
+        expect(interception.request.body.spec.scheduling).to.eql({
+          type: SchedulingType.QUEUE,
+          kueue: {
+            localQueueName: 'my-queue',
+            priorityClass: 'high',
           },
         });
-      } else if (visibility?.includes('workbench')) {
-        expect(name).to.match(
-          new RegExp(`${originalAcceleratorProfile.metadata.name}-.*-notebooks`),
-        );
-        expect(actual).to.eql({
-          ...migratedNotebooksHardwareProfile,
-          metadata: {
-            namespace: 'opendatahub',
-            annotations: {
-              'opendatahub.io/dashboard-feature-visibility': '["workbench"]',
-            },
+      });
+    });
+
+    it('editing a preexisting hardware profile with local queue/workload priority', () => {
+      setupIntercepts({ withLocalQueue: true });
+
+      editHardwareProfile.visit('test-hardware-profile');
+
+      // The local queue radio button should be selected
+      editHardwareProfile.findLocalQueueRadio().should('be.checked');
+
+      // The local queue name should be prefilled into the text input
+      editHardwareProfile.findLocalQueueInput().should('have.value', 'test-queue');
+
+      // The correct workload priority should be preselected
+      editHardwareProfile.findWorkloadPrioritySelect().should('contain.text', 'high');
+
+      // Update the values
+      editHardwareProfile.findLocalQueueInput().fill('updated-queue');
+      editHardwareProfile.selectWorkloadPriority('medium');
+
+      cy.interceptK8s(
+        'PUT',
+        {
+          model: HardwareProfileModel,
+          ns: 'opendatahub',
+          name: 'test-hardware-profile',
+        },
+        mockHardwareProfile({ name: 'test-hardware-profile', namespace: 'opendatahub' }),
+      ).as('updateHardwareProfile');
+
+      editHardwareProfile.findSubmitButton().click();
+
+      cy.wait('@updateHardwareProfile').then((interception) => {
+        expect(interception.request.body.spec.scheduling).to.eql({
+          type: SchedulingType.QUEUE,
+          kueue: {
+            localQueueName: 'updated-queue',
+            priorityClass: 'medium',
           },
         });
-      }
+      });
+    });
+
+    it('editing a preexisting hardware profile with node selector and tolerations', () => {
+      editHardwareProfile.visit('test-hardware-profile');
+
+      // The node selector and tolerations button should be selected
+      editHardwareProfile.findNodeStrategyRadio().should('be.checked');
+
+      // The nodes and tolerations should be preset in the table
+      editHardwareProfile.findNodeSelectorTable().should('exist');
+      editHardwareProfile.getNodeSelectorTableRow('test-key').shouldHaveValue('test-value');
+
+      editHardwareProfile.findTolerationTable().should('exist');
+      editHardwareProfile.getTolerationTableRow('nvidia.com/gpu').shouldHaveOperator('Exists');
+
+      // Switch to local queue
+      editHardwareProfile.findLocalQueueRadio().click();
+      editHardwareProfile.findLocalQueueInput().clear().type('new-queue');
+      editHardwareProfile.selectWorkloadPriority('low');
+
+      cy.interceptK8s(
+        'PUT',
+        {
+          model: HardwareProfileModel,
+          ns: 'opendatahub',
+          name: 'test-hardware-profile',
+        },
+        mockHardwareProfile({ name: 'test-hardware-profile', namespace: 'opendatahub' }),
+      ).as('updateHardwareProfile');
+
+      editHardwareProfile.findSubmitButton().click();
+
+      cy.wait('@updateHardwareProfile').then((interception) => {
+        expect(interception.request.body.spec.scheduling).to.eql({
+          type: SchedulingType.QUEUE,
+          kueue: {
+            localQueueName: 'new-queue',
+            priorityClass: 'low',
+          },
+        });
+      });
+    });
+  });
+
+  describe('Kueue disabled', () => {
+    it('creating a new hardware profile', () => {
+      setupIntercepts({ disableKueue: true });
+      createHardwareProfile.visit();
+      createHardwareProfile.k8sNameDescription.findDisplayNameInput().fill('Test hardware profile');
+
+      // The radio options shouldn't be shown
+      createHardwareProfile.findLocalQueueRadio().should('not.exist');
+      createHardwareProfile.findNodeStrategyRadio().should('not.exist');
+
+      // Add node selectors and tolerations
+      createHardwareProfile.findAddNodeSelectorButton().click();
+      createNodeSelectorModal.findNodeSelectorKeyInput().fill('test-key');
+      createNodeSelectorModal.findNodeSelectorValueInput().fill('test-value');
+      createNodeSelectorModal.findNodeSelectorSubmitButton().click();
+      createHardwareProfile.getNodeSelectorTableRow('test-key').shouldHaveValue('test-value');
+
+      cy.interceptK8s(
+        'POST',
+        {
+          model: HardwareProfileModel,
+          ns: 'opendatahub',
+          name: 'test-hardware-profile',
+        },
+        mockHardwareProfile({ name: 'test-hardware-profile', namespace: 'opendatahub' }),
+      ).as('createHardwareProfile');
+
+      createHardwareProfile.findSubmitButton().click();
+
+      cy.wait('@createHardwareProfile').then((interception) => {
+        expect(interception.request.body.spec.scheduling).to.eql({
+          type: SchedulingType.NODE,
+          node: {
+            nodeSelector: { 'test-key': 'test-value' },
+            tolerations: [],
+          },
+        });
+      });
+    });
+
+    it('editing a preexisting hardware profile with local queue/workload priority', () => {
+      setupIntercepts({ disableKueue: true, withLocalQueue: true });
+
+      editHardwareProfile.visit('test-hardware-profile');
+
+      // The local queue radio button should be selected
+      editHardwareProfile.findLocalQueueRadio().should('be.checked');
+
+      // Should be able to see the info alert
+      editHardwareProfile.findKueueDisabledAlert().should('be.visible');
+
+      // The local queue text input and workload priority select should be disabled
+      editHardwareProfile.findLocalQueueInput().should('be.disabled');
+      editHardwareProfile.findWorkloadPrioritySelect().should('be.disabled');
+
+      // Should be able to select node selectors and tolerations radio button
+      editHardwareProfile.findNodeStrategyRadio().click();
+      editHardwareProfile.findNodeStrategyRadio().should('be.checked');
+
+      // Add node selectors
+      editHardwareProfile.findAddNodeSelectorButton().click();
+      createNodeSelectorModal.findNodeSelectorKeyInput().fill('test-key');
+      createNodeSelectorModal.findNodeSelectorValueInput().fill('test-value');
+      createNodeSelectorModal.findNodeSelectorSubmitButton().click();
+
+      cy.interceptK8s(
+        'PUT',
+        {
+          model: HardwareProfileModel,
+          ns: 'opendatahub',
+          name: 'test-hardware-profile',
+        },
+        mockHardwareProfile({ name: 'test-hardware-profile', namespace: 'opendatahub' }),
+      ).as('updateHardwareProfile');
+
+      editHardwareProfile.findSubmitButton().click();
+
+      cy.wait('@updateHardwareProfile').then((interception) => {
+        expect(interception.request.body.spec.scheduling).to.eql({
+          type: SchedulingType.NODE,
+          node: {
+            nodeSelector: { 'test-key': 'test-value' },
+            tolerations: [],
+          },
+        });
+      });
+    });
+
+    it('editing a preexisting hardware profile with node selector and tolerations', () => {
+      setupIntercepts({ disableKueue: true });
+
+      editHardwareProfile.visit('test-hardware-profile');
+
+      editHardwareProfile.findLocalQueueRadio().should('not.exist');
+      editHardwareProfile.findNodeStrategyRadio().should('not.exist');
+
+      // The nodes and tolerations should be preset in the table
+      editHardwareProfile.findNodeSelectorTable().should('exist');
+      editHardwareProfile.getNodeSelectorTableRow('test-key').shouldHaveValue('test-value');
+
+      editHardwareProfile.findTolerationTable().should('exist');
+      editHardwareProfile.getTolerationTableRow('nvidia.com/gpu').shouldHaveOperator('Exists');
+
+      // Update node selector
+      editHardwareProfile.getNodeSelectorTableRow('test-key').findEditAction().click();
+      editNodeSelectorModal.findNodeSelectorValueInput().clear().type('updated-value');
+      editNodeSelectorModal.findNodeSelectorSubmitButton().click();
+
+      cy.interceptK8s(
+        'PUT',
+        {
+          model: HardwareProfileModel,
+          ns: 'opendatahub',
+          name: 'test-hardware-profile',
+        },
+        mockHardwareProfile({ name: 'test-hardware-profile', namespace: 'opendatahub' }),
+      ).as('updateHardwareProfile');
+
+      editHardwareProfile.findSubmitButton().click();
+
+      cy.wait('@updateHardwareProfile').then((interception) => {
+        expect(interception.request.body.spec.scheduling).to.eql({
+          type: SchedulingType.NODE,
+          node: {
+            nodeSelector: { 'test-key': 'updated-value' },
+            tolerations: [
+              {
+                key: 'nvidia.com/gpu',
+                operator: 'Exists',
+                effect: 'NoSchedule',
+              },
+            ],
+          },
+        });
+      });
     });
   });
 });

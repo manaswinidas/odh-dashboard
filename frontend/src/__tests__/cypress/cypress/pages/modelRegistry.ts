@@ -1,4 +1,4 @@
-import { appChrome } from '~/__tests__/cypress/cypress/pages/appChrome';
+import { appChrome } from '#~/__tests__/cypress/cypress/pages/appChrome';
 import { TableRow } from './components/table';
 import { Modal } from './components/Modal';
 
@@ -59,18 +59,18 @@ class ModelRegistry {
   }
 
   visit() {
-    cy.visitWithLogin(`/modelRegistry`);
+    cy.visitWithLogin(`/ai-hub/registry`);
     this.wait();
   }
 
   navigate() {
-    appChrome.findNavItem('Model registry').click();
+    appChrome.findNavItem({ name: 'Registry', rootSection: 'AI hub' }).click();
     this.wait();
   }
 
   private wait() {
     cy.findByTestId('app-page-title').should('exist');
-    cy.findByTestId('app-page-title').contains('Model registry');
+    cy.findByTestId('app-page-title').contains('Registry');
     cy.testA11y();
   }
 
@@ -128,12 +128,12 @@ class ModelRegistry {
   }
 
   tabEnabled() {
-    appChrome.findNavItem('Model Registry').should('exist');
+    appChrome.findNavItem({ name: 'Registry', rootSection: 'AI hub' }).should('exist');
     return this;
   }
 
   tabDisabled() {
-    appChrome.findNavItem('Model Registry').should('not.exist');
+    appChrome.findNavItem({ name: 'Registry', rootSection: 'AI hub' }).should('not.exist');
     return this;
   }
 
@@ -176,16 +176,32 @@ class ModelRegistry {
     return cy.findByTestId('model-registry-selector-dropdown');
   }
 
+  findSelectModelRegistry(registryName: string) {
+    // Check if the registry is already selected
+    this.findModelRegistry().then(($dropdown) => {
+      if (!$dropdown.text().includes(registryName)) {
+        // Registry is not selected, perform click actions
+        this.findModelRegistry().click();
+        cy.findByTestId(registryName).click();
+      }
+    });
+    return this;
+  }
+
   findModelVersionsTableHeaderButton(name: string) {
     return this.findModelVersionsTable().find('thead').findByRole('button', { name });
   }
 
   findTableSearch() {
-    return cy.findByTestId('registered-model-table-search');
+    return cy.findByTestId('filter-toolbar-text-field');
+  }
+
+  findFilterDropdownItem(name: string) {
+    return cy.findByTestId(`filter-toolbar-dropdown`).findDropdownItem(name);
   }
 
   findModelVersionsTableSearch() {
-    return cy.findByTestId('model-versions-table-search');
+    return cy.findByTestId('model-versions-table-toolbar');
   }
 
   findModelBreadcrumbItem() {
@@ -200,12 +216,76 @@ class ModelRegistry {
     return cy.findByTestId('model-version-action-toggle');
   }
 
-  findModelVersionsTableFilter() {
-    return cy.findByTestId('model-versions-table-filter');
+  findModelVersionsTableFilterOption(name: string) {
+    return cy.findByTestId('filter-toolbar-dropdown').findDropdownItem(name);
   }
 
-  findRegisterModelButton() {
-    return cy.findByRole('button', { name: 'Register model' });
+  findRegisterModelButton(timeout?: number) {
+    return cy.findByTestId('register-model-button', { timeout });
+  }
+
+  findEmptyRegisterModelButton(timeout?: number) {
+    return cy.findByTestId('empty-model-registry-primary-action', { timeout });
+  }
+
+  getRegisterModelButtonSelector() {
+    return '[data-testid="register-model-button"]';
+  }
+
+  getEmptyRegisterModelButtonSelector() {
+    return '[data-testid="empty-model-registry-primary-action"]';
+  }
+
+  findEmptyModelRegistrySecondaryButton(timeout?: number) {
+    return cy.findByTestId('empty-model-registry-secondary-action', { timeout });
+  }
+
+  findModelVersionsTab() {
+    return cy.findByTestId('model-versions-tab');
+  }
+
+  findRegisterNewVersionButton() {
+    return cy.findByRole('button', { name: 'Register new version' });
+  }
+
+  findDeploymentsTab() {
+    return cy.findByTestId('deployments-tab');
+  }
+
+  // Empty state selectors for admin users
+  findEmptyStateAdminTitle() {
+    return cy.findByText('Create a model registry');
+  }
+
+  findEmptyStateAdminDescription() {
+    return cy.contains('No model registries are available to users in your organization');
+  }
+
+  findEmptyStateAdminInstructions() {
+    return cy.contains('Create a model registry from the');
+  }
+
+  findEmptyStateAdminSettingsLink() {
+    return cy.contains('Model registry settings');
+  }
+
+  findEmptyStateAdminButton() {
+    return cy.findByRole('link', { name: 'Go to Model registry settings' });
+  }
+
+  // Empty state selectors for non-admin users
+  findEmptyStateNonAdminTitle() {
+    return cy.findByText('Request access to model registries');
+  }
+
+  findEmptyStateNonAdminDescription() {
+    return cy.findByText(
+      'To request a new model registry, or to request permission to access an existing model registry, contact your administrator.',
+    );
+  }
+
+  findEmptyStateNonAdminHelpButton() {
+    return cy.findByRole('button', { name: "Who's my administrator?" });
   }
 }
 

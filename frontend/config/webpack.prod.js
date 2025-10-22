@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/restrict-template-expressions */
 const path = require('path');
 const { merge } = require('webpack-merge');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
@@ -20,7 +21,9 @@ if (OUTPUT_ONLY !== 'true') {
   console.info(`Cleaning OUTPUT DIR...\n  ${DIST_DIR}\n`);
 }
 
-rimraf(DIST_DIR, () => {});
+rimraf(DIST_DIR, () => {
+  // empty
+});
 
 module.exports = merge(
   {
@@ -54,8 +57,8 @@ module.exports = merge(
           include: [
             SRC_DIR,
             COMMON_DIR,
-            path.resolve(RELATIVE_DIRNAME, 'node_modules/@patternfly'),
-            path.resolve(RELATIVE_DIRNAME, 'node_modules/monaco-editor'),
+            path.resolve(RELATIVE_DIRNAME, '../node_modules/@patternfly'),
+            path.resolve(RELATIVE_DIRNAME, '../node_modules/monaco-editor'),
           ],
           use: [MiniCssExtractPlugin.loader, 'css-loader'],
         },

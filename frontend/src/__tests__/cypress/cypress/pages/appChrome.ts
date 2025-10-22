@@ -24,6 +24,10 @@ class AppChrome {
     return cy.get('#page-sidebar');
   }
 
+  findHelpButton() {
+    return cy.get('#help-icon-toggle');
+  }
+
   getApplicationLauncher() {
     return new ApplicationLauncher(() => cy.findByTestId('application-launcher'));
   }
@@ -32,18 +36,8 @@ class AppChrome {
     return this.findSideBar().findByRole('button', { name });
   }
 
-  findNavItem(name: string, section?: string) {
-    if (section) {
-      this.findNavSection(section)
-        // do not fail if the section is not found
-        .should('have.length.at.least', 0)
-        .then(($el) => {
-          if ($el.attr('aria-expanded') === 'false') {
-            cy.wrap($el).click();
-          }
-        });
-    }
-    return this.findSideBar().findByRole('link', { name });
+  findNavItem(args: { name: string; rootSection?: string; subSection?: string }) {
+    return this.findSideBar().findAppNavItem(args);
   }
 }
 

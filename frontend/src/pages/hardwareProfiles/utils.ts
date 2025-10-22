@@ -1,13 +1,17 @@
-import { HardwareProfileKind } from '~/k8sTypes';
-import { Identifier, IdentifierResourceType } from '~/types';
-import { HardwareProfileWarningType, WarningNotification } from '~/concepts/hardwareProfiles/types';
+import { HardwareProfileKind } from '#~/k8sTypes';
+import { DisplayNameAnnotation, Identifier, IdentifierResourceType } from '#~/types';
+import {
+  HardwareProfileWarningType,
+  WarningNotification,
+} from '#~/concepts/hardwareProfiles/types';
 import {
   CPU_UNITS,
   MEMORY_UNITS_FOR_SELECTION,
   OTHER,
   splitValueUnit,
   UnitOption,
-} from '~/utilities/valueUnits';
+} from '#~/utilities/valueUnits';
+import { DEFAULT_PROFILE_NAME } from '#~/pages/hardwareProfiles/const.tsx';
 import { DEFAULT_CPU_IDENTIFIER, DEFAULT_MEMORY_IDENTIFIER } from './nodeResource/const';
 import { hasCPUandMemory } from './manage/ManageNodeResourceSection';
 import { createHardwareProfileWarningSchema } from './manage/validationUtils';
@@ -87,7 +91,7 @@ export const generateWarningForHardwareProfiles = (
       (warning) => warning.type !== HardwareProfileWarningType.HARDWARE_PROFILES_MISSING_CPU_MEMORY,
     );
   });
-  const hasEnabled = hardwareProfiles.some((profile) => profile.spec.enabled);
+  const hasEnabled = hardwareProfiles.some((profile) => isHardwareProfileEnabled(profile));
   const allInvalid = hardwareProfiles.every((profile) => {
     const warnings = validateProfileWarning(profile);
     return warnings.some(
@@ -121,9 +125,9 @@ export const generateWarningForHardwareProfiles = (
 export const isHardwareProfileIdentifierValid = (identifier: Identifier): boolean => {
   try {
     if (
-      identifier.minCount.toString().at(0) === '-' ||
-      (identifier.maxCount && identifier.maxCount.toString().at(0) === '-') ||
-      identifier.defaultCount.toString().at(0) === '-'
+      identifier.minCount.toString().charAt(0) === '-' ||
+      (identifier.maxCount && identifier.maxCount.toString().charAt(0) === '-') ||
+      identifier.defaultCount.toString().charAt(0) === '-'
     ) {
       return false;
     }
@@ -191,4 +195,51 @@ export const validateProfileWarning = (
 export const isHardwareProfileValid = (hardwareProfile: HardwareProfileKind): boolean => {
   const warnings = validateProfileWarning(hardwareProfile);
   return warnings.length === 0;
+};
+
+export const getHardwareProfileDisplayName = (hardwareProfile: HardwareProfileKind): string =>
+  hardwareProfile.metadata.annotations?.[DisplayNameAnnotation.ODH_DISP_NAME] ||
+  hardwareProfile.metadata.name;
+
+export const getHardwareProfileCrName = (hardwareProfile: HardwareProfileKind): string =>
+  hardwareProfile.metadata.name;
+
+export const isDefaultHardwareProfile = (hardwareProfile: HardwareProfileKind): boolean =>
+  getHardwareProfileCrName(hardwareProfile) === DEFAULT_PROFILE_NAME;
+
+export const getHardwareProfileDescription = (
+  hardwareProfile: HardwareProfileKind,
+): string | undefined => hardwareProfile.metadata.annotations?.[DisplayNameAnnotation.ODH_DESC];
+
+export const isHardwareProfileEnabled = (hardwareProfile: HardwareProfileKind): boolean =>
+  hardwareProfile.metadata.annotations?.['opendatahub.io/disabled'] === 'false' ||
+  hardwareProfile.metadata.annotations?.['opendatahub.io/disabled'] === undefined;
+
+export const alphaSortHardwareProfilesByName = (
+  profiles: HardwareProfileKind[],
+): HardwareProfileKind[] => {
+  const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+  return profiles.toSorted((a, b) => collator.compare(a.metadata.name, b.metadata.name));
+};
+
+export const orderHardwareProfiles = (
+  profiles: HardwareProfileKind[],
+  hardwareProfileOrder: string[] = [],
+): HardwareProfileKind[] => {
+  if (hardwareProfileOrder.length > 0) {
+    const alphaOrderedNames = alphaSortHardwareProfilesByName(profiles).map(
+      (hwp) => hwp.metadata.name,
+    );
+    const existingNames = new Set(alphaOrderedNames);
+    const persistedOrder = hardwareProfileOrder.filter((name) => existingNames.has(name));
+    const persistedOrderSet = new Set(persistedOrder);
+    const newProfiles = alphaOrderedNames.filter((name) => !persistedOrderSet.has(name));
+    const currentOrder = [...persistedOrder, ...newProfiles];
+    const profilesMap = new Map(profiles.map((profile) => [profile.metadata.name, profile]));
+    return currentOrder.flatMap((name) => {
+      const profile = profilesMap.get(name);
+      return profile ? [profile] : [];
+    });
+  }
+  return alphaSortHardwareProfilesByName(profiles);
 };

@@ -46,10 +46,20 @@ class GroupSettingSection extends Contextual<HTMLElement> {
     this.findMultiGroupSelectButton().click();
     this.findMultiGroupOptions(name).click();
   }
+
+  findWarningAlert(groupName: string) {
+    this.find()
+      .find('.pf-v6-c-alert.pf-m-inline.pf-m-warning')
+      .should('exist')
+      .contains(
+        `The group ${groupName} no longer exists in OpenShift and has been removed from the selected group list.`,
+      );
+    return this;
+  }
 }
 class UserManagement {
   visit(wait = true) {
-    cy.visitWithLogin('/groupSettings');
+    cy.visitWithLogin('/settings/user-management');
     if (wait) {
       this.wait();
     }
@@ -66,7 +76,7 @@ class UserManagement {
   }
 
   findNavItem() {
-    return appChrome.findNavItem('User management', 'Settings');
+    return appChrome.findNavItem({ name: 'User management', rootSection: 'Settings' });
   }
 
   findSubmitButton() {

@@ -13,25 +13,30 @@ import {
 import { Language } from '@patternfly/react-code-editor';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import YAML from 'yaml';
-import ApplicationsPage from '~/pages/ApplicationsPage';
-import { TemplateKind } from '~/k8sTypes';
-import { useDashboardNamespace } from '~/redux/selectors';
-import DashboardCodeEditor from '~/concepts/dashboard/codeEditor/DashboardCodeEditor';
+import ApplicationsPage from '#~/pages/ApplicationsPage';
+import { TemplateKind } from '#~/k8sTypes';
+import { useDashboardNamespace } from '#~/redux/selectors';
+import DashboardCodeEditor from '#~/concepts/dashboard/codeEditor/DashboardCodeEditor';
 import {
   createServingRuntimeTemplateBackend,
   updateServingRuntimeTemplateBackend,
-} from '~/services/templateService';
-import { ServingRuntimeAPIProtocol, ServingRuntimePlatform } from '~/types';
-import CustomServingRuntimePlatformsSelector from '~/pages/modelServing/customServingRuntimes/CustomServingRuntimePlatformsSelector';
+} from '#~/services/templateService';
+import {
+  ServingRuntimeAPIProtocol,
+  ServingRuntimePlatform,
+  ServingRuntimeModelType,
+} from '#~/types';
 import {
   getAPIProtocolFromTemplate,
   getEnabledPlatformsFromTemplate,
+  getModelTypesFromTemplate,
   getServingRuntimeDisplayNameFromTemplate,
   getServingRuntimeNameFromTemplate,
   isServingRuntimeKind,
 } from './utils';
 import { CustomServingRuntimeContext } from './CustomServingRuntimeContext';
 import CustomServingRuntimeAPIProtocolSelector from './CustomServingRuntimeAPIProtocolSelector';
+import CustomServingRuntimeModelTypeSelector from './CustomServingRuntimeModelTypeSelector';
 
 type CustomServingRuntimeAddTemplateProps = {
   existingTemplate?: TemplateKind;
@@ -98,27 +103,48 @@ const CustomServingRuntimeAddTemplate: React.FC<CustomServingRuntimeAddTemplateP
     [existingTemplate, copiedServingRuntimeAPIProtocol],
   );
 
+  const copiedServingRuntimeModelTypes = React.useMemo(
+    () => (state ? getModelTypesFromTemplate(state.template) : []),
+    [state],
+  );
+
+  const modelTypes: ServingRuntimeModelType[] = React.useMemo(
+    () =>
+      existingTemplate
+        ? getModelTypesFromTemplate(existingTemplate)
+        : copiedServingRuntimeModelTypes,
+    [existingTemplate, copiedServingRuntimeModelTypes],
+  );
+
   const [code, setCode] = React.useState(stringifiedTemplate);
-  const [selectedPlatforms, setSelectedPlatforms] =
-    React.useState<ServingRuntimePlatform[]>(enabledPlatforms);
-  const isSinglePlatformEnabled = selectedPlatforms.includes(ServingRuntimePlatform.SINGLE);
-  const isMultiPlatformEnabled = selectedPlatforms.includes(ServingRuntimePlatform.MULTI);
+  const isSinglePlatformEnabled = enabledPlatforms.includes(ServingRuntimePlatform.SINGLE);
   const [selectedAPIProtocol, setSelectedAPIProtocol] = React.useState<
     ServingRuntimeAPIProtocol | undefined
   >(apiProtocol);
+  const [selectedModelTypes, setSelectedModelTypes] =
+    React.useState<ServingRuntimeModelType[]>(modelTypes);
   const [loading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<Error | undefined>(undefined);
   const navigate = useNavigate();
+
+  const modelTypesEqual = (a: ServingRuntimeModelType[], b: ServingRuntimeModelType[]) => {
+    if (a.length !== b.length) {
+      return false;
+    }
+    const sortedA = [...a].toSorted();
+    const sortedB = [...b].toSorted();
+    return sortedA.every((val, index) => val === sortedB[index]);
+  };
 
   const isDisabled =
     (!state &&
       code === stringifiedTemplate &&
       enabledPlatforms.includes(ServingRuntimePlatform.SINGLE) === isSinglePlatformEnabled &&
-      enabledPlatforms.includes(ServingRuntimePlatform.MULTI) === isMultiPlatformEnabled &&
-      apiProtocol === selectedAPIProtocol) ||
+      apiProtocol === selectedAPIProtocol &&
+      modelTypesEqual(modelTypes, selectedModelTypes)) ||
     code === '' ||
-    selectedPlatforms.length === 0 ||
     !selectedAPIProtocol ||
+    selectedModelTypes.length === 0 ||
     loading;
 
   return (
@@ -137,7 +163,13 @@ const CustomServingRuntimeAddTemplate: React.FC<CustomServingRuntimeAddTemplateP
       }
       breadcrumb={
         <Breadcrumb>
-          <BreadcrumbItem render={() => <Link to="/servingRuntimes">Serving runtimes</Link>} />
+          <BreadcrumbItem
+            render={() => (
+              <Link to="/settings/model-resources-operations/serving-runtimes">
+                Serving runtimes
+              </Link>
+            )}
+          />
           {existingTemplate && (
             <BreadcrumbItem>
               {getServingRuntimeDisplayNameFromTemplate(existingTemplate)}
@@ -155,17 +187,15 @@ const CustomServingRuntimeAddTemplate: React.FC<CustomServingRuntimeAddTemplateP
       <Form style={{ height: '100%' }}>
         <Stack hasGutter>
           <StackItem>
-            <CustomServingRuntimePlatformsSelector
-              isSinglePlatformEnabled={isSinglePlatformEnabled}
-              isMultiPlatformEnabled={isMultiPlatformEnabled}
-              setSelectedPlatforms={setSelectedPlatforms}
-            />
-          </StackItem>
-          <StackItem>
             <CustomServingRuntimeAPIProtocolSelector
               selectedAPIProtocol={selectedAPIProtocol}
               setSelectedAPIProtocol={setSelectedAPIProtocol}
-              selectedPlatforms={selectedPlatforms}
+            />
+          </StackItem>
+          <StackItem>
+            <CustomServingRuntimeModelTypeSelector
+              selectedModelTypes={selectedModelTypes}
+              setSelectedModelTypes={setSelectedModelTypes}
             />
           </StackItem>
           <StackItem isFilled>
@@ -221,19 +251,19 @@ const CustomServingRuntimeAddTemplate: React.FC<CustomServingRuntimeAddTemplateP
                         existingTemplate,
                         code,
                         dashboardNamespace,
-                        selectedPlatforms,
                         selectedAPIProtocol,
+                        selectedModelTypes,
                       )
                     : createServingRuntimeTemplateBackend(
                         code,
                         dashboardNamespace,
-                        selectedPlatforms,
                         selectedAPIProtocol,
+                        selectedModelTypes,
                       );
                   onClickFunc
                     .then(() => {
                       refreshData();
-                      navigate(`/servingRuntimes`);
+                      navigate(`/settings/model-resources-operations/serving-runtimes`);
                     })
                     .catch((err) => {
                       setError(err);
@@ -249,7 +279,7 @@ const CustomServingRuntimeAddTemplate: React.FC<CustomServingRuntimeAddTemplateP
                 isDisabled={loading}
                 variant="link"
                 id="cancel-button"
-                onClick={() => navigate(`/servingRuntimes`)}
+                onClick={() => navigate(`/settings/model-resources-operations/serving-runtimes`)}
               >
                 Cancel
               </Button>

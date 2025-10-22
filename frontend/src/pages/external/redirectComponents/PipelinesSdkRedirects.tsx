@@ -1,10 +1,11 @@
 import React from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@patternfly/react-core';
-import { experimentRunsRoute, globalPipelineRunDetailsRoute } from '~/routes';
-import ApplicationsPage from '~/pages/ApplicationsPage';
-import { useRedirect } from '~/utilities/useRedirect';
-import RedirectErrorState from '~/pages/external/RedirectErrorState';
+import { experimentRunsRoute } from '#~/routes/pipelines/experiments';
+import { globalPipelineRunDetailsRoute } from '#~/routes/pipelines/runs';
+import ApplicationsPage from '#~/pages/ApplicationsPage';
+import { useRedirect } from '#~/utilities/useRedirect';
+import RedirectErrorState from '#~/pages/external/RedirectErrorState';
 
 /**
  * Handles redirects from Pipeline SDK URLs to internal routes.
@@ -53,10 +54,13 @@ const PipelinesSdkRedirects: React.FC = () => {
           errorMessage={error?.message}
           actions={
             <>
-              <Button variant="link" onClick={() => navigate('/pipelines')}>
-                Go to Pipelines
+              <Button
+                variant="link"
+                onClick={() => navigate('/develop-train/pipelines/definitions')}
+              >
+                Go to Pipeline definitions
               </Button>
-              <Button variant="link" onClick={() => navigate('/experiments')}>
+              <Button variant="link" onClick={() => navigate('/develop-train/experiments')}>
                 Go to Experiments
               </Button>
             </>

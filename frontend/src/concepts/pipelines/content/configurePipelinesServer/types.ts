@@ -1,4 +1,4 @@
-import { EnvVariableDataEntry } from '~/pages/projects/types';
+import { EnvVariableDataEntry } from '#~/pages/projects/types';
 
 export type ObjectStorageNew = {
   newValue: EnvVariableDataEntry[];
@@ -11,4 +11,6 @@ export type PipelineServerConfigType = {
   };
   objectStorage: ObjectStorageNew;
   enableInstructLab: boolean;
+  storeYamlInKubernetes: boolean;
+  enableCaching: boolean;
 };

@@ -1,7 +1,7 @@
-import { Contextual } from '~/__tests__/cypress/cypress/pages/components/Contextual';
-import { K8sNameDescriptionField } from '~/__tests__/cypress/cypress/pages/components/subComponents/K8sNameDescriptionField';
-import { Modal } from '~/__tests__/cypress/cypress/pages/components/Modal';
-import { appChrome } from '~/__tests__/cypress/cypress/pages/appChrome';
+import { Contextual } from '#~/__tests__/cypress/cypress/pages/components/Contextual';
+import { K8sNameDescriptionField } from '#~/__tests__/cypress/cypress/pages/components/subComponents/K8sNameDescriptionField';
+import { Modal } from '#~/__tests__/cypress/cypress/pages/components/Modal';
+import { appChrome } from '#~/__tests__/cypress/cypress/pages/appChrome';
 import { TableRow } from './components/table';
 
 class HardwareProfileTableToolbar extends Contextual<HTMLElement> {
@@ -75,7 +75,7 @@ class HardwareProfileRow extends TableRow {
 
 class HardwareProfile {
   visit() {
-    cy.visitWithLogin('/hardwareProfiles');
+    cy.visitWithLogin('/settings/environment-setup/hardware-profiles');
     this.wait();
   }
 
@@ -85,7 +85,11 @@ class HardwareProfile {
   }
 
   findNavItem() {
-    return appChrome.findNavItem('Hardware profiles', 'Settings');
+    return appChrome.findNavItem({
+      name: 'Hardware profiles',
+      rootSection: 'Settings',
+      subSection: 'Environment setup',
+    });
   }
 
   getCell(rowIndex: number, columnIndex: number) {
@@ -166,22 +170,20 @@ class HardwareProfile {
 
   findCreateButton() {
     // Use Cypress's built-in handling to try one selector, then another if the first fails
-    return cy.get('body').then(() => {
-      return cy
+    return cy.get('body').then(() =>
+      cy
         .get(
           '[data-testid="display-hardware-modal-button"], [data-testid="create-hardware-profile"]',
         )
         .first()
-        .then(($el) => {
-          return cy.wrap($el);
-        });
-    });
+        .then(($el) => cy.wrap($el)),
+    );
   }
 
   getUniqueTableToolbar() {
-    return new HardwareProfileTableToolbar(() => {
+    return new HardwareProfileTableToolbar(() =>
       // This approach will get all matching elements, then return the first one that's visible
-      return cy.get('[data-testid="hardware-profiles-table-toolbar"]').then(($elements) => {
+      cy.get('[data-testid="hardware-profiles-table-toolbar"]').then(($elements) => {
         // Return the first element that's visible
         const visibleElements = $elements.filter(':visible');
         if (visibleElements.length > 0) {
@@ -189,8 +191,8 @@ class HardwareProfile {
         }
         // Fallback to the first element if none are visible
         return cy.wrap($elements.first());
-      });
-    });
+      }),
+    );
   }
 
   findClearFiltersButton() {
@@ -220,7 +222,7 @@ class HardwareProfile {
 
 class NodeResourceRow extends TableRow {
   shouldHaveResourceLabel(name: string) {
-    this.find().find(`[data-label="Resource label"]`).should('have.text', name);
+    this.find().find(`[data-label="Resource name"]`).should('have.text', name);
     return this;
   }
 
@@ -322,6 +324,47 @@ class ManageHardwareProfile {
     return cy.findByTestId('node-resource-table-alert');
   }
 
+  findNodeResourceDeletionDialog() {
+    return cy.findByTestId('delete-node-resource-modal');
+  }
+
+  findNodeResourceDeletionDialogDeleteButton() {
+    return cy.findByTestId('delete-node-resource-modal-delete-btn');
+  }
+
+  findNodeResourceDeletionDialogCancelButton() {
+    return cy.findByTestId('delete-node-resource-modal-cancel-btn');
+  }
+
+  findLocalQueueRadio() {
+    return cy.findByTestId('local-queue-radio-input');
+  }
+
+  findNodeStrategyRadio() {
+    return cy.findByTestId('node-strategy-radio-input');
+  }
+
+  findLocalQueueInput() {
+    return cy.findByTestId('local-queue-input');
+  }
+
+  findWorkloadPrioritySelect() {
+    return cy.findByTestId('workload-priority-select');
+  }
+
+  selectWorkloadPriority(name: string) {
+    this.findWorkloadPrioritySelect().click();
+    cy.findByTestId(name).click();
+  }
+
+  findKueueDisabledAlert() {
+    return cy.findByTestId('kueue-disabled-alert').scrollIntoView();
+  }
+
+  findKueueDisabledTooltip() {
+    return cy.findByTestId('kueue-disabled-tooltip');
+  }
+
   getTolerationTableRow(name: string) {
     return new TolerationRow(() =>
       this.findTolerationTable().find(`[data-label=Key]`).contains(name).parents('tr'),
@@ -342,14 +385,26 @@ class ManageHardwareProfile {
         .parents('tr'),
     );
   }
+
+  hasNodeResourceRow(name: string): Cypress.Chainable<boolean> {
+    // Use .then to transform the result into a boolean
+    return cy.document().then(() =>
+      // Create a wrapped jQuery selector that won't fail if the element doesn't exist
+      cy.wrap(
+        Cypress.$(
+          `[data-testid="hardware-profile-node-resources-table"] [data-label="Resource identifier"]:contains("${name}")`,
+        ).length > 0,
+      ),
+    );
+  }
 }
 
 class CreateHardwareProfile extends ManageHardwareProfile {
   visit(identifiers?: string) {
     cy.visitWithLogin(
       identifiers
-        ? `/hardwareProfiles/create${`?identifiers=${identifiers}`}`
-        : '/hardwareProfiles/create',
+        ? `/settings/environment-setup/hardware-profiles/create${`?identifiers=${identifiers}`}`
+        : '/settings/environment-setup/hardware-profiles/create',
     );
     this.wait();
   }
@@ -362,7 +417,7 @@ class CreateHardwareProfile extends ManageHardwareProfile {
 
 class EditHardwareProfile extends ManageHardwareProfile {
   visit(name: string) {
-    cy.visitWithLogin(`/hardwareProfiles/edit/${name}`);
+    cy.visitWithLogin(`/settings/environment-setup/hardware-profiles/edit/${name}`);
     cy.testA11y();
   }
 
@@ -381,7 +436,7 @@ class EditHardwareProfile extends ManageHardwareProfile {
 
 class DuplicateHardwareProfile extends ManageHardwareProfile {
   visit(name: string) {
-    cy.visitWithLogin(`/hardwareProfiles/duplicate/${name}`);
+    cy.visitWithLogin(`/settings/environment-setup/hardware-profiles/duplicate/${name}`);
     cy.testA11y();
   }
 
@@ -478,7 +533,7 @@ class NodeResourceModal extends Modal {
   }
 
   findNodeResourceLabelInput() {
-    return this.find().findByTestId('node-resource-label-input');
+    return this.find().findByTestId('node-resource-name-input');
   }
 
   findNodeResourceIdentifierInput() {
@@ -526,20 +581,6 @@ class NodeResourceModal extends Modal {
   }
 }
 
-class LegacyHardwareProfile extends HardwareProfile {
-  findSection() {
-    return cy.findByTestId('migrated-hardware-profiles-section');
-  }
-
-  findExpandButton() {
-    return this.findSection().findByRole('button');
-  }
-
-  findTable() {
-    return this.findSection().findByTestId('hardware-profile-table');
-  }
-}
-
 export const hardwareProfile = new HardwareProfile();
 export const createHardwareProfile = new CreateHardwareProfile();
 export const createTolerationModal = new TolerationModal(false);
@@ -550,4 +591,3 @@ export const createNodeResourceModal = new NodeResourceModal(false);
 export const editNodeResourceModal = new NodeResourceModal(true);
 export const editHardwareProfile = new EditHardwareProfile();
 export const duplicateHardwareProfile = new DuplicateHardwareProfile();
-export const legacyHardwareProfile = new LegacyHardwareProfile();

@@ -1,17 +1,17 @@
 import React from 'react';
 import { Button, SearchInput, ToolbarGroup, ToolbarItem } from '@patternfly/react-core';
 import { useNavigate } from 'react-router-dom';
-import FilterToolbar from '~/components/FilterToolbar';
+import FilterToolbar from '#~/components/FilterToolbar';
 import {
   HardwareProfileEnableType,
   HardwareProfileFilterDataType,
   HardwareProfileFilterOptions,
   hardwareProfileFilterOptions,
-} from '~/pages/hardwareProfiles/const';
-import SimpleSelect from '~/components/SimpleSelect';
-import { AccessAllowed, verbModelAccess } from '~/concepts/userSSAR';
-import { HardwareProfileModel } from '~/api';
-import { HardwareProfileFeatureVisibility } from '~/k8sTypes';
+} from '#~/pages/hardwareProfiles/const';
+import SimpleSelect, { SimpleSelectOption } from '#~/components/SimpleSelect';
+import { AccessAllowed, verbModelAccess } from '#~/concepts/userSSAR';
+import { HardwareProfileModel } from '#~/api';
+import { HardwareProfileFeatureVisibility } from '#~/k8sTypes';
 import { HardwareProfileFeatureVisibilityTitles } from './manage/const';
 
 type HardwareProfilesToolbarProps = {
@@ -23,7 +23,6 @@ type HardwareProfilesToolbarProps = {
 const HardwareProfilesToolbar: React.FC<HardwareProfilesToolbarProps> = ({
   filterData,
   onFilterUpdate,
-  showCreateButton = true,
 }) => {
   const navigate = useNavigate();
 
@@ -60,10 +59,12 @@ const HardwareProfilesToolbar: React.FC<HardwareProfilesToolbarProps> = ({
             dataTestId="hardware-profile-filter-use-cases-select"
             value={value}
             aria-label="Hardware profile use cases"
-            options={Object.values(HardwareProfileFeatureVisibility).map((v) => ({
-              key: v,
-              label: HardwareProfileFeatureVisibilityTitles[v],
-            }))}
+            options={Object.values(HardwareProfileFeatureVisibility).map(
+              (v): SimpleSelectOption => ({
+                key: v,
+                label: HardwareProfileFeatureVisibilityTitles[v],
+              }),
+            )}
             onChange={(v) => onChange(v)}
             popperProps={{ maxWidth: undefined }}
           />
@@ -73,20 +74,18 @@ const HardwareProfilesToolbar: React.FC<HardwareProfilesToolbarProps> = ({
       onFilterUpdate={onFilterUpdate}
     >
       <AccessAllowed resourceAttributes={verbModelAccess('create', HardwareProfileModel)}>
-        {() =>
-          showCreateButton && (
-            <ToolbarGroup>
-              <ToolbarItem>
-                <Button
-                  data-testid="create-hardware-profile"
-                  onClick={() => navigate('/hardwareProfiles/create')}
-                >
-                  Create hardware profile
-                </Button>
-              </ToolbarItem>
-            </ToolbarGroup>
-          )
-        }
+        {() => (
+          <ToolbarGroup>
+            <ToolbarItem>
+              <Button
+                data-testid="create-hardware-profile"
+                onClick={() => navigate('/settings/environment-setup/hardware-profiles/create')}
+              >
+                Create hardware profile
+              </Button>
+            </ToolbarItem>
+          </ToolbarGroup>
+        )}
       </AccessAllowed>
     </FilterToolbar>
   );

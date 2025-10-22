@@ -11,10 +11,10 @@ import {
   ContentVariants,
 } from '@patternfly/react-core';
 import { ExclamationCircleIcon } from '@patternfly/react-icons';
-import OdhDocCard from '~/components/OdhDocCard';
-import ScrolledGallery from '~/concepts/design/ScrolledGallery';
-import CollapsibleSection from '~/concepts/design/CollapsibleSection';
-import { useBrowserStorage } from '~/components/browserStorage';
+import OdhDocCard from '#~/components/OdhDocCard';
+import ScrolledGallery from '#~/concepts/design/ScrolledGallery';
+import CollapsibleSection from '#~/concepts/design/CollapsibleSection';
+import { useBrowserStorage } from '#~/components/browserStorage/BrowserStorageContext';
 import { useSpecifiedResources } from './useSpecifiedResources';
 
 const includedCards = [
@@ -29,7 +29,7 @@ export const useResourcesSection = (): React.ReactNode => {
   const navigate = useNavigate();
   const { docs, loaded, loadError } = useSpecifiedResources(includedCards);
   const [resourcesOpen, setResourcesOpen] = useBrowserStorage<boolean>(
-    'odh.home.resources.open',
+    'odh.home.learning-resources.open',
     true,
     true,
     false,
@@ -40,7 +40,11 @@ export const useResourcesSection = (): React.ReactNode => {
   }
 
   return (
-    <PageSection variant="secondary" hasBodyWrapper={false} data-testid="landing-page-resources">
+    <PageSection
+      variant="secondary"
+      hasBodyWrapper={false}
+      data-testid="landing-page-learning-resources"
+    >
       <CollapsibleSection
         title="Get oriented with learning resources"
         titleVariant={ContentVariants.h1}
@@ -52,7 +56,7 @@ export const useResourcesSection = (): React.ReactNode => {
             <EmptyState
               headingLevel="h3"
               icon={ExclamationCircleIcon}
-              titleText="Error loading resources"
+              titleText="Error loading learning resources"
               variant={EmptyStateVariant.lg}
               data-id="error-empty-state"
             >
@@ -73,13 +77,13 @@ export const useResourcesSection = (): React.ReactNode => {
 
           <StackItem>
             <Button
-              data-testid="goto-resources-link"
+              data-testid="goto-learning-resources-link"
               // Should not use component="a" due to no href
               isInline
               variant="link"
-              onClick={() => navigate('/resources')}
+              onClick={() => navigate('/learning-resources')}
             >
-              Go to <b>Resources</b>
+              Go to <b>Learning resources</b>
             </Button>
           </StackItem>
         </Stack>

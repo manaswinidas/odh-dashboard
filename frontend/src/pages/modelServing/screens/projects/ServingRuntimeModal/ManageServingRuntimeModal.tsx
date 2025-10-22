@@ -1,34 +1,38 @@
 import * as React from 'react';
-import { Form, Stack, StackItem } from '@patternfly/react-core';
-import { Modal } from '@patternfly/react-core/deprecated';
+import {
+  Form,
+  Stack,
+  StackItem,
+  Modal,
+  ModalBody,
+  ModalHeader,
+  ModalFooter,
+} from '@patternfly/react-core';
 import { EitherOrNone } from '@openshift/dynamic-plugin-sdk';
 import {
   submitServingRuntimeResourcesWithDryRun,
   useCreateServingRuntimeObject,
-} from '~/pages/modelServing/screens/projects/utils';
-import { TemplateKind, ProjectKind, AccessReviewResourceAttributes } from '~/k8sTypes';
-import {
-  isModelServerEditInfoChanged,
-  requestsUnderLimits,
-  resourcesArePositive,
-} from '~/pages/modelServing/utils';
-import useCustomServingRuntimesEnabled from '~/pages/modelServing/customServingRuntimes/useCustomServingRuntimesEnabled';
-import { getServingRuntimeFromName } from '~/pages/modelServing/customServingRuntimes/utils';
-import DashboardModalFooter from '~/concepts/dashboard/DashboardModalFooter';
-import { NamespaceApplicationCase } from '~/pages/projects/types';
-import { ServingRuntimeEditInfo } from '~/pages/modelServing/screens/types';
-import { useAccessReview } from '~/api';
-import { fireFormTrackingEvent } from '~/concepts/analyticsTracking/segmentIOUtils';
+} from '#~/pages/modelServing/screens/projects/utils';
+import { TemplateKind, ProjectKind, AccessReviewResourceAttributes } from '#~/k8sTypes';
+import { isModelServerEditInfoChanged } from '#~/pages/modelServing/utils';
+import useCustomServingRuntimesEnabled from '#~/pages/modelServing/customServingRuntimes/useCustomServingRuntimesEnabled';
+import { getServingRuntimeFromName } from '#~/pages/modelServing/customServingRuntimes/utils';
+import DashboardModalFooter from '#~/concepts/dashboard/DashboardModalFooter';
+import { NamespaceApplicationCase } from '#~/pages/projects/types';
+import { ServingRuntimeEditInfo } from '#~/pages/modelServing/screens/types';
+import { useAccessReview } from '#~/api';
+import { fireFormTrackingEvent } from '#~/concepts/analyticsTracking/segmentIOUtils';
 import {
   FormTrackingEventProperties,
   TrackingOutcome,
-} from '~/concepts/analyticsTracking/trackingProperties';
+} from '#~/concepts/analyticsTracking/trackingProperties';
 import K8sNameDescriptionField, {
   useK8sNameDescriptionFieldData,
-} from '~/concepts/k8s/K8sNameDescriptionField/K8sNameDescriptionField';
-import { isK8sNameDescriptionDataValid } from '~/concepts/k8s/K8sNameDescriptionField/utils';
-import { useProfileIdentifiers } from '~/concepts/hardwareProfiles/utils';
-import { useModelServingPodSpecOptionsState } from '~/concepts/hardwareProfiles/useModelServingPodSpecOptionsState';
+} from '#~/concepts/k8s/K8sNameDescriptionField/K8sNameDescriptionField';
+import { isK8sNameDescriptionDataValid } from '#~/concepts/k8s/K8sNameDescriptionField/utils';
+import { useProfileIdentifiers } from '#~/concepts/hardwareProfiles/utils';
+import { useModelServingPodSpecOptionsState } from '#~/concepts/hardwareProfiles/useModelServingPodSpecOptionsState';
+import useModelServerSizeValidation from '#~/pages/modelServing/screens/projects/useModelServerSizeValidation.ts';
 import ServingRuntimeReplicaSection from './ServingRuntimeReplicaSection';
 import ServingRuntimeSizeSection from './ServingRuntimeSizeSection';
 import ServingRuntimeTemplateSection from './ServingRuntimeTemplateSection';
@@ -53,6 +57,7 @@ const accessReviewResource: AccessReviewResourceAttributes = {
 export const modelServerAddedName = 'Model Server Added';
 export const modelServerEditName = 'Model Server Modified';
 
+/** @deprecated -- no MM */
 const ManageServingRuntimeModal: React.FC<ManageServingRuntimeModalProps> = ({
   onClose,
   currentProject,
@@ -60,7 +65,11 @@ const ManageServingRuntimeModal: React.FC<ManageServingRuntimeModalProps> = ({
   editInfo,
 }) => {
   const [createData, setCreateData] = useCreateServingRuntimeObject(editInfo);
-  const podSpecOptionsState = useModelServingPodSpecOptionsState(editInfo?.servingRuntime);
+  const podSpecOptionsState = useModelServingPodSpecOptionsState(
+    editInfo?.servingRuntime,
+    undefined,
+    true,
+  );
 
   const profileIdentifiers = useProfileIdentifiers(
     podSpecOptionsState.acceleratorProfile.formData.profile,
@@ -87,11 +96,8 @@ const ManageServingRuntimeModal: React.FC<ManageServingRuntimeModalProps> = ({
   });
 
   const tokenErrors = createData.tokens.filter((token) => token.error !== '').length > 0;
-  const baseInputValueValid =
-    createData.numReplicas >= 0 &&
-    podSpecOptionsState.podSpecOptions.resources &&
-    resourcesArePositive(podSpecOptionsState.podSpecOptions.resources) &&
-    requestsUnderLimits(podSpecOptionsState.podSpecOptions.resources);
+  const { isValid: isModelServerSizeValid } = useModelServerSizeValidation(podSpecOptionsState);
+  const baseInputValueValid = createData.numReplicas >= 0 && isModelServerSizeValid;
   const servingRuntimeTemplateNameValid = editInfo?.servingRuntime
     ? true
     : !!createData.servingRuntimeTemplateName;
@@ -174,14 +180,63 @@ const ManageServingRuntimeModal: React.FC<ManageServingRuntimeModalProps> = ({
   };
 
   return (
-    <Modal
-      title={`${editInfo ? 'Edit' : 'Add'} model server`}
-      description="A model server specifies resources available for use by one or more supported models, and includes a serving runtime."
-      variant="medium"
-      isOpen
-      onClose={() => onBeforeClose(false)}
-      showClose
-      footer={
+    <Modal variant="medium" isOpen onClose={() => onBeforeClose(false)}>
+      <ModalHeader
+        title={`${editInfo ? 'Edit' : 'Add'} model server`}
+        description="A model server specifies resources available for use by one or more supported models, and includes a serving runtime."
+      />
+      <ModalBody>
+        <Form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          <Stack hasGutter>
+            <StackItem>
+              <K8sNameDescriptionField
+                data={modelServerNameDesc}
+                onDataChange={setModelServerNameDesc}
+                dataTestId="serving-runtime"
+                nameLabel="Model server name"
+                hideDescription
+              />
+            </StackItem>
+            <StackItem>
+              <ServingRuntimeTemplateSection
+                data={createData}
+                setData={setCreateData}
+                templates={servingRuntimeTemplates || []}
+                isEditing={!!editInfo}
+                servingRuntimeSelected={servingRuntimeSelected}
+                compatibleIdentifiers={profileIdentifiers}
+              />
+            </StackItem>
+            <StackItem>
+              <ServingRuntimeReplicaSection
+                data={createData}
+                setData={setCreateData}
+                infoContent="Consider network traffic and failover scenarios when specifying the number of model
+                server replicas."
+              />
+            </StackItem>
+            <ServingRuntimeSizeSection
+              podSpecOptionState={podSpecOptionsState}
+              servingRuntimeSelected={servingRuntimeSelected}
+              infoContent="Select a server size that will accommodate your largest model. See the product documentation for more information."
+              isEditing={!!editInfo}
+              projectName={currentProject.metadata.name}
+              isProjectModelMesh
+            />
+            <AuthServingRuntimeSection
+              data={createData}
+              setData={setCreateData}
+              allowCreate={allowCreate}
+            />
+          </Stack>
+        </Form>
+      </ModalBody>
+      <ModalFooter>
         <DashboardModalFooter
           submitLabel={editInfo ? 'Update' : 'Add'}
           onSubmit={submit}
@@ -190,55 +245,7 @@ const ManageServingRuntimeModal: React.FC<ManageServingRuntimeModalProps> = ({
           alertTitle={`Error ${editInfo ? 'updating' : 'creating'} model server`}
           error={error}
         />
-      }
-    >
-      <Form
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit();
-        }}
-      >
-        <Stack hasGutter>
-          <StackItem>
-            <K8sNameDescriptionField
-              data={modelServerNameDesc}
-              onDataChange={setModelServerNameDesc}
-              dataTestId="serving-runtime"
-              nameLabel="Model server name"
-              hideDescription
-            />
-          </StackItem>
-          <StackItem>
-            <ServingRuntimeTemplateSection
-              data={createData}
-              setData={setCreateData}
-              templates={servingRuntimeTemplates || []}
-              isEditing={!!editInfo}
-              compatibleIdentifiers={profileIdentifiers}
-            />
-          </StackItem>
-          <StackItem>
-            <ServingRuntimeReplicaSection
-              data={createData}
-              setData={setCreateData}
-              infoContent="Consider network traffic and failover scenarios when specifying the number of model
-                server replicas."
-            />
-          </StackItem>
-          <ServingRuntimeSizeSection
-            podSpecOptionState={podSpecOptionsState}
-            servingRuntimeSelected={servingRuntimeSelected}
-            infoContent="Select a server size that will accommodate your largest model. See the product documentation for more information."
-            isEditing={!!editInfo}
-          />
-          <AuthServingRuntimeSection
-            data={createData}
-            setData={setCreateData}
-            allowCreate={allowCreate}
-            publicRoute
-          />
-        </Stack>
-      </Form>
+      </ModalFooter>
     </Modal>
   );
 };

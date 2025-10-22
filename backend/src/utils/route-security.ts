@@ -19,8 +19,7 @@ const testAdmin = async (
   needsAdmin: boolean,
 ): Promise<boolean> => {
   const userInfo = await getUserInfo(fastify, request);
-  const { dashboardNamespace } = getNamespaces(fastify);
-  const isAdmin = await isUserAdmin(fastify, userInfo.userName, dashboardNamespace);
+  const isAdmin = await isUserAdmin(fastify, request);
   if (isAdmin) {
     // User is an admin, pass to caller that we can bypass some logic
     return true;
@@ -67,13 +66,13 @@ const requestSecurityGuard = async (
   needsAdmin: boolean,
   name?: string,
 ): Promise<void> => {
-  const { notebookNamespace, dashboardNamespace } = getNamespaces(fastify);
+  const { workbenchNamespace, dashboardNamespace } = getNamespaces(fastify);
   const userInfo = await getUserInfo(fastify, request);
   const translatedUsername = usernameTranslate(userInfo.userName);
   const isReadRequest = request.method.toLowerCase() === 'get';
 
   // Check to see if a request was made against one of our namespaces
-  if (![notebookNamespace, dashboardNamespace].includes(namespace)) {
+  if (![workbenchNamespace, dashboardNamespace].includes(namespace)) {
     // Not a valid namespace -- cannot make direct calls to just any namespace no matter who you are
     fastify.log.error(
       `User requested a resource that was not in our namespaces. Namespace: ${namespace}`,
@@ -96,23 +95,23 @@ const requestSecurityGuard = async (
   }
 
   // Api with no name object, allow reads
-  if (name == null && namespace === notebookNamespace && isReadRequest) {
+  if (name == null && namespace === workbenchNamespace && isReadRequest) {
     return;
   }
 
   // RoleBinding -- first users to access the dash
-  if (namespace === dashboardNamespace && name === `${notebookNamespace}-image-pullers`) {
+  if (namespace === dashboardNamespace && name === `${workbenchNamespace}-image-pullers`) {
     return;
   }
 
   // Notebook api endpoint
-  if (namespace === notebookNamespace && name === `jupyter-nb-${translatedUsername}`) {
+  if (namespace === workbenchNamespace && name === `jupyter-nb-${translatedUsername}`) {
     return;
   }
 
   // ConfigMap and Secret endpoint (for env variables)
   if (
-    namespace === notebookNamespace &&
+    namespace === workbenchNamespace &&
     name === `jupyterhub-singleuser-profile-${translatedUsername}-envs`
   ) {
     return;
@@ -209,8 +208,7 @@ const handleSecurityOnRouteData = async (
 
     // Not getting a resource, mutating something that is not verify-able theirs -- log the user encase of malicious behaviour
     const userInfo = await getUserInfo(fastify, request);
-    const { dashboardNamespace } = getNamespaces(fastify);
-    const isAdmin = await isUserAdmin(fastify, userInfo.userName, dashboardNamespace);
+    const isAdmin = await isUserAdmin(fastify, request);
     fastify.log.warn(
       `${isAdmin ? 'Admin ' : ''}User
       ${userInfo.userName} interacted with a resource that was not secure.`,

@@ -1,10 +1,10 @@
-import { HTPASSWD_CLUSTER_ADMIN_USER } from '~/__tests__/cypress/cypress/utils/e2eUsers';
+import { HTPASSWD_CLUSTER_ADMIN_USER } from '#~/__tests__/cypress/cypress/utils/e2eUsers';
 import {
   clusterSettings,
   telemetrySettings,
-} from '~/__tests__/cypress/cypress/pages/clusterSettings';
-import { getCustomResource } from '~/__tests__/cypress/cypress/utils/oc_commands/customResources';
-import { retryableBefore } from '~/__tests__/cypress/cypress/utils/retryableHooks';
+} from '#~/__tests__/cypress/cypress/pages/clusterSettings';
+import { getCustomResource } from '#~/__tests__/cypress/cypress/utils/oc_commands/customResources';
+import { retryableBefore } from '#~/__tests__/cypress/cypress/utils/retryableHooks';
 
 describe('Verify That Usage Data Collection Can Be Set In Cluster Settings', () => {
   let skipTest = false;
@@ -24,7 +24,7 @@ describe('Verify That Usage Data Collection Can Be Set In Cluster Settings', () 
 
   it(
     'Verify Usage Data Collection can be Enabled/Disabled',
-    { tags: ['@Sanity', '@SanitySet1', '@ODS-1218', '@Dashboard'] },
+    { tags: ['@Sanity', '@SanitySet1', '@ODS-1218', '@Dashboard', '@NonConcurrent'] },
     () => {
       if (skipTest) {
         cy.log('Skipping test confirmed');

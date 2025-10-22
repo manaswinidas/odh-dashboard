@@ -1,9 +1,9 @@
 import { FormGroup, Radio } from '@patternfly/react-core';
 import React from 'react';
-import { HardwareProfileFeatureVisibility } from '~/k8sTypes';
-import { MultiSelection, type SelectionOptions } from '~/components/MultiSelection';
-import DashboardHelpTooltip from '~/concepts/dashboard/DashboardHelpTooltip';
-import { ManageHardwareProfileSectionTitles } from '~/pages/hardwareProfiles/const';
+import { HardwareProfileFeatureVisibility } from '#~/k8sTypes';
+import { MultiSelection, type SelectionOptions } from '#~/components/MultiSelection';
+import DashboardHelpTooltip from '#~/concepts/dashboard/DashboardHelpTooltip';
+import { ManageHardwareProfileSectionTitles } from '#~/pages/hardwareProfiles/const';
 import { ManageHardwareProfileSectionID } from './types';
 import { HardwareProfileFeatureVisibilityTitles } from './const';
 
@@ -46,8 +46,7 @@ export const HardwareProfileVisibilitySection: React.FC<HardwareProfileUseCaseSe
           content={
             <>
               Visible features indicate where the hardware profile can be used: in{' '}
-              <b>workbenches</b>, during <b>model deployment</b>, and in{' '}
-              <b>Data Science Pipelines</b>.
+              <b>workbenches</b> and during <b>model deployment</b>.
             </>
           }
         />

@@ -1,18 +1,22 @@
 /* eslint-disable camelcase */
 import type {
   ArgoWorkflowPipelineVersion,
+  CreatePipelineVersionKFData,
   ExperimentKF,
   PipelineKF,
   PipelineRecurringRunKF,
   PipelineRunKF,
   PipelineVersionKF,
-} from '~/concepts/pipelines/kfTypes';
-import { buildMockRunKF } from '~/__mocks__';
-import { buildMockPipelines } from '~/__mocks__/mockPipelinesProxy';
-import { buildMockPipelineVersions } from '~/__mocks__/mockPipelineVersionsProxy';
-import { Contextual } from '~/__tests__/cypress/cypress/pages/components/Contextual';
-import { buildMockRecurringRunKF } from '~/__mocks__/mockRecurringRunKF';
-import { SearchSelector } from '~/__tests__/cypress/cypress/pages/components/subComponents/SearchSelector';
+} from '#~/concepts/pipelines/kfTypes';
+import { buildMockRunKF } from '#~/__mocks__';
+import { buildMockPipelines } from '#~/__mocks__/mockPipelinesProxy';
+import {
+  buildMockPipelineVersion,
+  buildMockPipelineVersions,
+} from '#~/__mocks__/mockPipelineVersionsProxy';
+import { Contextual } from '#~/__tests__/cypress/cypress/pages/components/Contextual';
+import { buildMockRecurringRunKF } from '#~/__mocks__/mockRecurringRunKF';
+import { SearchSelector } from '#~/__tests__/cypress/cypress/pages/components/subComponents/SearchSelector';
 
 class ParamsSection extends Contextual<HTMLElement> {
   findParamById(id: string): Cypress.Chainable<JQuery<HTMLElement>> {
@@ -51,6 +55,10 @@ export class CreateRunPage {
     return cy.findByTestId('run-description');
   }
 
+  findProjectNavigatorLink(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return cy.findByTestId('project-navigator-link-in-breadcrumb');
+  }
+
   findRunTypeSwitchLink(): Cypress.Chainable<JQuery<HTMLElement>> {
     return this.find().findByTestId('run-type-section-alert-link');
   }
@@ -61,6 +69,10 @@ export class CreateRunPage {
       .findByTestId('pipeline-version-selector-table-list')
       .find('td')
       .contains(name);
+  }
+
+  findPipelineCreateVersionButton(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return this.find().findByTestId('import-pipeline-version-button');
   }
 
   findScheduledRunTypeSelector(): Cypress.Chainable<JQuery<HTMLElement>> {
@@ -77,6 +89,19 @@ export class CreateRunPage {
 
   findScheduledRunRunEvery(): Cypress.Chainable<JQuery<HTMLElement>> {
     return this.find().findByTestId('run-every-group');
+  }
+
+  findRunEveryUnitDropdown(): Cypress.Chainable<JQuery<HTMLElement>> {
+    // Prefer test ID if available, fallback to role-based selector
+    return this.findScheduledRunRunEvery().findByTestId('run-every-unit-dropdown');
+  }
+
+  findRunEveryUnitOption(unitName: string): Cypress.Chainable<JQuery<HTMLElement>> {
+    return cy.findByTestId(`run-every-unit-option-${unitName.toLowerCase()}`);
+  }
+
+  selectRunEveryUnitMinute(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return cy.findByTestId('run-every-unit-option-minute');
   }
 
   findScheduledRunCron(): Cypress.Chainable<JQuery<HTMLElement>> {
@@ -141,6 +166,30 @@ export class CreateRunPage {
 
   findSubmitButton(): Cypress.Chainable<JQuery<HTMLElement>> {
     return this.find().findByTestId('run-page-submit-button');
+  }
+
+  findUseLatestVersionRadio(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return this.find().findByTestId('use-latest-version-radio');
+  }
+
+  findViewLatestVersionButton(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return this.find().findByTestId('view-latest-version-button');
+  }
+
+  findViewLatestVersionPopover(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return cy.findByTestId('view-latest-version-popover');
+  }
+
+  findUseFixedVersionRadio(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return this.find().findByTestId('use-fixed-version-radio');
+  }
+
+  findPipelineNotSelectedAlert(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return this.find().findByTestId('pipeline-not-selected-alert');
+  }
+
+  findNoPipelineVersionsAvailableAlert(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return this.find().findByTestId('no-pipeline-versions-available-alert');
   }
 
   getParamsSection(): ParamsSection {
@@ -294,6 +343,26 @@ export class CreateRunPage {
         );
         req.reply(buildMockRecurringRunKF({ ...data, recurring_run_id }));
       },
+    );
+  }
+
+  mockCreatePipelineVersion(
+    namespace: string,
+    params: CreatePipelineVersionKFData,
+  ): Cypress.Chainable<null> {
+    return cy.interceptOdh(
+      'POST /api/service/pipelines/:namespace/:serviceName/apis/v2beta1/pipelines/upload_version',
+      {
+        path: { namespace, serviceName: 'dspa' },
+        query: {
+          pipelineid: params.pipeline_id,
+          name: params.display_name,
+          description: params.description,
+        },
+        times: 1,
+      },
+
+      buildMockPipelineVersion(params),
     );
   }
 

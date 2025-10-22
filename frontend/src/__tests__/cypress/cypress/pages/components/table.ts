@@ -1,4 +1,4 @@
-import { Contextual } from '~/__tests__/cypress/cypress/pages/components/Contextual';
+import { Contextual } from '#~/__tests__/cypress/cypress/pages/components/Contextual';
 
 export class TableRow extends Contextual<HTMLTableRowElement> {
   findExpandButton(): Cypress.Chainable<JQuery<HTMLElement>> {
@@ -16,8 +16,9 @@ export class TableRow extends Contextual<HTMLTableRowElement> {
     return this;
   }
 
-  findKebabAction(name: string): Cypress.Chainable<JQuery<HTMLElement>> {
-    return this.find().findKebabAction(name).should('exist').and('be.visible');
+  findKebabAction(name: string, verify = true): Cypress.Chainable<JQuery<HTMLElement>> {
+    const kebabAction = this.find().findKebabAction(name);
+    return verify ? kebabAction.should('exist').and('be.visible') : kebabAction;
   }
 
   findKebab(): Cypress.Chainable<JQuery<HTMLElement>> {

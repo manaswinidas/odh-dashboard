@@ -1,5 +1,5 @@
-import { TableRow } from '~/__tests__/cypress/cypress/pages/components/table';
-import { Modal } from '~/__tests__/cypress/cypress/pages/components/Modal';
+import { TableRow } from '#~/__tests__/cypress/cypress/pages/components/table';
+import { Modal } from '#~/__tests__/cypress/cypress/pages/components/Modal';
 
 class ArchiveVersionTableRow extends TableRow {
   findName() {
@@ -58,7 +58,7 @@ class ModelVersionArchive {
     const rmId = '1';
     const preferredModelRegistry = 'modelregistry-sample';
     cy.visitWithLogin(
-      `/modelRegistry/${preferredModelRegistry}/registeredModels/${rmId}/versions/archive`,
+      `/ai-hub/registry/${preferredModelRegistry}/registered-models/${rmId}/versions/archive`,
     );
     this.wait();
   }
@@ -68,14 +68,16 @@ class ModelVersionArchive {
     const rmId = '1';
     const preferredModelRegistry = 'modelregistry-sample';
     cy.visitWithLogin(
-      `/modelRegistry/${preferredModelRegistry}/registeredModels/${rmId}/versions/archive/${mvId}`,
+      `/ai-hub/registry/${preferredModelRegistry}/registered-models/${rmId}/versions/archive/${mvId}`,
     );
   }
 
   visitModelVersionList() {
     const rmId = '1';
     const preferredModelRegistry = 'modelregistry-sample';
-    cy.visitWithLogin(`/modelRegistry/${preferredModelRegistry}/registeredModels/${rmId}/versions`);
+    cy.visitWithLogin(
+      `/ai-hub/registry/${preferredModelRegistry}/registered-models/${rmId}/versions`,
+    );
     this.wait();
   }
 
@@ -84,7 +86,7 @@ class ModelVersionArchive {
     const rmId = '1';
     const preferredModelRegistry = 'modelregistry-sample';
     cy.visitWithLogin(
-      `/modelRegistry/${preferredModelRegistry}/registeredModels/${rmId}/versions/${mvId}`,
+      `/ai-hub/registry/${preferredModelRegistry}/registered-models/${rmId}/versions/${mvId}`,
     );
     this.wait();
   }
@@ -115,6 +117,18 @@ class ModelVersionArchive {
 
   findArchiveVersionsTableRows() {
     return this.findArchiveVersionTable().find('tbody tr');
+  }
+
+  findArchiveVersionTableSearch() {
+    return cy.findByTestId('filter-toolbar-text-field');
+  }
+
+  findArchiveVersionTableFilterOption(name: string) {
+    return cy.findByTestId('filter-toolbar-dropdown').findDropdownItem(name);
+  }
+
+  findArchiveVersionEmptyTableState() {
+    return cy.findByTestId('dashboard-empty-table-state');
   }
 
   findRestoreButton() {

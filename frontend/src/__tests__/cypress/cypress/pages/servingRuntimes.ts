@@ -1,5 +1,5 @@
-import { appChrome } from '~/__tests__/cypress/cypress/pages/appChrome';
-import type { ServingRuntimeAPIProtocol } from '~/types';
+import { appChrome } from '#~/__tests__/cypress/cypress/pages/appChrome';
+import type { ServingRuntimeAPIProtocol } from '#~/types';
 import { DashboardCodeEditor } from './components/DashboardCodeEditor';
 
 class ServingRuntimeRow {
@@ -36,11 +36,15 @@ class ServingRuntimeRow {
     this.find().find('[data-label="API protocol"]').should('include.text', apiProtocol);
     return this;
   }
+
+  findServingRuntimeVersionLabel() {
+    return this.find().findByTestId('serving-runtime-version-label');
+  }
 }
 
 class ServingRuntimes {
   visit(wait = true) {
-    cy.visitWithLogin('/servingRuntimes');
+    cy.visitWithLogin('/settings/model-resources-operations/serving-runtimes');
     if (wait) {
       this.wait();
     }
@@ -57,7 +61,11 @@ class ServingRuntimes {
   }
 
   findNavItem() {
-    return appChrome.findNavItem('Serving runtimes', 'Settings');
+    return appChrome.findNavItem({
+      name: 'Serving runtimes',
+      rootSection: 'Settings',
+      subSection: 'Model resources and operations',
+    });
   }
 
   findAppTitle() {
@@ -90,18 +98,20 @@ class ServingRuntimes {
     return cy.findByRole('button', { name: 'Cancel' });
   }
 
-  findSelectServingPlatformButton() {
-    return cy.findByTestId('custom-serving-runtime-selection');
-  }
-
   findSelectAPIProtocolButton() {
     return cy.findByTestId('custom-serving-api-protocol-selection');
   }
 
-  shouldDisplayServingRuntimeValues(values: string[]) {
-    this.findSelectServingPlatformButton().click();
-    values.forEach((value) => cy.findByRole('option', { name: value }).should('exist'));
-    return this;
+  findSelectModelTypes() {
+    return cy.findByTestId('custom-serving-model-type-selection').find('button');
+  }
+
+  findPredictiveModelOption() {
+    return cy.findByTestId('model-type-option-predictive').find('input[type="checkbox"]');
+  }
+
+  findGenerativeAIModelOption() {
+    return cy.findByTestId('model-type-option-generative').find('input[type="checkbox"]');
   }
 
   shouldDisplayAPIProtocolValues(values: ServingRuntimeAPIProtocol[]) {
@@ -110,13 +120,20 @@ class ServingRuntimes {
     return this;
   }
 
-  selectPlatform(value: string) {
-    this.findSelectServingPlatformButton().click();
+  selectAPIProtocol(value: string) {
     cy.findByRole('option', { name: value }).click();
   }
 
-  selectAPIProtocol(value: string) {
-    cy.findByRole('option', { name: value }).click();
+  findSelectModelTypeButton() {
+    return cy.findByTestId('custom-serving-model-type-selection').find('button');
+  }
+
+  selectModelType(value: 'Predictive model' | 'Generative AI model (e.g., LLM)') {
+    cy.contains('.pf-v6-c-menu__item-text', value).click();
+    // Close the dropdown by clicking the toggle button again
+    this.findSelectModelTypeButton().click();
+    // Wait for the dropdown to close
+    cy.get('.pf-v6-c-menu').should('not.exist');
   }
 
   uploadYaml(filePath: string) {

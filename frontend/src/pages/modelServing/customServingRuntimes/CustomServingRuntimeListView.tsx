@@ -1,12 +1,12 @@
 import * as React from 'react';
 import { useNavigate } from 'react-router';
 import { Button, ToolbarItem } from '@patternfly/react-core';
-import { TemplateKind } from '~/k8sTypes';
-import { useDashboardNamespace } from '~/redux/selectors';
-import useNotification from '~/utilities/useNotification';
-import { Table } from '~/components/table';
-import useDraggableTable from '~/utilities/useDraggableTable';
-import { patchDashboardConfigTemplateOrderBackend } from '~/services/dashboardService';
+import { TemplateKind } from '#~/k8sTypes';
+import { useDashboardNamespace } from '#~/redux/selectors';
+import useNotification from '#~/utilities/useNotification';
+import { Table } from '#~/components/table';
+import useDraggableTable from '#~/utilities/useDraggableTable';
+import { patchDashboardConfigTemplateOrderBackend } from '#~/services/dashboardService';
 import { getServingRuntimeNameFromTemplate, getSortedTemplates } from './utils';
 import DeleteCustomServingRuntimeModal from './DeleteCustomServingRuntimeModal';
 import { columns } from './templatedData';
@@ -63,7 +63,7 @@ const CustomServingRuntimeListView: React.FC = () => {
           <ToolbarItem>
             <Button
               data-testid="add-serving-runtime-button"
-              onClick={() => navigate('/servingRuntimes/addServingRuntime')}
+              onClick={() => navigate('/settings/model-resources-operations/serving-runtimes/add')}
             >
               Add serving runtime
             </Button>

@@ -1,27 +1,27 @@
 import yaml from 'js-yaml';
-import { HTPASSWD_CLUSTER_ADMIN_USER } from '~/__tests__/cypress/cypress/utils/e2eUsers';
-import { projectListPage } from '~/__tests__/cypress/cypress/pages/projects';
-import { notebookServer } from '~/__tests__/cypress/cypress/pages/notebookServer';
-import type { NotebookTolerationsTestData } from '~/__tests__/cypress/cypress/types';
+import { HTPASSWD_CLUSTER_ADMIN_USER } from '#~/__tests__/cypress/cypress/utils/e2eUsers';
+import { projectListPage } from '#~/__tests__/cypress/cypress/pages/projects';
+import { notebookServer } from '#~/__tests__/cypress/cypress/pages/notebookServer';
+import type { NotebookTolerationsTestData } from '#~/__tests__/cypress/cypress/types';
 import {
   waitForPodReady,
   deleteNotebook,
-} from '~/__tests__/cypress/cypress/utils/oc_commands/baseCommands';
+} from '#~/__tests__/cypress/cypress/utils/oc_commands/baseCommands';
 import {
   retryableBefore,
   wasSetupPerformed,
-} from '~/__tests__/cypress/cypress/utils/retryableHooks';
+} from '#~/__tests__/cypress/cypress/utils/retryableHooks';
 import {
   createCleanHardwareProfile,
   cleanupHardwareProfiles,
-} from '~/__tests__/cypress/cypress/utils/oc_commands/hardwareProfiles';
-import { checkNotebookTolerations } from '~/__tests__/cypress/cypress/utils/oc_commands/notebooks';
+} from '#~/__tests__/cypress/cypress/utils/oc_commands/hardwareProfiles';
+import { checkNotebookTolerations } from '#~/__tests__/cypress/cypress/utils/oc_commands/notebooks';
 
 describe('Notebooks - tolerations tests', () => {
   let testData: NotebookTolerationsTestData;
 
-  retryableBefore(() => {
-    return cy
+  retryableBefore(() =>
+    cy
       .fixture('e2e/hardwareProfiles/testNotebookTolerations.yaml', 'utf8')
       .then((yamlContent: string) => {
         testData = yaml.load(yamlContent) as NotebookTolerationsTestData;
@@ -30,13 +30,15 @@ describe('Notebooks - tolerations tests', () => {
         cy.log(`Loaded Hardware Profile Name: ${testData.hardwareProfileName}`);
         // Cleanup Hardware Profile if it already exists
         createCleanHardwareProfile(testData.resourceYamlPath);
-      });
-  });
+      }),
+  );
 
   // Cleanup: Delete Hardware Profile and the associated Project
   after(() => {
     // Check if the Before Method was executed to perform the setup
-    if (!wasSetupPerformed()) return;
+    if (!wasSetupPerformed()) {
+      return;
+    }
 
     // Check if a notebook is running and delete if it is
     deleteNotebook('jupyter-nb');
@@ -49,7 +51,9 @@ describe('Notebooks - tolerations tests', () => {
     'Verify Juypter Notebook Creation using Hardware Profiles and applying Tolerations',
     // TODO: Add the below tags once this feature is enabled in 2.20+
     //  { tags: ['@Sanity', '@SanitySet2', '@Dashboard'] },
-    { tags: ['@Featureflagged', '@HardwareProfileNotebook', '@HardwareProfiles'] },
+    {
+      tags: ['@Featureflagged', '@HardwareProfileNotebook', '@HardwareProfiles', '@NonConcurrent'],
+    },
     () => {
       // Authentication and navigation
       cy.step('Log into the application');

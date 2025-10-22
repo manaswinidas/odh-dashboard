@@ -1,6 +1,6 @@
-import { KnownLabels, PodKind } from '~/k8sTypes';
-import { genUID } from '~/__mocks__/mockUtils';
-import { TolerationEffect, TolerationOperator } from '~/types';
+import { KnownLabels, PodKind } from '#~/k8sTypes';
+import { genUID } from '#~/__mocks__/mockUtils';
+import { TolerationEffect, TolerationOperator } from '#~/types';
 
 type MockResourceConfigType = {
   user?: string;
@@ -100,7 +100,7 @@ export const mockPodK8sResource = ({
           {
             name: 'NOTEBOOK_ARGS',
             value:
-              '--ServerApp.port=8888\n                  --ServerApp.token=\'\'\n                  --ServerApp.password=\'\'\n                  --ServerApp.base_url=/notebook/project/workbench\n                  --ServerApp.quit_button=False\n                  --ServerApp.tornado_settings={"user":"user","hub_host":"http://localhost:4010","hub_prefix":"/projects/project"}',
+              "--ServerApp.port=8888\n                  --ServerApp.token=''\n                  --ServerApp.password=''\n                  --ServerApp.base_url=/notebook/project/workbench\n                  --ServerApp.quit_button=False",
           },
           {
             name: 'JUPYTER_IMAGE',

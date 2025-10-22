@@ -3,22 +3,22 @@ import {
   mockDashboardConfig,
   mockDscStatus,
   mockK8sResourceList,
-} from '~/__mocks__';
-import { mockDsciStatus } from '~/__mocks__/mockDsciStatus';
-import { StackCapability, StackComponent } from '~/concepts/areas/types';
+} from '#~/__mocks__';
+import { mockDsciStatus } from '#~/__mocks__/mockDsciStatus';
+import { DataScienceStackComponent } from '#~/concepts/areas/types';
 import {
   FormFieldSelector,
   modelRegistrySettings,
-} from '~/__tests__/cypress/cypress/pages/modelRegistrySettings';
-import { pageNotfound } from '~/__tests__/cypress/cypress/pages/pageNotFound';
+} from '#~/__tests__/cypress/cypress/pages/modelRegistrySettings';
+import { pageNotfound } from '#~/__tests__/cypress/cypress/pages/pageNotFound';
 import {
   asProductAdminUser,
   asProjectAdminUser,
-} from '~/__tests__/cypress/cypress/utils/mockUsers';
-import { mockModelRegistry } from '~/__mocks__/mockModelRegistry';
-import type { ConfigSecretItem, RoleBindingSubject } from '~/k8sTypes';
-import { mockRoleBindingK8sResource } from '~/__mocks__/mockRoleBindingK8sResource';
-import { verifyRelativeURL } from '~/__tests__/cypress/cypress/utils/url';
+} from '#~/__tests__/cypress/cypress/utils/mockUsers';
+import { mockModelRegistry } from '#~/__mocks__/mockModelRegistry';
+import type { ConfigSecretItem, RoleBindingSubject } from '#~/k8sTypes';
+import { mockRoleBindingK8sResource } from '#~/__mocks__/mockRoleBindingK8sResource';
+import { verifyRelativeURL } from '#~/__tests__/cypress/cypress/utils/url';
 
 const groupSubjects: RoleBindingSubject[] = [
   {
@@ -57,18 +57,16 @@ const setupMocksForMRSettingAccess = ({
   cy.interceptOdh(
     'GET /api/dsc/status',
     mockDscStatus({
-      installedComponents: {
-        [StackComponent.MODEL_REGISTRY]: true,
-        [StackComponent.MODEL_MESH]: true,
+      components: {
+        [DataScienceStackComponent.MODEL_REGISTRY]: {
+          managementState: 'Managed',
+          registriesNamespace: 'odh-model-registries',
+        },
+        [DataScienceStackComponent.MODEL_MESH_SERVING]: { managementState: 'Managed' },
       },
     }),
   );
-  cy.interceptOdh(
-    'GET /api/dsci/status',
-    mockDsciStatus({
-      requiredCapabilities: [StackCapability.SERVICE_MESH, StackCapability.SERVICE_MESH_AUTHZ],
-    }),
-  );
+  cy.interceptOdh('GET /api/dsci/status', mockDsciStatus({}));
   cy.interceptOdh('POST /api/modelRegistries', mockModelRegistry({})).as('createModelRegistry');
   cy.interceptOdh(
     'GET /api/modelRegistries',
@@ -1192,7 +1190,9 @@ describe('ManagePermissions', () => {
       .findModelRegistryRow('test-registry-1')
       .findByText('Manage permissions')
       .click();
-    verifyRelativeURL('/modelRegistrySettings/permissions/test-registry-1');
+    verifyRelativeURL(
+      '/settings/model-resources-operations/model-registry/permissions/test-registry-1',
+    );
   });
 
   it('Manage permission is disabled, when there is no rolebinding', () => {
@@ -1224,4 +1224,11 @@ describe('DeleteModelRegistryModal', () => {
     modelRegistrySettings.findConfirmDeleteNameInput().type('test-registry-1');
     modelRegistrySettings.findSubmitButton().should('be.enabled');
   });
+});
+
+it('redirect from v2 to v3 route', () => {
+  setupMocksForMRSettingAccess({});
+  cy.visitWithLogin('/modelRegistrySettings');
+  cy.findByTestId('app-page-title').contains('Model registry settings');
+  cy.url().should('include', '/settings/model-resources-operations/model-registry');
 });

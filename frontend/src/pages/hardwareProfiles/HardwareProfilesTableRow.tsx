@@ -12,45 +12,47 @@ import {
   Timestamp,
   TimestampTooltipVariant,
   Truncate,
-  Tooltip,
 } from '@patternfly/react-core';
-import { ActionsColumn, ExpandableRowContent, Tbody, Td, Tr } from '@patternfly/react-table';
+import { ActionsColumn, ExpandableRowContent, Td, Tr } from '@patternfly/react-table';
 import { useNavigate } from 'react-router-dom';
 import { ExclamationTriangleIcon } from '@patternfly/react-icons';
-import { relativeTime } from '~/utilities/time';
-import { TableRowTitleDescription } from '~/components/table';
-import HardwareProfileEnableToggle from '~/pages/hardwareProfiles/HardwareProfileEnableToggle';
-import { HardwareProfileKind, HardwareProfileFeatureVisibility } from '~/k8sTypes';
-import NodeResourceTable from '~/pages/hardwareProfiles/nodeResource/NodeResourceTable';
-import NodeSelectorTable from '~/pages/hardwareProfiles/nodeSelector/NodeSelectorTable';
-import TolerationTable from '~/pages/hardwareProfiles/toleration/TolerationTable';
-import { useKebabAccessAllowed, verbModelAccess } from '~/concepts/userSSAR';
+import { relativeTime } from '#~/utilities/time';
+import { TableRowTitleDescription } from '#~/components/table';
+import HardwareProfileEnableToggle from '#~/pages/hardwareProfiles/HardwareProfileEnableToggle';
+import { HardwareProfileKind, HardwareProfileFeatureVisibility } from '#~/k8sTypes';
+import NodeResourceTable from '#~/pages/hardwareProfiles/nodeResource/NodeResourceTable';
+import NodeSelectorTable from '#~/pages/hardwareProfiles/nodeSelector/NodeSelectorTable';
+import TolerationTable from '#~/pages/hardwareProfiles/toleration/TolerationTable';
+import { useKebabAccessAllowed, verbModelAccess } from '#~/concepts/userSSAR';
 import {
   createHardwareProfileWarningTitle,
+  getHardwareProfileDescription,
+  getHardwareProfileDisplayName,
+  isDefaultHardwareProfile,
   validateProfileWarning,
-} from '~/pages/hardwareProfiles/utils';
-import { HardwareProfileModel } from '~/api';
-import { MigrationAction } from './migration/types';
+} from '#~/pages/hardwareProfiles/utils';
+import { HardwareProfileModel } from '#~/api';
 import { HardwareProfileFeatureVisibilityTitles } from './manage/const';
-import { MIGRATION_SOURCE_TYPE_LABELS } from './migration/const';
 
 type HardwareProfilesTableRowProps = {
   rowIndex: number;
   hardwareProfile: HardwareProfileKind;
-  migrationAction?: MigrationAction;
   handleDelete: (cr: HardwareProfileKind) => void;
-  handleMigrate: (migrationAction: MigrationAction) => void;
+  isExpanded: boolean;
+  onToggleExpansion: () => void;
+  dragDisabled?: boolean;
 };
 
 const HardwareProfilesTableRow: React.FC<HardwareProfilesTableRowProps> = ({
   hardwareProfile,
   rowIndex,
-  migrationAction,
   handleDelete,
-  handleMigrate,
+  isExpanded,
+  onToggleExpansion,
+  dragDisabled = false,
+  ...props
 }) => {
   const modifiedDate = hardwareProfile.metadata.annotations?.['opendatahub.io/modified-date'];
-  const [isExpanded, setExpanded] = React.useState(false);
   const navigate = useNavigate();
 
   const useCases: HardwareProfileFeatureVisibility[] = React.useMemo(() => {
@@ -68,22 +70,61 @@ const HardwareProfilesTableRow: React.FC<HardwareProfilesTableRowProps> = ({
 
   const hardwareProfileWarnings = validateProfileWarning(hardwareProfile);
 
+  const renderFeatureVisibility = () => {
+    if (useCases.length === 0) {
+      return <i>All features</i>;
+    }
+
+    const validUseCases = useCases.filter((v) => HardwareProfileFeatureVisibilityTitles[v]);
+
+    if (validUseCases.length === 0) {
+      return '-';
+    }
+
+    return (
+      <LabelGroup>
+        {validUseCases.map((v) => (
+          <Label key={v} data-testid={`label-${v}`}>
+            {HardwareProfileFeatureVisibilityTitles[v]}
+          </Label>
+        ))}
+      </LabelGroup>
+    );
+  };
+
+  const { kueue, node } = hardwareProfile.spec.scheduling ?? {};
+  const localQueueName = kueue?.localQueueName;
+  const priorityClass = kueue?.priorityClass;
+  const nodeSelector = node?.nodeSelector;
+  const tolerations = node?.tolerations;
+
   return (
-    <Tbody isExpanded={isExpanded}>
-      <Tr>
+    <>
+      <Tr
+        key={hardwareProfile.metadata.name}
+        id={hardwareProfile.metadata.name}
+        draggable={!dragDisabled}
+        {...props}
+      >
         <Td
           expand={{
             rowIndex,
-            expandId: 'hardware-profile-table-row-item',
+            expandId: `hardware-profile-${hardwareProfile.metadata.name}`,
             isExpanded,
-            onToggle: () => setExpanded(!isExpanded),
+            onToggle: onToggleExpansion,
           }}
+        />
+        <Td
+          draggableRow={{
+            id: `draggable-row-${hardwareProfile.metadata.name}`,
+          }}
+          style={dragDisabled ? { pointerEvents: 'none', opacity: 0.5 } : undefined}
         />
         <Td dataLabel="Name">
           <TableRowTitleDescription
-            title={<Truncate content={hardwareProfile.spec.displayName} />}
-            description={hardwareProfile.spec.description}
-            resource={migrationAction ? undefined : hardwareProfile}
+            title={<Truncate content={getHardwareProfileDisplayName(hardwareProfile)} />}
+            description={getHardwareProfileDescription(hardwareProfile)}
+            resource={hardwareProfile}
             truncateDescriptionLines={2}
             wrapResourceTitle={false}
             titleIcon={
@@ -118,55 +159,24 @@ const HardwareProfilesTableRow: React.FC<HardwareProfilesTableRowProps> = ({
             }
           />
         </Td>
-        <Td dataLabel="Features">
-          {useCases.length === 0 ? (
-            <i>All features</i>
-          ) : (
-            <LabelGroup>
-              {useCases.map((v) => (
-                <Label key={v} data-testid={`label-${v}`}>
-                  {HardwareProfileFeatureVisibilityTitles[v]}
-                </Label>
-              ))}
-            </LabelGroup>
-          )}
-        </Td>
+        <Td dataLabel="Features">{renderFeatureVisibility()}</Td>
         <Td dataLabel="Enabled">
-          {migrationAction ? (
-            <Tooltip content="This legacy profile requires migration before it can be modified.">
-              <HardwareProfileEnableToggle hardwareProfile={hardwareProfile} isDisabled />
-            </Tooltip>
+          <HardwareProfileEnableToggle hardwareProfile={hardwareProfile} />
+        </Td>
+        <Td dataLabel="Last modified">
+          {modifiedDate && !Number.isNaN(new Date(modifiedDate).getTime()) ? (
+            <Timestamp
+              date={new Date(modifiedDate)}
+              tooltip={{
+                variant: TimestampTooltipVariant.default,
+              }}
+            >
+              {relativeTime(Date.now(), new Date(modifiedDate).getTime())}
+            </Timestamp>
           ) : (
-            <HardwareProfileEnableToggle hardwareProfile={hardwareProfile} />
+            '--'
           )}
         </Td>
-        {migrationAction && (
-          <Td dataLabel="Source">
-            <TableRowTitleDescription
-              title={
-                MIGRATION_SOURCE_TYPE_LABELS[migrationAction.source.type].charAt(0).toUpperCase() +
-                MIGRATION_SOURCE_TYPE_LABELS[migrationAction.source.type].slice(1)
-              }
-              resource={migrationAction.source.resource}
-            />
-          </Td>
-        )}
-        {!migrationAction && (
-          <Td dataLabel="Last modified">
-            {modifiedDate && !Number.isNaN(new Date(modifiedDate).getTime()) ? (
-              <Timestamp
-                date={new Date(modifiedDate)}
-                tooltip={{
-                  variant: TimestampTooltipVariant.default,
-                }}
-              >
-                {relativeTime(Date.now(), new Date(modifiedDate).getTime())}
-              </Timestamp>
-            ) : (
-              '--'
-            )}
-          </Td>
-        )}
         <Td isActionCell>
           <ActionsColumn
             items={[
@@ -175,7 +185,9 @@ const HardwareProfilesTableRow: React.FC<HardwareProfilesTableRowProps> = ({
                   {
                     title: 'Edit',
                     onClick: () =>
-                      navigate(`/hardwareProfiles/edit/${hardwareProfile.metadata.name}`),
+                      navigate(
+                        `/settings/environment-setup/hardware-profiles/edit/${hardwareProfile.metadata.name}`,
+                      ),
                   },
                 ],
                 verbModelAccess('update', HardwareProfileModel),
@@ -185,65 +197,78 @@ const HardwareProfilesTableRow: React.FC<HardwareProfilesTableRowProps> = ({
                   {
                     title: 'Duplicate',
                     onClick: () =>
-                      navigate(`/hardwareProfiles/duplicate/${hardwareProfile.metadata.name}`),
+                      navigate(
+                        `/settings/environment-setup/hardware-profiles/duplicate/${hardwareProfile.metadata.name}`,
+                      ),
                   },
                 ],
                 verbModelAccess('create', HardwareProfileModel),
               ),
-              ...useKebabAccessAllowed(
-                migrationAction
-                  ? [{ title: 'Migrate', onClick: () => handleMigrate(migrationAction) }]
-                  : [],
-                verbModelAccess('create', HardwareProfileModel),
-              ),
-              ...useKebabAccessAllowed(
-                [
-                  { isSeparator: true },
-                  {
-                    title: 'Delete',
-                    onClick: () => handleDelete(hardwareProfile),
-                  },
-                ],
-                verbModelAccess('delete', HardwareProfileModel),
-              ),
+              ...useKebabAccessAllowed([], verbModelAccess('create', HardwareProfileModel)),
+              ...(!isDefaultHardwareProfile(hardwareProfile)
+                ? [
+                    ...useKebabAccessAllowed(
+                      [
+                        { isSeparator: true },
+                        {
+                          title: 'Delete',
+                          onClick: () => handleDelete(hardwareProfile),
+                        },
+                      ],
+                      verbModelAccess('delete', HardwareProfileModel),
+                    ),
+                  ]
+                : []),
             ]}
           />
         </Td>
       </Tr>
-      <Tr isExpanded={isExpanded}>
-        <Td />
-        <Td dataLabel="Other information" colSpan={4}>
-          <ExpandableRowContent>
-            <Stack hasGutter>
-              {hardwareProfile.spec.identifiers &&
-                hardwareProfile.spec.identifiers.length !== 0 && (
+      {isExpanded && (
+        <Tr key={`${hardwareProfile.metadata.name}-expanded`} isExpanded={isExpanded}>
+          <Td />
+          <Td dataLabel="Other information" colSpan={4}>
+            <ExpandableRowContent>
+              <Stack hasGutter>
+                {hardwareProfile.spec.identifiers &&
+                  hardwareProfile.spec.identifiers.length !== 0 && (
+                    <StackItem>
+                      <p className="pf-v6-u-font-weight-bold">Node resources</p>
+                      <NodeResourceTable nodeResources={hardwareProfile.spec.identifiers} />
+                      <Divider />
+                    </StackItem>
+                  )}
+                {localQueueName && (
                   <StackItem>
-                    <p className="pf-v6-u-font-weight-bold">Node resources</p>
-                    <NodeResourceTable nodeResources={hardwareProfile.spec.identifiers} />
-                    <Divider />
+                    <p className="pf-v6-u-font-weight-bold">Local queue</p>
+                    {localQueueName}
                   </StackItem>
                 )}
-              {hardwareProfile.spec.nodeSelector &&
-                Object.keys(hardwareProfile.spec.nodeSelector).length !== 0 && (
+                {priorityClass && (
+                  <StackItem>
+                    <p className="pf-v6-u-font-weight-bold">Workload priority</p>
+                    {priorityClass}
+                  </StackItem>
+                )}
+                {nodeSelector && Object.keys(nodeSelector).length !== 0 && (
                   <StackItem>
                     <p className="pf-v6-u-font-weight-bold">Node selectors</p>
-                    <NodeSelectorTable nodeSelector={hardwareProfile.spec.nodeSelector} />
+                    <NodeSelectorTable nodeSelector={nodeSelector} />
                     <Divider />
                   </StackItem>
                 )}
-              {hardwareProfile.spec.tolerations &&
-                hardwareProfile.spec.tolerations.length !== 0 && (
+                {tolerations && tolerations.length !== 0 && (
                   <StackItem>
                     <p className="pf-v6-u-font-weight-bold">Tolerations</p>
-                    <TolerationTable tolerations={hardwareProfile.spec.tolerations} />
+                    <TolerationTable tolerations={tolerations} />
                     <Divider />
                   </StackItem>
                 )}
-            </Stack>
-          </ExpandableRowContent>
-        </Td>
-      </Tr>
-    </Tbody>
+              </Stack>
+            </ExpandableRowContent>
+          </Td>
+        </Tr>
+      )}
+    </>
   );
 };
 

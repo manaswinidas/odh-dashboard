@@ -1,22 +1,22 @@
-import { pageNotfound } from '~/__tests__/cypress/cypress/pages/pageNotFound';
+import { pageNotfound } from '#~/__tests__/cypress/cypress/pages/pageNotFound';
 import {
   asProductAdminUser,
   asProjectAdminUser,
-} from '~/__tests__/cypress/cypress/utils/mockUsers';
+} from '#~/__tests__/cypress/cypress/utils/mockUsers';
 import {
   connectionTypePreviewModal,
   connectionTypesPage,
-} from '~/__tests__/cypress/cypress/pages/connectionTypes';
-import { mockDashboardConfig } from '~/__mocks__';
+} from '#~/__tests__/cypress/cypress/pages/connectionTypes';
+import { mockDashboardConfig } from '#~/__mocks__';
 import {
   mockConnectionTypeConfigMap,
   mockModelServingFields,
-} from '~/__mocks__/mockConnectionType';
-import { deleteModal } from '~/__tests__/cypress/cypress/pages/components/DeleteModal';
+} from '#~/__mocks__/mockConnectionType';
+import { deleteModal } from '#~/__tests__/cypress/cypress/pages/components/DeleteModal';
 
 it('Connection types should not be available for non product admins', () => {
   asProjectAdminUser();
-  cy.visitWithLogin('/connectionTypes');
+  cy.visitWithLogin('/settings/environment-setup/connection-types');
   pageNotfound.findPage().should('exist');
   connectionTypesPage.findNavItem().should('not.exist');
 });
@@ -24,7 +24,7 @@ it('Connection types should not be available for non product admins', () => {
 it('Connection types should be hidden by feature flag', () => {
   asProductAdminUser();
 
-  cy.visitWithLogin('/connectionTypes');
+  cy.visitWithLogin('/settings/environment-setup/connection-types');
 
   cy.interceptOdh(
     'GET /api/config',

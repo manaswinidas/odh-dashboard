@@ -24,20 +24,20 @@ import {
   updatePipelineRecurringRun,
   uploadPipeline,
   uploadPipelineVersion,
-} from '~/api/pipelines/custom';
-import { handlePipelineFailures } from '~/api/pipelines/errorUtils';
-import { proxyCREATE, proxyDELETE, proxyENDPOINT, proxyFILE, proxyGET } from '~/api/proxyUtils';
+} from '#~/api/pipelines/custom';
+import { handlePipelineFailures } from '#~/api/pipelines/errorUtils';
+import { proxyCREATE, proxyDELETE, proxyENDPOINT, proxyFILE, proxyGET } from '#~/api/proxyUtils';
 import {
   CreateExperimentKFData,
   CreatePipelineRecurringRunKFData,
   CreatePipelineRunKFData,
   RecurringRunMode,
-} from '~/concepts/pipelines/kfTypes';
-import { PipelineParams } from '~/concepts/pipelines/types';
+} from '#~/concepts/pipelines/kfTypes';
+import { PipelineParams } from '#~/concepts/pipelines/types';
 
 const mockProxyPromise = Promise.resolve();
 
-jest.mock('~/api/proxyUtils', () => ({
+jest.mock('#~/api/proxyUtils', () => ({
   proxyCREATE: jest.fn(() => mockProxyPromise),
   proxyGET: jest.fn(() => mockProxyPromise),
   proxyDELETE: jest.fn(() => mockProxyPromise),
@@ -47,7 +47,7 @@ jest.mock('~/api/proxyUtils', () => ({
 
 const mockResultPromise = Promise.resolve();
 
-jest.mock('~/api/pipelines/errorUtils', () => ({
+jest.mock('#~/api/pipelines/errorUtils', () => ({
   handlePipelineFailures: jest.fn(() => mockResultPromise),
 }));
 
@@ -466,15 +466,15 @@ describe('updatePipelineRecurringRun', () => {
 
 describe('uploadPipeline', () => {
   it('should call proxyFILE and handlePipelineFailures to upload pipeline', () => {
-    expect(uploadPipeline('hostPath')({}, 'name', 'description', 'fileContents')).toBe(
-      mockResultPromise,
-    );
+    expect(
+      uploadPipeline('hostPath')({}, 'name', 'description', 'fileContents', 'displayName'),
+    ).toBe(mockResultPromise);
     expect(proxyFILEMock).toHaveBeenCalledTimes(1);
     expect(proxyFILEMock).toHaveBeenCalledWith(
       'hostPath',
       '/apis/v2beta1/pipelines/upload',
       'fileContents',
-      { description: 'description', name: 'name' },
+      { description: 'description', name: 'name', display_name: 'displayName' },
     );
     expect(handlePipelineFailuresMock).toHaveBeenCalledTimes(1);
     expect(handlePipelineFailuresMock).toHaveBeenCalledWith(mockProxyPromise);
@@ -484,14 +484,26 @@ describe('uploadPipeline', () => {
 describe('uploadPipelineVersion', () => {
   it('should call proxyFILE and handlePipelineFailures to upload pipeline version', () => {
     expect(
-      uploadPipelineVersion('hostPath')({}, 'name', 'description', 'fileContents', 'pipelineId'),
+      uploadPipelineVersion('hostPath')(
+        {},
+        'name',
+        'description',
+        'fileContents',
+        'pipelineId',
+        'displayName',
+      ),
     ).toBe(mockResultPromise);
     expect(proxyFILEMock).toHaveBeenCalledTimes(1);
     expect(proxyFILEMock).toHaveBeenCalledWith(
       'hostPath',
       '/apis/v2beta1/pipelines/upload_version',
       'fileContents',
-      { description: 'description', name: 'name', pipelineid: 'pipelineId' },
+      {
+        description: 'description',
+        name: 'name',
+        pipelineid: 'pipelineId',
+        display_name: 'displayName',
+      },
     );
     expect(handlePipelineFailuresMock).toHaveBeenCalledTimes(1);
     expect(handlePipelineFailuresMock).toHaveBeenCalledWith(mockProxyPromise);

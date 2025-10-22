@@ -1,31 +1,29 @@
-import type { ModelTolerationsTestData } from '~/__tests__/cypress/cypress/types';
+import type { ModelTolerationsTestData } from '#~/__tests__/cypress/cypress/types';
 import {
   addUserToProject,
   deleteOpenShiftProject,
-} from '~/__tests__/cypress/cypress/utils/oc_commands/project';
-import { loadModelTolerationsFixture } from '~/__tests__/cypress/cypress/utils/dataLoader';
-import { LDAP_CONTRIBUTOR_USER } from '~/__tests__/cypress/cypress/utils/e2eUsers';
-import { projectListPage, projectDetails } from '~/__tests__/cypress/cypress/pages/projects';
+} from '#~/__tests__/cypress/cypress/utils/oc_commands/project';
+import { loadModelTolerationsFixture } from '#~/__tests__/cypress/cypress/utils/dataLoader';
+import { LDAP_CONTRIBUTOR_USER } from '#~/__tests__/cypress/cypress/utils/e2eUsers';
+import { projectListPage, projectDetails } from '#~/__tests__/cypress/cypress/pages/projects';
 import {
   modelServingGlobal,
   inferenceServiceModal,
   modelServingSection,
-} from '~/__tests__/cypress/cypress/pages/modelServing';
+} from '#~/__tests__/cypress/cypress/pages/modelServing';
 import {
   checkInferenceServiceState,
   provisionProjectForModelServing,
   validateInferenceServiceTolerations,
-} from '~/__tests__/cypress/cypress/utils/oc_commands/modelServing';
-import {
-  retryableBefore,
-  wasSetupPerformed,
-} from '~/__tests__/cypress/cypress/utils/retryableHooks';
-import { attemptToClickTooltip } from '~/__tests__/cypress/cypress/utils/models';
+} from '#~/__tests__/cypress/cypress/utils/oc_commands/modelServing';
+import { retryableBefore } from '#~/__tests__/cypress/cypress/utils/retryableHooks';
+import { attemptToClickTooltip } from '#~/__tests__/cypress/cypress/utils/models';
 import {
   cleanupHardwareProfiles,
   createCleanHardwareProfile,
-} from '~/__tests__/cypress/cypress/utils/oc_commands/hardwareProfiles';
-import { createCleanProject } from '~/__tests__/cypress/cypress/utils/projectChecker';
+} from '#~/__tests__/cypress/cypress/utils/oc_commands/hardwareProfiles';
+import { createCleanProject } from '#~/__tests__/cypress/cypress/utils/projectChecker';
+import { generateTestUUID } from '#~/__tests__/cypress/cypress/utils/uuidGenerator';
 
 let testData: ModelTolerationsTestData;
 let projectName: string;
@@ -35,6 +33,8 @@ let modelFilePath: string;
 let hardwareProfileResourceName: string;
 let tolerationValue: string;
 const awsBucket = 'BUCKET_3' as const;
+const projectUuid = generateTestUUID();
+const hardwareProfileUuid = generateTestUUID();
 
 describe('Notebooks - tolerations tests', () => {
   retryableBefore(() => {
@@ -48,11 +48,11 @@ describe('Notebooks - tolerations tests', () => {
     return loadModelTolerationsFixture('e2e/hardwareProfiles/testModelServingTolerations.yaml')
       .then((fixtureData: ModelTolerationsTestData) => {
         testData = fixtureData;
-        projectName = testData.modelServingTolerationsTestNamespace;
+        projectName = `${testData.modelServingTolerationsTestNamespace}-${projectUuid}`;
         contributor = LDAP_CONTRIBUTOR_USER.USERNAME;
         modelName = testData.modelName;
         modelFilePath = testData.modelFilePath;
-        hardwareProfileResourceName = testData.hardwareProfileName;
+        hardwareProfileResourceName = `${testData.hardwareProfileName}-${hardwareProfileUuid}`;
         tolerationValue = testData.tolerationValue;
 
         if (!projectName) {
@@ -81,9 +81,6 @@ describe('Notebooks - tolerations tests', () => {
 
   //Cleanup: Delete Hardware Profile and the associated Project
   after(() => {
-    // Check if the Before Method was executed to perform the setup
-    if (!wasSetupPerformed()) return;
-
     // Load Hardware Profile
     cy.log(`Loaded Hardware Profile Name: ${hardwareProfileResourceName}`);
 
@@ -92,7 +89,7 @@ describe('Notebooks - tolerations tests', () => {
       // Delete provisioned Project
       if (projectName) {
         cy.log(`Deleting Project ${projectName} after the test has finished.`);
-        deleteOpenShiftProject(projectName, { timeout: 300000 });
+        deleteOpenShiftProject(projectName, { wait: false, ignoreNotFound: true });
       }
     });
   });
@@ -125,20 +122,22 @@ describe('Notebooks - tolerations tests', () => {
         'Launch a Single Serving Model using Caikit TGIS ServingRuntime for KServe and by selecting the Hardware Profile',
       );
       inferenceServiceModal.findModelNameInput().type(modelName);
-      inferenceServiceModal.findServingRuntimeTemplate().click();
-      inferenceServiceModal.findCalkitTGISServingRuntime().click();
+      inferenceServiceModal.findServingRuntimeTemplateSearchSelector().click();
+      inferenceServiceModal
+        .findGlobalScopedTemplateOption('Caikit TGIS ServingRuntime for KServe')
+        .click();
 
       inferenceServiceModal.selectPotentiallyDisabledProfile(
         testData.hardwareProfileDeploymentSize,
-        testData.hardwareProfileName,
+        hardwareProfileResourceName,
       );
       inferenceServiceModal.findLocationPathInput().type(modelFilePath);
       inferenceServiceModal.findSubmitButton().click();
 
       //Verify the model created
       cy.step('Verify that the Model is created Successfully on the backend and frontend');
-      checkInferenceServiceState(modelName);
-      modelServingSection.findModelServerName(modelName);
+      checkInferenceServiceState(modelName, projectName);
+      modelServingSection.findModelMetricsLink(modelName);
       // Note reload is required as status tooltip was not found due to a stale element
       cy.reload();
       attemptToClickTooltip();

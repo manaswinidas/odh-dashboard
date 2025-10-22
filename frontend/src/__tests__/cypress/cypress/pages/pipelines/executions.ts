@@ -1,8 +1,8 @@
-import type { FilterArgs } from '~/__tests__/cypress/cypress/tests/mocked/pipelines/executions.cy';
+import type { FilterArgs } from '#~/__tests__/cypress/cypress/tests/mocked/pipelines/executions.cy';
 
 class ExecutionPage {
   visit(namespace?: string) {
-    cy.visitWithLogin(`/executions${namespace ? `/${namespace}` : ''}`);
+    cy.visitWithLogin(`/develop-train/pipelines/executions${namespace ? `/${namespace}` : ''}`);
   }
 
   findEntryByLink(name: string) {

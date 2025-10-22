@@ -1,5 +1,5 @@
-import path from 'path';
-import fs from 'fs';
+import * as path from 'path';
+import * as fs from 'fs';
 
 // @ts-expect-error: Types are not available for this third-party library
 import registerCypressGrep from '@cypress/grep/src/plugin';
@@ -12,10 +12,21 @@ import cypressHighResolution from 'cypress-high-resolution';
 // @ts-ignore no types available
 import { beforeRunHook, afterRunHook } from 'cypress-mochawesome-reporter/lib';
 import { mergeFiles } from 'junit-report-merger';
-import { interceptSnapshotFile } from '~/__tests__/cypress/cypress/utils/snapshotUtils';
-import { setup as setupWebsockets } from '~/__tests__/cypress/cypress/support/websockets';
-import { env, cypressEnv, BASE_URL } from '~/__tests__/cypress/cypress/utils/testConfig';
-import { extractHttpsUrls } from '~/__tests__/cypress/cypress/utils/urlExtractor';
+import { getModuleFederationConfigs } from '@odh-dashboard/app-config/node';
+import { interceptSnapshotFile } from './cypress/utils/snapshotUtils';
+import { setup as setupWebsockets } from './cypress/support/websockets';
+import { env, cypressEnv, BASE_URL } from './cypress/utils/testConfig';
+import { extractHttpsUrlsWithLocation } from './cypress/utils/urlExtractor';
+import { validateHttpsUrls } from './cypress/utils/urlValidator';
+import { logToConsole, LogLevel } from './cypress/utils/logger';
+
+const getCyEnvVariables = (envVars: Record<string, string | undefined>) => {
+  return Object.fromEntries(
+    Object.keys(envVars)
+      .filter((key) => key.startsWith('CY_'))
+      .map((key) => [key, envVars[key]]),
+  );
+};
 
 const resultsDir = `${env.CY_RESULTS_DIR || 'results'}/${env.CY_MOCK ? 'mocked' : 'e2e'}`;
 
@@ -24,7 +35,7 @@ export default defineConfig({
   // Disable watching only if env variable `CY_WATCH=false`
   watchForFileChanges: env.CY_WATCH ? env.CY_WATCH !== 'false' : undefined,
   // Use relative path as a workaround to https://github.com/cypress-io/cypress/issues/6406
-  reporter: '../../../node_modules/cypress-multi-reporters',
+  reporter: '../../../../node_modules/cypress-multi-reporters',
   reporterOptions: {
     reporterEnabled: 'cypress-mochawesome-reporter, mocha-junit-reporter',
     mochaJunitReporterReporterOptions: {
@@ -47,10 +58,11 @@ export default defineConfig({
   screenshotsFolder: `${resultsDir}/screenshots`,
   videosFolder: `${resultsDir}/videos`,
   env: {
+    ...getCyEnvVariables(env),
     ...cypressEnv,
     MOCK: !!env.CY_MOCK,
     RECORD: !!env.CY_RECORD,
-    WS_PORT: env.CY_WS_PORT,
+    WS_PORT: env.CY_WS_PORT ?? '9002',
     coverage: !!env.CY_COVERAGE,
     codeCoverage: {
       exclude: [path.resolve(__dirname, '../../third_party/**')],
@@ -58,10 +70,12 @@ export default defineConfig({
     ODH_PRODUCT_NAME: env.ODH_PRODUCT_NAME,
     resolution: 'high',
     grepFilterSpecs: true,
+    mfConfigs: getModuleFederationConfigs(true),
   },
   defaultCommandTimeout: 10000,
   e2e: {
     baseUrl: BASE_URL,
+    userAgent: 'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0',
     specPattern: env.CY_MOCK
       ? `cypress/tests/mocked/**/*.cy.ts`
       : env.CY_RECORD
@@ -87,27 +101,35 @@ export default defineConfig({
 
           return Promise.resolve({});
         },
+
         extractHttpsUrls(directory: string) {
-          return extractHttpsUrls(directory);
+          return extractHttpsUrlsWithLocation(directory);
+        },
+        validateHttpsUrls(urls: string[]) {
+          return validateHttpsUrls(urls);
         },
         log(message) {
-          // eslint-disable-next-line no-console
-          console.log(message);
-          return null;
+          return logToConsole(LogLevel.INFO, message);
         },
         error(message) {
-          // eslint-disable-next-line no-console
-          console.error(message);
-          return null;
+          return logToConsole(LogLevel.ERROR, message);
         },
         table(message) {
-          // eslint-disable-next-line no-console
-          console.table(message);
-          return null;
+          return logToConsole(LogLevel.TABLE, message);
+        },
+        deleteFile(filePath: string) {
+          try {
+            if (fs.existsSync(filePath)) {
+              fs.unlinkSync(filePath);
+            }
+            return Promise.resolve(null);
+          } catch (error) {
+            return Promise.resolve(null);
+          }
         },
       });
 
-      if (env.CY_RECORD) {
+      if (config.env.CY_RECORD) {
         on('before:spec', (spec) => {
           // delete previous snapshots for the spec
           try {
@@ -123,7 +145,9 @@ export default defineConfig({
         if (results.video) {
           // Do we have failures for any retry attempts?
           const failures = results.tests.some((test) =>
-            test.attempts.some((attempt) => attempt.state === 'failed'),
+            test.attempts[config.env.MOCK ? 'every' : 'some'](
+              (attempt) => attempt.state === 'failed',
+            ),
           );
           if (!failures) {
             // delete the video if the spec passed and no tests retried
@@ -147,10 +171,18 @@ export default defineConfig({
         await mergeFiles(outputFile, inputFiles);
       });
 
-      // Apply retries only for tests in the "e2e" folder
+      // Apply retries only for tests in the "e2e" folder. 2 retries by default, after a test failure.
+      // Set CY_RETRY=N env var for the number of retries (CY_RETRY=0 means no retries).
+      const retryConfig =
+        config.env.CY_RETRY !== undefined
+          ? { runMode: Math.max(0, parseInt(config.env.CY_RETRY) || 0), openMode: 0 }
+          : !config.env.CY_RECORD
+          ? { runMode: 2, openMode: 0 }
+          : config.retries;
+
       return {
         ...config,
-        retries: !env.CY_MOCK && !env.CY_RECORD ? { runMode: 2, openMode: 0 } : config.retries,
+        retries: retryConfig,
       };
     },
   },

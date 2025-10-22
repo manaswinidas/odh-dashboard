@@ -6,13 +6,12 @@ import {
   k8sDeleteResource,
   K8sStatus,
 } from '@openshift/dynamic-plugin-sdk-utils';
-import { NotebookKind } from '~/k8sTypes';
-import { Toleration } from '~/types';
-import { mockNotebookK8sResource } from '~/__mocks__/mockNotebookK8sResource';
-import { mockK8sResourceList } from '~/__mocks__/mockK8sResourceList';
-import { mock200Status } from '~/__mocks__/mockK8sStatus';
-import { mockRoleBindingK8sResource } from '~/__mocks__/mockRoleBindingK8sResource';
-import { mockStartNotebookData } from '~/__mocks__/mockStartNotebookData';
+import { NotebookKind } from '#~/k8sTypes';
+import { mockNotebookK8sResource } from '#~/__mocks__/mockNotebookK8sResource';
+import { mockK8sResourceList } from '#~/__mocks__/mockK8sResourceList';
+import { mock200Status } from '#~/__mocks__/mockK8sStatus';
+import { mockStartNotebookData } from '#~/__mocks__/mockStartNotebookData';
+import { mockHardwareProfile } from '#~/__mocks__/mockHardwareProfile';
 
 import {
   assembleNotebook,
@@ -32,19 +31,17 @@ import {
   mergePatchUpdateNotebook,
   restartNotebook,
   patchNotebookImage,
-} from '~/api/k8s/notebooks';
+} from '#~/api/k8s/notebooks';
 
 import {
-  createElyraServiceAccountRoleBinding,
   getPipelineVolumePatch,
   getPipelineVolumeMountPatch,
   ELYRA_VOLUME_NAME,
-} from '~/concepts/pipelines/elyra/utils';
+} from '#~/concepts/pipelines/elyra/utils';
 
-import { TolerationChanges, getTolerationPatch } from '~/utilities/tolerations';
-import { NotebookModel } from '~/api/models';
-import { k8sMergePatchResource } from '~/api/k8sUtils';
-import { mockImageStreamK8sResource } from '~/__mocks__/mockImageStreamK8sResource';
+import { NotebookModel } from '#~/api/models';
+import { k8sMergePatchResource } from '#~/api/k8sUtils';
+import { mockImageStreamK8sResource } from '#~/__mocks__/mockImageStreamK8sResource';
 
 jest.mock('@openshift/dynamic-plugin-sdk-utils', () => ({
   k8sCreateResource: jest.fn(),
@@ -54,15 +51,14 @@ jest.mock('@openshift/dynamic-plugin-sdk-utils', () => ({
   k8sPatchResource: jest.fn(),
 }));
 
-jest.mock('~/api/k8sUtils', () => ({
+jest.mock('#~/api/k8sUtils', () => ({
   k8sMergePatchResource: jest.fn(),
 }));
 
-jest.mock('~/concepts/pipelines/elyra/utils', () => {
-  const originalModule = jest.requireActual('~/concepts/pipelines/elyra/utils');
+jest.mock('#~/concepts/pipelines/elyra/utils', () => {
+  const originalModule = jest.requireActual('#~/concepts/pipelines/elyra/utils');
   return {
     ...originalModule,
-    createElyraServiceAccountRoleBinding: jest.fn(),
   };
 });
 
@@ -72,7 +68,6 @@ const k8sPatchResourceMock = jest.mocked(k8sPatchResource<NotebookKind>);
 const k8sListResourceMock = jest.mocked(k8sListResource<NotebookKind>);
 const k8sMergePatchResourceMock = jest.mocked(k8sMergePatchResource<NotebookKind>);
 const k8sDeleteResourceMock = jest.mocked(k8sDeleteResource<NotebookKind, K8sStatus>);
-const createElyraServiceAccountRoleBindingMock = jest.mocked(createElyraServiceAccountRoleBinding);
 
 global.structuredClone = (val: unknown) => JSON.parse(JSON.stringify(val));
 
@@ -222,11 +217,11 @@ describe('assembleNotebook', () => {
     expect(result.metadata.annotations?.['notebooks.opendatahub.io/last-image-selection']).toBe(
       'test:2024.2',
     );
-    expect(result.spec.template.spec.containers.at(0)?.image).toBe(
+    expect(result.spec.template.spec.containers[0]?.image).toBe(
       'image-registry.openshift-image-registry.svc:5000/opendatahub/jupyter-minimal-notebook:2024.2',
     );
     expect(
-      result.spec.template.spec.containers.at(0)?.env.includes({
+      result.spec.template.spec.containers[0]?.env.includes({
         name: 'JUPYTER_IMAGE',
         value:
           'image-registry.openshift-image-registry.svc:5000/opendatahub/jupyter-minimal-notebook:2024.2',
@@ -299,6 +294,38 @@ describe('assembleNotebook', () => {
     expect(result.metadata.annotations?.['opendatahub.io/image-display-name']).toBeUndefined();
   });
 
+  it('should set hardware profile annotation for real profiles', () => {
+    const notebookData = mockStartNotebookData({});
+    const hardwareProfile = mockHardwareProfile({ name: 'real-profile' });
+    hardwareProfile.metadata.uid = 'test-uid';
+    notebookData.podSpecOptions.selectedHardwareProfile = hardwareProfile;
+    const result = assembleNotebook(notebookData, 'test-user');
+    expect(result.metadata.annotations?.['opendatahub.io/hardware-profile-name']).toBe(
+      'real-profile',
+    );
+  });
+
+  it('should not set pod specs like tolerations and nodeSelector for real hardware profiles', () => {
+    const notebookData = mockStartNotebookData({});
+    const hardwareProfile = mockHardwareProfile({});
+    hardwareProfile.metadata.uid = 'test-uid';
+    notebookData.podSpecOptions.selectedHardwareProfile = hardwareProfile;
+    const result = assembleNotebook(notebookData, 'test-user');
+    expect(result.spec.template.spec.tolerations).toBeUndefined();
+    expect(result.spec.template.spec.nodeSelector).toBeUndefined();
+  });
+
+  it('should set hardware profile namespace annotation to dashboard namespace when global scoped', () => {
+    const notebookData = mockStartNotebookData({});
+    const hardwareProfile = mockHardwareProfile({ name: 'real-profile' });
+    hardwareProfile.metadata.uid = 'test-uid';
+    notebookData.podSpecOptions.selectedHardwareProfile = hardwareProfile;
+    const result = assembleNotebook(notebookData, 'test-user');
+    expect(result.metadata.annotations?.['opendatahub.io/hardware-profile-namespace']).toBe(
+      'opendatahub',
+    );
+  });
+
   it('should create a notebook with pipelines without volumes and volumes mount', async () => {
     const startNotebookDataMock = mockStartNotebookData({});
     startNotebookDataMock.volumeMounts = undefined;
@@ -306,10 +333,6 @@ describe('assembleNotebook', () => {
 
     const notebook = assembleNotebook(startNotebookDataMock, username, true);
     k8sCreateResourceMock.mockResolvedValue(mockNotebookK8sResource({ uid: 'test' }));
-
-    createElyraServiceAccountRoleBindingMock.mockResolvedValue(
-      mockRoleBindingK8sResource({ uid: 'test' }),
-    );
 
     const renderResult = await createNotebook(startNotebookDataMock, username, true);
 
@@ -321,11 +344,6 @@ describe('assembleNotebook', () => {
         queryParams: {},
       },
     });
-    expect(createElyraServiceAccountRoleBindingMock).toHaveBeenCalledWith(
-      mockNotebookK8sResource({ uid: 'test' }),
-      undefined,
-    );
-    expect(createElyraServiceAccountRoleBindingMock).toHaveBeenCalledTimes(1);
     expect(k8sCreateResourceMock).toHaveBeenCalledTimes(1);
     expect(renderResult).toStrictEqual(mockNotebookK8sResource({ uid: 'test' }));
   });
@@ -335,10 +353,6 @@ describe('assembleNotebook', () => {
     startNotebookMock.volumeMounts = undefined;
     const notebook = assembleNotebook(startNotebookMock, username, false);
     k8sCreateResourceMock.mockResolvedValue(mockNotebookK8sResource({ uid: 'test' }));
-
-    createElyraServiceAccountRoleBindingMock.mockResolvedValue(
-      mockRoleBindingK8sResource({ uid: 'test' }),
-    );
 
     const renderResult = await createNotebook(startNotebookMock, username, false);
 
@@ -350,7 +364,6 @@ describe('assembleNotebook', () => {
         queryParams: {},
       },
     });
-    expect(createElyraServiceAccountRoleBindingMock).toHaveBeenCalledTimes(0);
     expect(k8sCreateResourceMock).toHaveBeenCalledTimes(1);
     expect(renderResult).toStrictEqual(mockNotebookK8sResource({ uid: 'test' }));
   });
@@ -368,7 +381,6 @@ describe('createNotebook', () => {
 
     const renderResult = await createNotebook(mockStartNotebookData({}), username, false);
 
-    expect(createElyraServiceAccountRoleBinding).not.toHaveBeenCalled();
     expect(k8sCreateResourceMock).toHaveBeenCalledWith({
       fetchOptions: { requestInit: {} },
       model: NotebookModel,
@@ -384,8 +396,6 @@ describe('createNotebook', () => {
     const notebook = assembleNotebook(mockStartNotebookData({}), username, true);
     k8sCreateResourceMock.mockResolvedValue(mockNotebookK8sResource({ uid }));
 
-    createElyraServiceAccountRoleBindingMock.mockResolvedValue(mockRoleBindingK8sResource({ uid }));
-
     const renderResult = await createNotebook(mockStartNotebookData({}), username, true);
 
     expect(k8sCreateResourceMock).toHaveBeenCalledWith({
@@ -396,7 +406,6 @@ describe('createNotebook', () => {
         queryParams: {},
       },
     });
-    expect(createElyraServiceAccountRoleBindingMock).toHaveBeenCalledTimes(1);
     expect(k8sCreateResourceMock).toHaveBeenCalledTimes(1);
     expect(renderResult).toStrictEqual(mockNotebookK8sResource({ uid }));
   });
@@ -474,95 +483,29 @@ describe('getNotebooks', () => {
   });
 });
 describe('startNotebook', () => {
-  it('should start a notebook with pipelines and add tolerations', async () => {
-    const tolerationChanges = {
-      type: 'add',
-      settings: [] as Toleration[],
-    } as TolerationChanges;
+  it('should start a notebook with pipelines', async () => {
     const enablePipelines = true;
     const mockNotebook = mockNotebookK8sResource({ uid });
 
     k8sPatchResourceMock.mockResolvedValue(mockNotebookK8sResource({ uid }));
 
-    const renderResult = await startNotebook(mockNotebook, tolerationChanges, enablePipelines);
+    const renderResult = await startNotebook(mockNotebook, enablePipelines);
 
     expect(k8sPatchResourceMock).toHaveBeenCalledWith({
       model: NotebookModel,
       queryOptions: { name: mockNotebook.metadata.name, ns: mockNotebook.metadata.namespace },
-      patches: [
-        startPatch,
-        getTolerationPatch(tolerationChanges),
-        getPipelineVolumePatch(),
-        getPipelineVolumeMountPatch(),
-      ],
+      patches: [startPatch, getPipelineVolumePatch(), getPipelineVolumeMountPatch()],
     });
-    expect(createElyraServiceAccountRoleBinding).toHaveBeenCalledWith(mockNotebook);
-    expect(k8sPatchResourceMock).toHaveBeenCalledTimes(1);
-    expect(renderResult).toStrictEqual(mockNotebook);
-  });
-  it('should start a notebook with pipelines and replace tolerations', async () => {
-    const tolerationChanges = {
-      type: 'replace',
-      settings: [] as Toleration[],
-    } as TolerationChanges;
-    const enablePipelines = true;
-    const mockNotebook = mockNotebookK8sResource({ uid });
-
-    k8sPatchResourceMock.mockResolvedValue(mockNotebookK8sResource({ uid }));
-
-    const renderResult = await startNotebook(mockNotebook, tolerationChanges, enablePipelines);
-
-    expect(k8sPatchResourceMock).toHaveBeenCalledWith({
-      model: NotebookModel,
-      queryOptions: { name: mockNotebook.metadata.name, ns: mockNotebook.metadata.namespace },
-      patches: [
-        startPatch,
-        getTolerationPatch(tolerationChanges),
-        getPipelineVolumePatch(),
-        getPipelineVolumeMountPatch(),
-      ],
-    });
-    expect(createElyraServiceAccountRoleBinding).toHaveBeenCalledWith(mockNotebook);
-    expect(k8sPatchResourceMock).toHaveBeenCalledTimes(1);
-    expect(renderResult).toStrictEqual(mockNotebook);
-  });
-  it('should start a notebook with pipelines and remove tolerations', async () => {
-    const tolerationChanges = {
-      type: 'remove',
-      settings: [] as Toleration[],
-    } as TolerationChanges;
-    const enablePipelines = true;
-    const mockNotebook = mockNotebookK8sResource({ uid });
-
-    k8sPatchResourceMock.mockResolvedValue(mockNotebookK8sResource({ uid }));
-
-    const renderResult = await startNotebook(mockNotebook, tolerationChanges, enablePipelines);
-
-    expect(k8sPatchResourceMock).toHaveBeenCalledWith({
-      model: NotebookModel,
-      queryOptions: { name: mockNotebook.metadata.name, ns: mockNotebook.metadata.namespace },
-      patches: [
-        startPatch,
-        getTolerationPatch(tolerationChanges),
-        getPipelineVolumePatch(),
-        getPipelineVolumeMountPatch(),
-      ],
-    });
-    expect(createElyraServiceAccountRoleBinding).toHaveBeenCalledWith(mockNotebook);
     expect(k8sPatchResourceMock).toHaveBeenCalledTimes(1);
     expect(renderResult).toStrictEqual(mockNotebook);
   });
   it('should start a notebook without pipelines', async () => {
-    const tolerationChanges = {
-      type: 'nothing',
-      settings: [] as Toleration[],
-    } as TolerationChanges;
     const enablePipelines = false;
 
     const mockNotebook = mockNotebookK8sResource({ uid });
     k8sPatchResourceMock.mockResolvedValue(mockNotebook);
 
-    const renderResult = await startNotebook(mockNotebook, tolerationChanges, enablePipelines);
+    const renderResult = await startNotebook(mockNotebook, enablePipelines);
 
     expect(k8sPatchResourceMock).toHaveBeenCalledWith({
       model: NotebookModel,
@@ -571,31 +514,19 @@ describe('startNotebook', () => {
     });
 
     expect(k8sPatchResourceMock).toHaveBeenCalledTimes(1);
-    expect(createElyraServiceAccountRoleBinding).not.toHaveBeenCalled();
     expect(renderResult).toStrictEqual(mockNotebook);
   });
   it('should handle errors and rethrow', async () => {
-    const tolerationChanges = {
-      type: 'add',
-      settings: [] as Toleration[],
-    } as TolerationChanges;
     const enablePipelines = true;
     const mockNotebook = mockNotebookK8sResource({ uid });
 
     k8sPatchResourceMock.mockRejectedValue(new Error('error1'));
-    await expect(startNotebook(mockNotebook, tolerationChanges, enablePipelines)).rejects.toThrow(
-      'error1',
-    );
+    await expect(startNotebook(mockNotebook, enablePipelines)).rejects.toThrow('error1');
     expect(k8sPatchResourceMock).toHaveBeenCalledTimes(1);
     expect(k8sPatchResourceMock).toHaveBeenCalledWith({
       model: NotebookModel,
       queryOptions: { name: mockNotebook.metadata.name, ns: mockNotebook.metadata.namespace },
-      patches: [
-        startPatch,
-        getTolerationPatch(tolerationChanges),
-        getPipelineVolumePatch(),
-        getPipelineVolumeMountPatch(),
-      ],
+      patches: [startPatch, getPipelineVolumePatch(), getPipelineVolumeMountPatch()],
     });
   });
 });
@@ -633,28 +564,45 @@ describe('stopNotebook', () => {
     });
   });
 });
-describe('updateNotebook', () => {
+describe('mergePatchUpdateNotebook', () => {
   it('should update a notebook', async () => {
     const existingNotebook = mockNotebookK8sResource({ uid });
     const notebook = assembleNotebook(
       mockStartNotebookData({ notebookId: existingNotebook.metadata.name }),
       username,
     );
-
+    const oldNodeSelectorToRemove: Record<string, string | null> = {};
+    for (const key of Object.keys(existingNotebook.spec.template.spec.nodeSelector || {})) {
+      oldNodeSelectorToRemove[key] = null;
+    }
     k8sMergePatchResourceMock.mockResolvedValue(existingNotebook);
-
     const renderResult = await mergePatchUpdateNotebook(
+      existingNotebook,
       mockStartNotebookData({ notebookId: existingNotebook.metadata.name }),
       username,
     );
-
     expect(k8sMergePatchResourceMock).toHaveBeenCalledWith({
       fetchOptions: {
         requestInit: {},
       },
       model: NotebookModel,
       queryOptions: { queryParams: {} },
-      resource: notebook,
+      resource: {
+        ...notebook,
+        spec: {
+          ...notebook.spec,
+          template: {
+            ...notebook.spec.template,
+            spec: {
+              ...notebook.spec.template.spec,
+              nodeSelector: {
+                ...oldNodeSelectorToRemove,
+                ...notebook.spec.template.spec.nodeSelector,
+              },
+            },
+          },
+        },
+      },
     });
     expect(k8sMergePatchResourceMock).toHaveBeenCalledTimes(1);
     expect(renderResult).toStrictEqual(existingNotebook);
@@ -665,10 +613,14 @@ describe('updateNotebook', () => {
       mockStartNotebookData({ notebookId: existingNotebook.metadata.name }),
       username,
     );
-
+    const oldNodeSelectorToRemove: Record<string, string | null> = {};
+    for (const key of Object.keys(existingNotebook.spec.template.spec.nodeSelector || {})) {
+      oldNodeSelectorToRemove[key] = null;
+    }
     k8sMergePatchResourceMock.mockRejectedValue(new Error('error1'));
     await expect(
       mergePatchUpdateNotebook(
+        existingNotebook,
         mockStartNotebookData({ notebookId: existingNotebook.metadata.name }),
         username,
       ),
@@ -680,7 +632,22 @@ describe('updateNotebook', () => {
       },
       model: NotebookModel,
       queryOptions: { queryParams: {} },
-      resource: notebook,
+      resource: {
+        ...notebook,
+        spec: {
+          ...notebook.spec,
+          template: {
+            ...notebook.spec.template,
+            spec: {
+              ...notebook.spec.template.spec,
+              nodeSelector: {
+                ...oldNodeSelectorToRemove,
+                ...notebook.spec.template.spec.nodeSelector,
+              },
+            },
+          },
+        },
+      },
     });
   });
 });

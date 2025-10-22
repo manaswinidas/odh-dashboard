@@ -1,8 +1,8 @@
-import { appChrome } from '~/__tests__/cypress/cypress/pages/appChrome';
+import { appChrome } from '#~/__tests__/cypress/cypress/pages/appChrome';
 
 class ClusterSettings {
   visit(wait = true) {
-    cy.visitWithLogin('/clusterSettings');
+    cy.visitWithLogin('/settings/cluster/general');
     if (wait) {
       this.wait();
     }
@@ -19,7 +19,11 @@ class ClusterSettings {
   }
 
   findNavItem() {
-    return appChrome.findNavItem('Cluster settings', 'Settings');
+    return appChrome.findNavItem({
+      name: 'General settings',
+      rootSection: 'Settings',
+      subSection: 'Cluster settings',
+    });
   }
 
   findSubmitButton() {
@@ -34,10 +38,6 @@ class ModelSergingSettings extends ClusterSettings {
 
   findSinglePlatformDeploymentModeSelect() {
     return cy.findByTestId('default-deployment-mode-select');
-  }
-
-  findMultiPlatformCheckbox() {
-    return cy.findByTestId('multi-model-serving-platform-enabled-checkbox');
   }
 
   findAlert() {
@@ -91,27 +91,8 @@ class TelemetrySettings extends ClusterSettings {
   }
 }
 
-class NotebookTolerationSettings extends ClusterSettings {
-  findNotebookPodTolerationsText() {
-    return cy.findByText('Workbench pod tolerations', { exact: true });
-  }
-
-  findEnabledCheckbox() {
-    return cy.findByTestId('tolerations-enabled-checkbox');
-  }
-
-  findKeyInput() {
-    return cy.findByTestId('toleration-key-input');
-  }
-
-  findKeyError() {
-    return cy.findByTestId('toleration-helper-text-error');
-  }
-}
-
 export const clusterSettings = new ClusterSettings();
 export const modelServingSettings = new ModelSergingSettings();
 export const pvcSizeSettings = new PVCSizeSettings();
 export const cullerSettings = new CullterSettings();
 export const telemetrySettings = new TelemetrySettings();
-export const notebookTolerationSettings = new NotebookTolerationSettings();

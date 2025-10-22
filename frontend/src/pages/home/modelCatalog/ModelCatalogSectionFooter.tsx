@@ -15,14 +15,14 @@ const ModelCatalogSectionFooter: React.FC<{
       {shownModelCount ? (
         <Content component="small">
           {shownModelCount < totalModelCount
-            ? `Showing ${shownModelCount} of all models`
+            ? `${shownModelCount} of ${totalModelCount} models`
             : 'Showing all models'}
         </Content>
       ) : null}
     </FlexItem>
     <FlexItem>
-      <Link data-testid="goto-model-catalog-link" to="/modelCatalog">
-        Go to <b>Model catalog</b>
+      <Link data-testid="goto-model-catalog-link" to="/ai-hub/catalog">
+        Go to <b>AI hub catalog</b>
       </Link>
     </FlexItem>
   </Flex>

@@ -1,19 +1,19 @@
 import * as React from 'react';
 import { Navigate, useParams } from 'react-router-dom';
-import { byName, ProjectsContext } from '~/concepts/projects/ProjectsContext';
-import InvalidProject from '~/concepts/projects/InvalidProject';
-import ApplicationsPage from '~/pages/ApplicationsPage';
-import { DistributedWorkloadsContextProvider } from '~/concepts/distributedWorkloads/DistributedWorkloadsContext';
-import { DistributedWorkloadsTabConfig } from '~/pages/distributedWorkloads/global/useDistributedWorkloadsTabs';
-import DistributedWorkloadsNoProjects from '~/pages/distributedWorkloads/global/DistributedWorkloadsNoProjects';
-import GlobalDistributedWorkloadsTabs from '~/pages/distributedWorkloads/global/GlobalDistributedWorkloadsTabs';
-import { MetricsCommonContextProvider } from '~/concepts/metrics/MetricsCommonContext';
-import { RefreshIntervalTitle } from '~/concepts/metrics/types';
-import ProjectSelectorNavigator from '~/concepts/projects/ProjectSelectorNavigator';
-import TitleWithIcon from '~/concepts/design/TitleWithIcon';
-import { ProjectObjectType } from '~/concepts/design/utils';
+import { byName, ProjectsContext } from '#~/concepts/projects/ProjectsContext';
+import InvalidProject from '#~/concepts/projects/InvalidProject';
+import ApplicationsPage from '#~/pages/ApplicationsPage';
+import { DistributedWorkloadsContextProvider } from '#~/concepts/distributedWorkloads/DistributedWorkloadsContext';
+import { DistributedWorkloadsTabConfig } from '#~/pages/distributedWorkloads/global/useDistributedWorkloadsTabs';
+import DistributedWorkloadsNoProjects from '#~/pages/distributedWorkloads/global/DistributedWorkloadsNoProjects';
+import GlobalDistributedWorkloadsTabs from '#~/pages/distributedWorkloads/global/GlobalDistributedWorkloadsTabs';
+import { MetricsCommonContextProvider } from '#~/concepts/metrics/MetricsCommonContext';
+import { RefreshIntervalTitle } from '#~/concepts/metrics/types';
+import ProjectSelectorNavigator from '#~/concepts/projects/ProjectSelectorNavigator';
+import TitleWithIcon from '#~/concepts/design/TitleWithIcon';
+import { ProjectObjectType } from '#~/concepts/design/utils';
 
-const title = 'Distributed workloads';
+const title = 'Workload metrics';
 const description = 'Monitor the metrics of your active resources.';
 
 type GlobalDistributedWorkloadsProps = {
@@ -67,7 +67,9 @@ const GlobalDistributedWorkloads: React.FC<GlobalDistributedWorkloadsProps> = ({
       empty={false}
       headerContent={
         <ProjectSelectorNavigator
-          getRedirectPath={(ns: string) => `/distributedWorkloads/${activeTab.path}/${ns}`}
+          getRedirectPath={(ns: string) =>
+            `/observe-monitor/workload-metrics/${activeTab.path}/${ns}`
+          }
           showTitle
         />
       }

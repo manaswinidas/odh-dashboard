@@ -5,20 +5,25 @@ import {
   k8sGetResource,
   WatchK8sResource,
 } from '@openshift/dynamic-plugin-sdk-utils';
-import { KnownLabels, ServingRuntimeKind, TemplateKind } from '~/k8sTypes';
-import { TemplateModel } from '~/api/models';
-import { genRandomChars } from '~/utilities/string';
-import { CustomWatchK8sResult, ServingRuntimeAPIProtocol, ServingRuntimePlatform } from '~/types';
-import useModelServingEnabled from '~/pages/modelServing/useModelServingEnabled';
-import useCustomServingRuntimesEnabled from '~/pages/modelServing/customServingRuntimes/useCustomServingRuntimesEnabled';
-import { groupVersionKind } from '~/api/k8sUtils';
-import useK8sWatchResourceList from '~/utilities/useK8sWatchResourceList';
+import { KnownLabels, ServingRuntimeKind, TemplateKind } from '#~/k8sTypes';
+import { TemplateModel } from '#~/api/models';
+import { genRandomChars } from '#~/utilities/string';
+import {
+  CustomWatchK8sResult,
+  ServingRuntimeAPIProtocol,
+  ServingRuntimePlatform,
+  ServingRuntimeModelType,
+} from '#~/types';
+import useModelServingEnabled from '#~/pages/modelServing/useModelServingEnabled';
+import useCustomServingRuntimesEnabled from '#~/pages/modelServing/customServingRuntimes/useCustomServingRuntimesEnabled';
+import { groupVersionKind } from '#~/api/k8sUtils';
+import useK8sWatchResourceList from '#~/utilities/useK8sWatchResourceList';
 
 export const assembleServingRuntimeTemplate = (
   body: string,
   namespace: string,
-  platforms: ServingRuntimePlatform[],
   apiProtocol: ServingRuntimeAPIProtocol | undefined,
+  modelTypes: ServingRuntimeModelType[],
   templateName?: string,
 ): TemplateKind & { objects: ServingRuntimeKind[] } => {
   const servingRuntime: ServingRuntimeKind = YAML.parse(body);
@@ -39,7 +44,10 @@ export const assembleServingRuntimeTemplate = (
         'opendatahub.io/dashboard': 'true',
       },
       annotations: {
-        'opendatahub.io/modelServingSupport': JSON.stringify(platforms),
+        'opendatahub.io/modelServingSupport': `["${ServingRuntimePlatform.SINGLE}"]`,
+        ...(modelTypes.length > 0 && {
+          'opendatahub.io/model-type': JSON.stringify(modelTypes),
+        }),
         ...(apiProtocol && { 'opendatahub.io/apiProtocol': apiProtocol }),
       },
     },

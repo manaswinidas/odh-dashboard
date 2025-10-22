@@ -1,7 +1,9 @@
-import { ImageStreamAndVersion, KeyValuePair, Volume, VolumeMount } from '~/types';
-import { PersistentVolumeClaimKind } from '~/k8sTypes';
-import { K8sNameDescriptionFieldData } from '~/concepts/k8s/K8sNameDescriptionField/types';
-import { NotebookPodSpecOptions } from '~/concepts/hardwareProfiles/useNotebookPodSpecOptionsState';
+import { ImageStreamAndVersion, KeyValuePair, Volume, VolumeMount } from '#~/types';
+import { PersistentVolumeClaimKind } from '#~/k8sTypes';
+import { K8sNameDescriptionFieldData } from '#~/concepts/k8s/K8sNameDescriptionField/types';
+import { NotebookPodSpecOptions } from '#~/concepts/hardwareProfiles/useNotebookPodSpecOptionsState';
+import { AccessMode } from '#~/pages/storageClasses/storageEnums';
+import { Connection } from '#~/concepts/connectionTypes/types.ts';
 import { AwsKeys } from './dataConnections/const';
 
 export type UpdateObjectAtPropAndValue<T> = <K extends keyof T>(
@@ -64,7 +66,10 @@ export type StorageData = {
   mountPath?: string;
   existingName?: string;
   existingPvc?: PersistentVolumeClaimKind;
+  accessMode?: AccessMode;
   id?: number;
+  modelName?: string;
+  modelPath?: string;
 };
 
 export type StartNotebookData = {
@@ -75,6 +80,8 @@ export type StartNotebookData = {
   volumes?: Volume[];
   volumeMounts?: VolumeMount[];
   envFrom?: EnvironmentFromVariable[];
+  dashboardNamespace?: string;
+  connections?: Connection[];
 };
 
 export type SecretRef = {

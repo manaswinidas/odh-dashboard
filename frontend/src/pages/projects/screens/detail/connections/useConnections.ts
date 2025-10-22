@@ -1,26 +1,28 @@
 import * as React from 'react';
-import { getSecretsByLabel } from '~/api';
-import useFetchState, {
-  FetchState,
+import { getSecretsByLabel } from '#~/api';
+import useFetch, {
+  FetchOptions,
+  FetchStateObject,
   FetchStateCallbackPromise,
   NotReadyError,
-} from '~/utilities/useFetchState';
-import { Connection } from '~/concepts/connectionTypes/types';
-import { LABEL_SELECTOR_DASHBOARD_RESOURCE } from '~/const';
-import { isConnection } from '~/concepts/connectionTypes/utils';
+} from '#~/utilities/useFetch';
+import { Connection } from '#~/concepts/connectionTypes/types';
+import { LABEL_SELECTOR_DASHBOARD_RESOURCE } from '#~/const';
+import { isConnection } from '#~/concepts/connectionTypes/utils';
 
-const useConnections = (namespace?: string): FetchState<Connection[]> => {
+const useConnections = (
+  namespace?: string,
+  fetchOptions?: Partial<FetchOptions>,
+  includeDashboardFalse = false,
+): FetchStateObject<Connection[]> => {
   const callback = React.useCallback<FetchStateCallbackPromise<Connection[]>>(
     async (opts) => {
       if (!namespace) {
         return Promise.reject(new NotReadyError('No namespace'));
       }
+      const labelSelector = includeDashboardFalse ? '' : `${LABEL_SELECTOR_DASHBOARD_RESOURCE}`;
 
-      const secrets = await getSecretsByLabel(
-        `${LABEL_SELECTOR_DASHBOARD_RESOURCE}`,
-        namespace,
-        opts,
-      );
+      const secrets = await getSecretsByLabel(labelSelector, namespace, opts);
       const connections = secrets.filter((secret) => isConnection(secret));
 
       return connections;
@@ -28,7 +30,7 @@ const useConnections = (namespace?: string): FetchState<Connection[]> => {
     [namespace],
   );
 
-  return useFetchState(callback, []);
+  return useFetch(callback, [], fetchOptions);
 };
 
 export default useConnections;

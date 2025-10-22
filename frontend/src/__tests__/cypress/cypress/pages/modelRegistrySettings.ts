@@ -5,6 +5,7 @@ import { SearchSelector } from './components/subComponents/SearchSelector';
 
 export enum FormFieldSelector {
   NAME = '#mr-name',
+  DESCRIPTION = '#mr-description',
   HOST = '#mr-host',
   PORT = '#mr-port',
   USERNAME = '#mr-username',
@@ -36,7 +37,7 @@ class ModelRegistrySettings {
   keySelect = new SearchSelector('existing-ca-key-selector');
 
   visit(wait = true) {
-    cy.visitWithLogin('/modelRegistrySettings');
+    cy.visitWithLogin('/settings/model-resources-operations/model-registry');
     if (wait) {
       this.wait();
     }
@@ -58,7 +59,11 @@ class ModelRegistrySettings {
   }
 
   findNavItem() {
-    return appChrome.findNavItem('Model registry settings', 'Settings');
+    return appChrome.findNavItem({
+      name: 'Model registry settings',
+      rootSection: 'Settings',
+      subSection: 'Model resources and operations',
+    });
   }
 
   findEmptyState() {
@@ -98,6 +103,10 @@ class ModelRegistrySettings {
     return cy.findByTestId('modal-submit-button');
   }
 
+  findCancelButton() {
+    return cy.findByTestId('modal-cancel-button');
+  }
+
   findManagePermissionsTooltip() {
     return cy.findByRole('tooltip');
   }
@@ -108,6 +117,10 @@ class ModelRegistrySettings {
 
   findModelRegistryRow(registryName: string) {
     return this.findTable().findByText(registryName).closest('tr');
+  }
+
+  managePermissions(registryName: string) {
+    this.findModelRegistryRow(registryName).findByText('Manage permissions').click();
   }
 
   findDatabaseDetail(testId: DatabaseDetailsTestId) {

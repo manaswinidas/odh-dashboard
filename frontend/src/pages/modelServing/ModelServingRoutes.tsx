@@ -1,9 +1,9 @@
 import * as React from 'react';
 import { Navigate, Route } from 'react-router-dom';
-import ProjectsRoutes from '~/concepts/projects/ProjectsRoutes';
-import ModelServingExplainabilityWrapper from '~/pages/modelServing/screens/metrics/ModelServingExplainabilityWrapper';
-import { SupportedArea, useIsAreaAvailable } from '~/concepts/areas';
-import GlobalModelServingCoreLoader from '~/pages/modelServing/screens/global/GlobalModelServingCoreLoader';
+import ProjectsRoutes from '#~/concepts/projects/ProjectsRoutes';
+import ModelServingExplainabilityWrapper from '#~/pages/modelServing/screens/metrics/ModelServingExplainabilityWrapper';
+import { SupportedArea, useIsAreaAvailable } from '#~/concepts/areas';
+import GlobalModelServingCoreLoader from '#~/pages/modelServing/screens/global/GlobalModelServingCoreLoader';
 import BiasConfigurationBreadcrumbPage from './screens/metrics/bias/BiasConfigurationPage/BiasConfigurationBreadcrumbPage';
 import GlobalModelMetricsPage from './screens/metrics/GlobalModelMetricsPage';
 import GlobalModelMetricsWrapper from './screens/metrics/GlobalModelMetricsWrapper';
@@ -20,7 +20,7 @@ const ModelServingRoutes: React.FC = () => {
         path="/:namespace?/*"
         element={
           <GlobalModelServingCoreLoader
-            getInvalidRedirectPath={(namespace) => `/modelServing/${namespace}`}
+            getInvalidRedirectPath={(namespace) => `/ai-hub/deployments/${namespace}`}
           />
         }
       >

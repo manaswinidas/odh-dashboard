@@ -1,10 +1,10 @@
 import { k8sGetResource, k8sPatchResource } from '@openshift/dynamic-plugin-sdk-utils';
-import { DashboardConfigKind, K8sAPIOptions } from '~/k8sTypes';
-import { DASHBOARD_CONFIG } from '~/utilities/const';
-import { ODHDashboardConfigModel } from '~/api/models';
-import { ModelServingSize } from '~/pages/modelServing/screens/types';
-import { NotebookSize } from '~/types';
-import { applyK8sAPIOptions } from '~/api/apiMergeUtils';
+import { DashboardConfigKind, K8sAPIOptions } from '#~/k8sTypes';
+import { DASHBOARD_CONFIG } from '#~/utilities/const';
+import { ODHDashboardConfigModel } from '#~/api/models';
+import { ModelServingSize } from '#~/pages/modelServing/screens/types';
+import { NotebookSize } from '#~/types';
+import { applyK8sAPIOptions } from '#~/api/apiMergeUtils';
 
 export const getDashboardConfig = (ns: string): Promise<DashboardConfigKind> =>
   k8sGetResource<DashboardConfigKind>({
@@ -99,6 +99,28 @@ export const patchNotebookSizes = (
             op: 'replace',
             path: '/spec/notebookSizes',
             value: notebookSize,
+          },
+        ],
+      },
+      opts,
+    ),
+  );
+
+export const patchDashboardConfigHardwareProfileOrder = (
+  hardwareProfileOrder: string[],
+  ns: string,
+  opts?: K8sAPIOptions,
+): Promise<DashboardConfigKind> =>
+  k8sPatchResource<DashboardConfigKind>(
+    applyK8sAPIOptions(
+      {
+        model: ODHDashboardConfigModel,
+        queryOptions: { name: DASHBOARD_CONFIG, ns },
+        patches: [
+          {
+            op: 'add',
+            path: '/spec/hardwareProfileOrder',
+            value: hardwareProfileOrder,
           },
         ],
       },

@@ -9,31 +9,29 @@ import {
   k8sUpdateResource,
 } from '@openshift/dynamic-plugin-sdk-utils';
 import * as _ from 'lodash-es';
-import { NotebookModel } from '~/api/models';
+import { NotebookModel } from '#~/api/models';
 import {
   ImageStreamKind,
   ImageStreamSpecTagType,
   K8sAPIOptions,
   KnownLabels,
   NotebookKind,
-} from '~/k8sTypes';
-import { usernameTranslate } from '~/utilities/notebookControllerUtils';
-import { EnvironmentFromVariable, StartNotebookData } from '~/pages/projects/types';
-import { ROOT_MOUNT_PATH } from '~/pages/projects/pvc/const';
-import { getTolerationPatch, TolerationChanges } from '~/utilities/tolerations';
-import { applyK8sAPIOptions } from '~/api/apiMergeUtils';
+} from '#~/k8sTypes';
+import { usernameTranslate } from '#~/utilities/notebookControllerUtils';
+import { EnvironmentFromVariable, StartNotebookData } from '#~/pages/projects/types';
+import { ROOT_MOUNT_PATH } from '#~/pages/projects/pvc/const';
+import { applyK8sAPIOptions } from '#~/api/apiMergeUtils';
 import {
-  createElyraServiceAccountRoleBinding,
   ELYRA_VOLUME_NAME,
   getElyraVolume,
   getElyraVolumeMount,
   getPipelineVolumeMountPatch,
   getPipelineVolumePatch,
-} from '~/concepts/pipelines/elyra/utils';
-import { Volume, VolumeMount } from '~/types';
-import { getImageStreamDisplayName } from '~/pages/projects/screens/spawner/spawnerUtils';
-import { k8sMergePatchResource } from '~/api/k8sUtils';
-import { getshmVolume, getshmVolumeMount } from '~/api/k8s/utils';
+} from '#~/concepts/pipelines/elyra/utils';
+import { NodeSelector, Volume, VolumeMount } from '#~/types';
+import { getImageStreamDisplayName } from '#~/pages/projects/screens/spawner/spawnerUtils';
+import { k8sMergePatchResource } from '#~/api/k8sUtils';
+import { getshmVolume, getshmVolumeMount } from '#~/api/k8s/utils';
 
 export const assembleNotebook = (
   data: StartNotebookData,
@@ -55,7 +53,9 @@ export const assembleNotebook = (
       selectedAcceleratorProfile,
       selectedHardwareProfile,
     },
+    connections,
   } = data;
+  const dashboardNamespace = data.dashboardNamespace ?? '';
   const {
     name: notebookName,
     description,
@@ -69,9 +69,6 @@ export const assembleNotebook = (
   }`;
 
   const translatedUsername = usernameTranslate(username);
-
-  const location = new URL(window.location.href);
-  const { origin } = location;
 
   let volumes: Volume[] | undefined = formVolumes && [...formVolumes];
   let volumeMounts: VolumeMount[] | undefined = formVolumeMounts && [...formVolumeMounts];
@@ -95,6 +92,26 @@ export const assembleNotebook = (
     volumeMounts.push(getshmVolumeMount());
   }
 
+  const isAcceleratorProfileSelected = !!selectedAcceleratorProfile;
+  const hardwareProfileNamespace: Record<string, string | null> = selectedHardwareProfile
+    ? selectedHardwareProfile.metadata.namespace === projectName
+      ? { 'opendatahub.io/hardware-profile-namespace': projectName }
+      : { 'opendatahub.io/hardware-profile-namespace': dashboardNamespace }
+    : { 'opendatahub.io/hardware-profile-namespace': null };
+
+  let acceleratorProfileNamespace: Record<string, string | null> = {
+    'opendatahub.io/accelerator-profile-namespace': null,
+  };
+  if (selectedAcceleratorProfile?.metadata.namespace === projectName) {
+    acceleratorProfileNamespace = {
+      'opendatahub.io/accelerator-profile-namespace': data.projectName,
+    };
+  }
+
+  const connectionsAnnotation = connections
+    ?.map((connection) => `${connection.metadata.namespace}/${connection.metadata.name}`)
+    .join(',');
+
   const resource: NotebookKind = {
     apiVersion: 'kubeflow.org/v1',
     kind: 'Notebook',
@@ -106,17 +123,21 @@ export const assembleNotebook = (
         [KnownLabels.DASHBOARD_RESOURCE]: 'true',
       },
       annotations: {
+        ...hardwareProfileNamespace,
+        ...acceleratorProfileNamespace,
         'openshift.io/display-name': notebookName.trim(),
         'openshift.io/description': description || '',
-        'notebooks.opendatahub.io/oauth-logout-url': `${origin}/projects/${projectName}?notebookLogout=${notebookId}`,
         'notebooks.opendatahub.io/last-size-selection': lastSizeSelection || '',
         'notebooks.opendatahub.io/last-image-selection': imageSelection,
-        'notebooks.opendatahub.io/inject-oauth': 'true',
+        'notebooks.opendatahub.io/inject-auth': 'true',
         'opendatahub.io/username': username,
         'opendatahub.io/accelerator-name': selectedAcceleratorProfile?.metadata.name || '',
         'opendatahub.io/hardware-profile-name': selectedHardwareProfile?.metadata.name || '',
         'notebooks.opendatahub.io/last-image-version-git-commit-selection':
           image.imageVersion?.annotations?.['opendatahub.io/notebook-build-commit'] ?? '',
+        'opendatahub.io/connections': connectionsAnnotation ?? '',
+        'opendatahub.io/hardware-profile-resource-version':
+          selectedHardwareProfile?.metadata.resourceVersion || '',
       },
       name: notebookId,
       namespace: projectName,
@@ -138,8 +159,7 @@ export const assembleNotebook = (
                   --ServerApp.token=''
                   --ServerApp.password=''
                   --ServerApp.base_url=/notebook/${projectName}/${notebookId}
-                  --ServerApp.quit_button=False
-                  --ServerApp.tornado_settings={"user":"${translatedUsername}","hub_host":"${origin}","hub_prefix":"/projects/${projectName}"}`,
+                  --ServerApp.quit_button=False`,
                 },
                 {
                   name: 'JUPYTER_IMAGE',
@@ -183,8 +203,8 @@ export const assembleNotebook = (
             },
           ],
           volumes,
-          tolerations,
-          nodeSelector,
+          tolerations: isAcceleratorProfileSelected ? tolerations : undefined,
+          nodeSelector: isAcceleratorProfileSelected ? nodeSelector : undefined,
         },
       },
     },
@@ -195,6 +215,8 @@ export const assembleNotebook = (
     resource.metadata.annotations['opendatahub.io/image-display-name'] = getImageStreamDisplayName(
       image.imageStream,
     );
+    resource.metadata.annotations['opendatahub.io/workbench-image-namespace'] =
+      image.imageStream.metadata.namespace === projectName ? projectName : null;
   }
 
   return resource;
@@ -233,21 +255,14 @@ export const stopNotebook = (name: string, namespace: string): Promise<NotebookK
 
 export const startNotebook = async (
   notebook: NotebookKind,
-  tolerationChanges: TolerationChanges,
   enablePipelines?: boolean,
 ): Promise<NotebookKind> => {
   const patches: Patch[] = [];
   patches.push(startPatch);
 
-  const tolerationPatch = getTolerationPatch(tolerationChanges);
-  if (tolerationPatch) {
-    patches.push(tolerationPatch);
-  }
-
   if (enablePipelines) {
     patches.push(getPipelineVolumePatch());
     patches.push(getPipelineVolumeMountPatch());
-    await createElyraServiceAccountRoleBinding(notebook);
   }
 
   return k8sPatchResource<NotebookKind>({
@@ -276,13 +291,7 @@ export const createNotebook = (
       ),
     )
       .then((fetchedNotebook) => {
-        if (canEnablePipelines) {
-          createElyraServiceAccountRoleBinding(fetchedNotebook, opts)
-            .then(() => resolve(fetchedNotebook))
-            .catch(reject);
-        } else {
-          resolve(fetchedNotebook);
-        }
+        resolve(fetchedNotebook);
       })
       .catch(reject);
   });
@@ -294,7 +303,6 @@ export const updateNotebook = (
   opts?: K8sAPIOptions,
 ): Promise<NotebookKind> => {
   const notebook = assembleNotebook(assignableData, username);
-
   const oldNotebook = structuredClone(existingNotebook);
   const container = oldNotebook.spec.template.spec.containers[0];
 
@@ -303,6 +311,7 @@ export const updateNotebook = (
   // clean the resources, affinity and tolerations for accelerator
   oldNotebook.spec.template.spec.tolerations = [];
   oldNotebook.spec.template.spec.affinity = {};
+  oldNotebook.spec.template.spec.nodeSelector = {};
   container.resources = {};
 
   return k8sUpdateResource<NotebookKind>(
@@ -317,19 +326,48 @@ export const updateNotebook = (
 };
 
 export const mergePatchUpdateNotebook = (
+  existingNotebook: NotebookKind,
   assignableData: StartNotebookData,
   username: string,
   opts?: K8sAPIOptions,
-): Promise<NotebookKind> =>
-  k8sMergePatchResource<NotebookKind>(
+): Promise<NotebookKind> => {
+  const notebook = assembleNotebook(assignableData, username, undefined);
+
+  // Remove old node selector keys in merge patch
+  const oldNodeSelectorToRemove: Record<string, string | null> = {};
+  for (const key of Object.keys(existingNotebook.spec.template.spec.nodeSelector || {})) {
+    oldNodeSelectorToRemove[key] = null;
+  }
+
+  const resource: NotebookKind = {
+    ...notebook,
+    spec: {
+      ...notebook.spec,
+      template: {
+        ...notebook.spec.template,
+        spec: {
+          ...notebook.spec.template.spec,
+          // Null values are required for merge patch
+          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+          nodeSelector: {
+            ...oldNodeSelectorToRemove,
+            ...notebook.spec.template.spec.nodeSelector,
+          } as NodeSelector,
+        },
+      },
+    },
+  };
+
+  return k8sMergePatchResource<NotebookKind>(
     applyK8sAPIOptions(
       {
         model: NotebookModel,
-        resource: assembleNotebook(assignableData, username),
+        resource,
       },
       opts,
     ),
   );
+};
 
 export const patchNotebookImage = (
   existingNotebook: NotebookKind,

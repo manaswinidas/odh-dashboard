@@ -1,19 +1,19 @@
-import { appChrome } from '~/__tests__/cypress/cypress/pages/appChrome';
-import type { RefreshIntervalTitle } from '~/concepts/metrics/types';
-import { SearchSelector } from '~/__tests__/cypress/cypress/pages/components/subComponents/SearchSelector';
+import { appChrome } from '#~/__tests__/cypress/cypress/pages/appChrome';
+import type { RefreshIntervalTitle } from '#~/concepts/metrics/types';
+import { SearchSelector } from '#~/__tests__/cypress/cypress/pages/components/subComponents/SearchSelector';
 
 class GlobalDistributedWorkloads {
   projectDropdown = new SearchSelector('project-selector');
 
   visit(wait = true) {
-    cy.visitWithLogin(`/distributedWorkloads`);
+    cy.visitWithLogin(`/observe-monitor/workload-metrics`);
     if (wait) {
       this.wait();
     }
   }
 
   findNavItem() {
-    return appChrome.findNavItem('Distributed workloads');
+    return appChrome.findNavItem({ name: 'Workload metrics', rootSection: 'Observe & monitor' });
   }
 
   shouldNotFoundPage() {
@@ -26,7 +26,7 @@ class GlobalDistributedWorkloads {
   }
 
   shouldHavePageTitle() {
-    return cy.findByTestId('app-page-title').should('have.text', 'Distributed workloads');
+    return cy.findByTestId('app-page-title').should('have.text', 'Workload metrics');
   }
 
   findRefreshIntervalSelectToggle() {

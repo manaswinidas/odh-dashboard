@@ -1,11 +1,11 @@
 import React from 'react';
-import { ModelVersion } from '~/concepts/modelRegistry/types';
-import useRegisteredModelDeployPrefillInfo from '~/pages/modelRegistry/screens/RegisteredModels/useRegisteredModelDeployPrefillInfo';
-import { useModelRegistryAPI } from '~/concepts/modelRegistry/context/ModelRegistryContext';
-import { ModelRegistrySelectorContext } from '~/concepts/modelRegistry/context/ModelRegistrySelectorContext';
-import { bumpBothTimestamps } from '~/concepts/modelRegistry/utils/updateTimestamps';
-import useRegisteredModelById from '~/concepts/modelRegistry/apiHooks/useRegisteredModelById';
-import DeployPrefilledModelModal from '~/pages/modelServing/screens/projects/DeployPrefilledModelModal';
+import { ModelVersion } from '#~/concepts/modelRegistry/types';
+import useRegisteredModelDeployPrefillInfo from '#~/pages/modelRegistry/screens/RegisteredModels/useRegisteredModelDeployPrefillInfo';
+import { bumpBothTimestamps } from '#~/concepts/modelRegistry/utils/updateTimestamps';
+import useRegisteredModelById from '#~/concepts/modelRegistry/apiHooks/useRegisteredModelById';
+import DeployPrefilledModelModal from '#~/pages/modelServing/screens/projects/DeployPrefilledModelModal';
+import { ModelRegistriesContext } from '#~/concepts/modelRegistry/context/ModelRegistriesContext';
+import { useModelRegistryAPI } from '#~/concepts/modelRegistry/context/ModelRegistryPageContext';
 
 interface DeployRegisteredVersionModalProps {
   modelVersion: ModelVersion;
@@ -18,7 +18,7 @@ const DeployRegisteredVersionModal: React.FC<DeployRegisteredVersionModalProps> 
   onCancel,
   onSubmit,
 }) => {
-  const { preferredModelRegistry } = React.useContext(ModelRegistrySelectorContext);
+  const { preferredModelRegistry } = React.useContext(ModelRegistriesContext);
   const modelRegistryApi = useModelRegistryAPI();
 
   const [registeredModel, registeredModelLoaded, registeredModelLoadError, refreshRegisteredModel] =
@@ -52,11 +52,6 @@ const DeployRegisteredVersionModal: React.FC<DeployRegisteredVersionModalProps> 
       modelDeployPrefillInfo={modelDeployPrefillInfo}
       prefillInfoLoaded={loaded}
       prefillInfoLoadError={loadError}
-      projectLinkExtraUrlParams={{
-        modelRegistryName: preferredModelRegistry?.metadata.name,
-        registeredModelId: modelVersion.registeredModelId,
-        modelVersionId: modelVersion.id,
-      }}
       onSubmit={handleSubmit}
       onCancel={onCancel}
     />

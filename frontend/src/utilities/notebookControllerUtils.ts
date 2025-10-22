@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { AxiosError } from 'axios';
 import { K8sResourceCommon } from '@openshift/dynamic-plugin-sdk-utils';
-import { createRoleBinding, getRoleBinding } from '~/services/roleBindingService';
+import { createRoleBinding, getRoleBinding } from '#~/services/roleBindingService';
 import {
   AssociatedSteps,
   EnvVarReducedTypeKeyValues,
@@ -16,15 +16,15 @@ import {
   ResourceCreator,
   ResourceGetter,
   VariableRow,
-} from '~/types';
-import { NotebookControllerContext } from '~/pages/notebookController/NotebookControllerContext';
-import { useUser } from '~/redux/selectors';
-import { EMPTY_USER_STATE } from '~/pages/notebookController/const';
-import useNamespaces from '~/pages/notebookController/useNamespaces';
-import { useAppContext } from '~/app/AppContext';
-import { getRoute } from '~/services/routeService';
-import { EventKind, NotebookKind, RoleBindingKind } from '~/k8sTypes';
-import { useWatchNotebookEvents } from '~/api';
+} from '#~/types';
+import { NotebookControllerContext } from '#~/pages/notebookController/NotebookControllerContext';
+import { useUser } from '#~/redux/selectors';
+import { EMPTY_USER_STATE } from '#~/pages/notebookController/const';
+import useNamespaces from '#~/pages/notebookController/useNamespaces';
+import { useAppContext } from '#~/app/AppContext';
+import { EventKind, NotebookKind, RoleBindingKind } from '#~/k8sTypes';
+import { useWatchNotebookEvents } from '#~/api';
+import { getRoutePathForWorkbench } from '#~/concepts/notebooks/utils';
 import { useDeepCompareMemoize } from './useDeepCompareMemoize';
 
 export const usernameTranslate = (username: string): string => {
@@ -48,6 +48,9 @@ export const generateNotebookNameFromUsername = (username: string): string =>
 
 export const generatePvcNameFromUsername = (username: string): string =>
   `jupyterhub-nb-${usernameTranslate(username)}-pvc`;
+
+export const getNotebookDisplayName = (notebook: NotebookKind): string =>
+  notebook.metadata.annotations?.['openshift.io/display-name'] || notebook.metadata.name || '';
 
 export const generateEnvVarFileNameFromUsername = (username: string): string =>
   `jupyterhub-singleuser-profile-${usernameTranslate(username)}-envs`;
@@ -193,8 +196,7 @@ export const validateNotebookNamespaceRoleBinding = async (
 export const useNotebookRedirectLink = (): (() => Promise<string>) => {
   const { currentUserNotebook, currentUserNotebookLink } =
     React.useContext(NotebookControllerContext);
-  const { notebookNamespace } = useNamespaces();
-  const fetchCountRef = React.useRef(5); // how many tries to get the Route
+  const { workbenchNamespace } = useNamespaces();
 
   const routeName = currentUserNotebook?.metadata.name;
 
@@ -207,37 +209,17 @@ export const useNotebookRedirectLink = (): (() => Promise<string>) => {
       return Promise.reject();
     }
 
-    return new Promise<string>((presolve, preject) => {
-      const call = (resolve: typeof presolve, reject: typeof preject) => {
-        if (currentUserNotebookLink) {
-          resolve(currentUserNotebookLink);
-        } else {
-          getRoute(notebookNamespace, routeName)
-            .then((route) => {
-              resolve(`https://${route.spec.host}/notebook/${notebookNamespace}/${routeName}`);
-            })
-            .catch((e) => {
-              /* eslint-disable-next-line no-console */
-              console.warn('Unable to get the route. Re-polling.', e);
-              if (fetchCountRef.current <= 0) {
-                fetchCountRef.current--;
-                setTimeout(() => call(resolve, reject), 1000);
-              } else {
-                reject();
-              }
-            });
-        }
-      };
-
-      call(presolve, () => {
-        /* eslint-disable-next-line no-console */
-        console.error(
-          'Could not fetch route over several tries, See previous warnings for a history of why each failed call.',
-        );
-        preject();
-      });
+    return new Promise<string>((resolve) => {
+      // Use the existing link if available, otherwise generate the path
+      if (currentUserNotebookLink) {
+        resolve(currentUserNotebookLink);
+      } else {
+        // Generate same-origin relative path
+        const workbenchPath = getRoutePathForWorkbench(workbenchNamespace, routeName);
+        resolve(workbenchPath);
+      }
     });
-  }, [notebookNamespace, routeName, currentUserNotebookLink]);
+  }, [workbenchNamespace, routeName, currentUserNotebookLink]);
 };
 
 export const getEventTimestamp = (event: EventKind): string =>
@@ -569,7 +551,7 @@ export const useNotebookProgress = (
     progressSteps.find((p) => p.step === ProgressionStep.OAUTH_CONTAINER_STARTED)?.status ===
       EventStatus.SUCCESS
   ) {
-    const startedStep = progressSteps.find((p) => p.step === ProgressionStep.SERVER_STARTED);
+    const startedStep = progressSteps.find((p) => p.step === ProgressionStep.WORKBENCH_STARTED);
     if (startedStep) {
       startedStep.status = EventStatus.SUCCESS;
     }

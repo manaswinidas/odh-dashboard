@@ -1,5 +1,5 @@
-import { ModelRegistryCustomProperties, ModelArtifact } from '~/concepts/modelRegistry/types';
-import useGenericObjectState, { GenericObjectState } from '~/utilities/useGenericObjectState';
+import { ModelRegistryCustomProperties, ModelArtifact } from '#~/concepts/modelRegistry/types';
+import useGenericObjectState, { GenericObjectState } from '#~/utilities/useGenericObjectState';
 
 export enum ModelLocationType {
   ObjectStorage = 'Object storage',
@@ -20,6 +20,7 @@ export type RegistrationCommonFormData = {
   versionCustomProperties?: ModelRegistryCustomProperties;
   modelCustomProperties?: ModelRegistryCustomProperties;
   additionalArtifactProperties?: Partial<ModelArtifact>;
+  storageKey?: string;
 };
 
 export type RegisterModelFormData = RegistrationCommonFormData & {
@@ -48,6 +49,7 @@ const registrationCommonFormDataDefaults: RegistrationCommonFormData = {
   modelLocationURI: '',
   modelCustomProperties: {},
   versionCustomProperties: {},
+  storageKey: '',
 };
 
 const registerModelFormDataDefaults: RegisterModelFormData = {
@@ -61,7 +63,7 @@ const registerVersionFormDataDefaults: RegisterVersionFormData = {
   registeredModelId: '',
 };
 
-const registerModelFormDataDefaultsForModelCatalog: RegisterCatalogModelFormData = {
+export const registerModelFormDataDefaultsForModelCatalog: RegisterCatalogModelFormData = {
   ...registerModelFormDataDefaults,
   modelRegistry: '',
 };
@@ -77,5 +79,9 @@ export const useRegisterVersionData = (
     registeredModelId: registeredModelId || '',
   });
 
-export const useRegisterCatalogModelData = (): GenericObjectState<RegisterCatalogModelFormData> =>
-  useGenericObjectState<RegisterCatalogModelFormData>(registerModelFormDataDefaultsForModelCatalog);
+export const useRegisterCatalogModelData = (
+  initialData?: RegisterCatalogModelFormData,
+): GenericObjectState<RegisterCatalogModelFormData> =>
+  useGenericObjectState<RegisterCatalogModelFormData>(
+    initialData || registerModelFormDataDefaultsForModelCatalog,
+  );

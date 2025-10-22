@@ -1,16 +1,20 @@
-import { getDashboardConfig } from './resourceUtils';
+import { getClusterStatus, getDashboardConfig } from './resourceUtils';
 import { mergeWith } from 'lodash';
 import {
+  BYONImagePackage,
   ContainerResources,
   EnvironmentVariable,
   ImageInfo,
+  ImageStream,
+  ImageStreamTag,
   ImageTag,
+  ImageTagInfo,
   KubeFastifyInstance,
   Notebook,
   NotebookData,
   NotebookList,
   RecursivePartial,
-  Route,
+  TagContent,
   VolumeMount,
 } from '../types';
 import { getUserInfo, usernameTranslate } from './userUtils';
@@ -21,11 +25,10 @@ import {
   V1Role,
   V1RoleBinding,
 } from '@kubernetes/client-node';
-import { DEFAULT_PVC_SIZE, MOUNT_PATH } from './constants';
+import { DEFAULT_PVC_SIZE, IMAGE_ANNOTATIONS, MOUNT_PATH } from './constants';
 import { FastifyRequest } from 'fastify';
 import { verifyEnvVars } from './envUtils';
 import { smartMergeArraysWithNameObjects } from './objUtils';
-import { getImageInfo } from '../routes/api/images/imageUtils';
 
 export const generateNotebookNameFromUsername = (username: string): string =>
   `jupyter-nb-${usernameTranslate(username)}`;
@@ -36,33 +39,35 @@ export const generatePvcNameFromUsername = (username: string): string =>
 export const generateEnvVarFileNameFromUsername = (username: string): string =>
   `jupyterhub-singleuser-profile-${usernameTranslate(username)}-envs`;
 
+export const getWorkbenchNamespace = (fastify: KubeFastifyInstance): string => {
+  try {
+    const clusterStatus = getClusterStatus(fastify);
+    const workbenchNamespace = clusterStatus?.components?.workbenches?.workbenchNamespace;
+
+    if (!workbenchNamespace) {
+      fastify.log.warn(
+        'Workbench namespace not found in cluster status, will fall back to dashboard namespace',
+      );
+    }
+
+    return workbenchNamespace;
+  } catch (error) {
+    fastify.log.error(error, 'Failed to fetch cluster status for workbench namespace:');
+    return undefined;
+  }
+};
+
 export const getNamespaces = (
   fastify: KubeFastifyInstance,
-): { dashboardNamespace: string; notebookNamespace: string } => {
+): { dashboardNamespace: string; workbenchNamespace: string } => {
   const config = getDashboardConfig();
-  const notebookNamespace = config.spec.notebookController?.notebookNamespace;
+  const workbenchNamespace = getWorkbenchNamespace(fastify);
   const fallbackNamespace = config.metadata.namespace || fastify.kube.namespace;
 
   return {
-    notebookNamespace: notebookNamespace || fallbackNamespace,
+    workbenchNamespace: workbenchNamespace || fallbackNamespace,
     dashboardNamespace: fallbackNamespace,
   };
-};
-
-export const getRoute = async (
-  fastify: KubeFastifyInstance,
-  namespace: string,
-  routeName: string,
-): Promise<Route> => {
-  const kubeResponse = await fastify.kube.customObjectsApi
-    .getNamespacedCustomObject('route.openshift.io', 'v1', namespace, 'routes', routeName)
-    .catch((res) => {
-      const e = res.response.body;
-      const error = createCustomError('Error getting Route', e.message, e.code);
-      fastify.log.error(error);
-      throw error;
-    });
-  return kubeResponse.body as Route;
 };
 
 export const createRBAC = async (
@@ -213,13 +218,14 @@ export const assembleNotebook = async (
         'opendatahub.io/dashboard': 'true',
       },
       annotations: {
-        'notebooks.opendatahub.io/oauth-logout-url': `${url}/notebookController/${translatedUsername}/home`,
         'notebooks.opendatahub.io/last-size-selection': lastSizeSelection,
         'notebooks.opendatahub.io/last-image-selection': imageSelection,
         'opendatahub.io/username': username,
         'kubeflow-resource-stopped': null,
         'opendatahub.io/accelerator-name': selectedAcceleratorProfile?.metadata.name || '',
         'opendatahub.io/hardware-profile-name': selectedHardwareProfile?.metadata.name || '',
+        'opendatahub.io/hardware-profile-namespace':
+          selectedHardwareProfile?.metadata.namespace || '',
       },
       name: name,
       namespace: namespace,
@@ -242,8 +248,7 @@ export const assembleNotebook = async (
                   --ServerApp.token=''
                   --ServerApp.password=''
                   --ServerApp.base_url=/notebook/${namespace}/${name}
-                  --ServerApp.quit_button=False
-                  --ServerApp.tornado_settings={"user":"${translatedUsername}","hub_host":"${url}","hub_prefix":"/notebookController/${translatedUsername}"}`,
+                  --ServerApp.quit_button=False`,
                 },
                 {
                   name: 'JUPYTER_IMAGE',
@@ -252,16 +257,7 @@ export const assembleNotebook = async (
                 ...configMapEnvs,
                 ...secretEnvs,
               ],
-              resources: {
-                requests: {
-                  cpu: resources.requests?.cpu,
-                  memory: resources.requests?.memory,
-                },
-                limits: {
-                  cpu: resources.limits?.cpu,
-                  memory: resources.limits?.memory,
-                },
-              },
+              resources,
               volumeMounts,
               ports: [
                 {
@@ -297,8 +293,8 @@ export const assembleNotebook = async (
             },
           ],
           volumes,
-          tolerations,
-          nodeSelector,
+          tolerations: !selectedHardwareProfile ? tolerations : null,
+          nodeSelector: !selectedHardwareProfile ? nodeSelector : null,
         },
       },
     },
@@ -346,7 +342,7 @@ export const stopNotebook = async (
 ): Promise<Notebook> => {
   const username = request.body.username || (await getUserInfo(fastify, request)).userName;
   const name = generateNotebookNameFromUsername(username);
-  const { notebookNamespace } = getNamespaces(fastify);
+  const { workbenchNamespace } = getNamespaces(fastify);
 
   const dateStr = new Date().toISOString().replace(/\.\d{3}Z/i, 'Z');
   const data: RecursivePartial<Notebook> = {
@@ -356,7 +352,7 @@ export const stopNotebook = async (
   const response = await fastify.kube.customObjectsApi.patchNamespacedCustomObject(
     'kubeflow.org',
     'v1',
-    notebookNamespace,
+    workbenchNamespace,
     'notebooks',
     name,
     data,
@@ -402,7 +398,7 @@ export const createNotebook = async (
     notebookAssembled.metadata.annotations = {};
   }
 
-  notebookAssembled.metadata.annotations['notebooks.opendatahub.io/inject-oauth'] = 'true';
+  notebookAssembled.metadata.annotations['notebooks.opendatahub.io/inject-auth'] = 'true';
   const notebookContainers = notebookAssembled.spec.template.spec.containers;
 
   if (!notebookContainers[0]) {
@@ -557,7 +553,7 @@ const generateNotebookResources = async (
   const name = generateNotebookNameFromUsername(username);
   const pvcName = generatePvcNameFromUsername(username);
   const envName = generateEnvVarFileNameFromUsername(username);
-  const namespace = getNamespaces(fastify).notebookNamespace;
+  const namespace = getNamespaces(fastify).workbenchNamespace;
 
   // generate pvc
   try {
@@ -635,3 +631,119 @@ const assemblePvc = (
     phase: 'Pending',
   },
 });
+
+const getImage = async (fastify: KubeFastifyInstance, imageName: string): Promise<ImageStream> => {
+  return fastify.kube.customObjectsApi
+    .getNamespacedCustomObject(
+      'image.openshift.io',
+      'v1',
+      fastify.kube.namespace,
+      'imagestreams',
+      imageName,
+    )
+    .then((res) => {
+      return res.body as ImageStream;
+    });
+};
+
+export const getImageInfo = async (
+  fastify: KubeFastifyInstance,
+  imageName: string,
+): Promise<ImageInfo> => {
+  return getImage(fastify, imageName).then((res) => {
+    return processImageInfo(res);
+  });
+};
+
+export const processImageInfo = (imageStream: ImageStream): ImageInfo => {
+  const annotations = imageStream.metadata.annotations || {};
+
+  const imageInfo: ImageInfo = {
+    name: imageStream.metadata.name,
+    description: annotations[IMAGE_ANNOTATIONS.DESC] || '',
+    url: annotations[IMAGE_ANNOTATIONS.URL] || '',
+    display_name: annotations[IMAGE_ANNOTATIONS.DISP_NAME] || imageStream.metadata.name,
+    tags: getTagInfo(imageStream),
+    order: +annotations[IMAGE_ANNOTATIONS.IMAGE_ORDER] || 100,
+    dockerImageRepo: imageStream.status?.dockerImageRepository || '',
+    error: isBYONImage(imageStream) && getBYONImageErrorMessage(imageStream),
+  };
+
+  return imageInfo;
+};
+
+const getTagInfo = (imageStream: ImageStream): ImageTagInfo[] => {
+  const tagInfoArray: ImageTagInfo[] = [];
+  const tags = imageStream.spec.tags;
+  if (!tags?.length) {
+    console.error(`${imageStream.metadata.name} does not have any tags.`);
+    return;
+  }
+  tags.forEach((tag) => {
+    let tagAnnotations;
+    if (tag.annotations != null) {
+      tagAnnotations = tag.annotations;
+    } else {
+      tag.annotations = {};
+      tagAnnotations = {};
+    }
+    if (!checkTagExistence(tag, imageStream)) {
+      return; //Skip tag
+    }
+    if (tagAnnotations[IMAGE_ANNOTATIONS.OUTDATED]) {
+      return; // tag is outdated - we want to keep it around for existing notebooks, not for new ones
+    }
+
+    const tagInfo: ImageTagInfo = {
+      content: getTagContent(tag),
+      name: tag.name,
+      recommended: JSON.parse(tagAnnotations[IMAGE_ANNOTATIONS.RECOMMENDED] || 'false'),
+      default: JSON.parse(tagAnnotations[IMAGE_ANNOTATIONS.DEFAULT] || 'false'),
+    };
+    tagInfoArray.push(tagInfo);
+  });
+  return tagInfoArray;
+};
+
+// Check for existence in status.tags
+const checkTagExistence = (tag: ImageStreamTag, imageStream: ImageStream): boolean => {
+  if (imageStream.status) {
+    const tags = imageStream.status.tags;
+    if (tags) {
+      for (let i = 0; i < tags.length; i++) {
+        if (tags[i].tag === tag.name) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+};
+
+const getTagContent = (tag: ImageStreamTag): TagContent => {
+  const content: TagContent = {
+    software: jsonParsePackage(tag.annotations[IMAGE_ANNOTATIONS.SOFTWARE]),
+    dependencies: jsonParsePackage(tag.annotations[IMAGE_ANNOTATIONS.DEPENDENCIES]),
+  };
+  return content;
+};
+
+const jsonParsePackage = (unparsedPackage: string): BYONImagePackage[] => {
+  try {
+    return JSON.parse(unparsedPackage) || [];
+  } catch {
+    return [];
+  }
+};
+
+const isBYONImage = (imageStream: ImageStream) =>
+  imageStream.metadata.labels?.['app.kubernetes.io/created-by'] === 'byon';
+
+const getBYONImageErrorMessage = (imageStream: ImageStream) => {
+  // there will be always only 1 tag in the spec for BYON images
+  // status tags could be more than one
+  const activeTag = imageStream.status?.tags?.find(
+    (statusTag) => statusTag.tag === imageStream.spec.tags?.[0].name,
+  );
+  return activeTag?.conditions?.[0]?.message;
+};

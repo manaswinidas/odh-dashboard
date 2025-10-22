@@ -1,10 +1,10 @@
-import { deletePipelineCR, deleteSecret, getPipelinesCR } from '~/api';
+import { deletePipelineCR, deleteSecret, getPipelinesCR } from '#~/api';
 import {
   DSPA_SECRET_NAME,
   ExternalDatabaseSecret,
-} from '~/concepts/pipelines/content/configurePipelinesServer/const';
-import { ELYRA_SECRET_NAME } from '~/concepts/pipelines/elyra/const';
-import { allSettledPromises } from '~/utilities/allSettledPromises';
+} from '#~/concepts/pipelines/content/configurePipelinesServer/const';
+import { ELYRA_SECRET_NAME } from '#~/concepts/pipelines/elyra/const';
+import { allSettledPromises } from '#~/utilities/allSettledPromises';
 import { PipelineRecurringRunKF, PipelineRunKF, PipelinesFilterOp } from './kfTypes';
 import { PipelineParams } from './types';
 
@@ -39,7 +39,7 @@ export const getNameEqualsFilter = (name: string): Pick<PipelineParams, 'filter'
   filter: {
     predicates: [
       {
-        key: 'name',
+        key: 'display_name',
         operation: PipelinesFilterOp.EQUALS,
         // eslint-disable-next-line camelcase
         string_value: name,

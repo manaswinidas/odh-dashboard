@@ -1,5 +1,5 @@
-import { SortableData } from '~/components/table';
-import { BYONImage } from '~/types';
+import { SortableData } from '#~/components/table';
+import { BYONImage } from '#~/types';
 import { getEnabledStatus } from './utils';
 
 export const columns: SortableData<BYONImage>[] = [
@@ -20,16 +20,6 @@ export const columns: SortableData<BYONImage>[] = [
     info: {
       popover: 'Enabled images are selectable when creating workbenches.',
     },
-  },
-  {
-    field: 'recommendedAccelerators',
-    label: 'Recommended accelerators',
-    sortable: (a, b) =>
-      a.recommendedAcceleratorIdentifiers.length - b.recommendedAcceleratorIdentifiers.length,
-    info: {
-      popover: 'Accelerators are used to speed up the execution of workbenches.',
-    },
-    width: 30,
   },
   {
     field: 'recommendedHardwareProfiles',

@@ -1,10 +1,10 @@
 import * as React from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import ApplicationsPage from '~/pages/ApplicationsPage';
-import { usernameTranslate, useCheckJupyterEnabled } from '~/utilities/notebookControllerUtils';
-import { NotebookControllerContext } from '~/pages/notebookController/NotebookControllerContext';
-import { useUser } from '~/redux/selectors';
-import { NotebookControllerTabTypes } from '~/pages/notebookController/const';
+import ApplicationsPage from '#~/pages/ApplicationsPage';
+import { usernameTranslate, useCheckJupyterEnabled } from '#~/utilities/notebookControllerUtils';
+import { NotebookControllerContext } from '#~/pages/notebookController/NotebookControllerContext';
+import { useUser } from '#~/redux/selectors';
+import { NotebookControllerTabTypes } from '#~/pages/notebookController/const';
 
 const NotebookControlPanelRedirect: React.FC = () => {
   const navigate = useNavigate();
@@ -22,7 +22,7 @@ const NotebookControlPanelRedirect: React.FC = () => {
           // TODO: we need to worry about this case -- how to manage it?
           // setImpersonating(undefined, translatedUsername);
           setCurrentAdminTab(NotebookControllerTabTypes.ADMIN);
-          navigate('/notebookController', { replace: true });
+          navigate('/notebook-controller', { replace: true });
           return;
         }
 
@@ -32,7 +32,7 @@ const NotebookControlPanelRedirect: React.FC = () => {
       }
 
       // Logged in user -- just redirect and it will load the state normally
-      navigate('/notebookController', { replace: true });
+      navigate('/notebook-controller', { replace: true });
     }
   }, [
     translatedUsername,

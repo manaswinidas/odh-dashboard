@@ -1,8 +1,8 @@
 import { Button, SearchInput, ToolbarItem } from '@patternfly/react-core';
 import React from 'react';
 import { Link } from 'react-router-dom';
-import FilterToolbar from '~/components/FilterToolbar';
-import { ConnectionTypesOptions, FilterDataType, options } from '~/pages/connectionTypes/const';
+import FilterToolbar from '#~/components/FilterToolbar';
+import { ConnectionTypesOptions, FilterDataType, options } from '#~/pages/connectionTypes/const';
 
 type Props = {
   filterData: Record<ConnectionTypesOptions, string | undefined>;
@@ -53,7 +53,9 @@ const ConnectionTypesTableToolbar: React.FC<Props> = ({ setFilterData, filterDat
         <Button
           data-testid="create-new-connection-type"
           variant="primary"
-          component={(props) => <Link {...props} to="/connectionTypes/create" />}
+          component={(props) => (
+            <Link {...props} to="/settings/environment-setup/connection-types/create" />
+          )}
         >
           Create connection type
         </Button>

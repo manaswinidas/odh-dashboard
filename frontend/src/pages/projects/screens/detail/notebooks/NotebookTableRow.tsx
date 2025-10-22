@@ -3,36 +3,31 @@ import { ExpandableRowContent, Tbody, Td, Tr } from '@patternfly/react-table';
 import { Button, Flex, FlexItem, Icon, Popover, Split, SplitItem } from '@patternfly/react-core';
 import { useNavigate } from 'react-router-dom';
 import { InfoCircleIcon } from '@patternfly/react-icons';
-import { NotebookState } from '~/pages/projects/notebook/types';
-import NotebookRouteLink from '~/pages/projects/notebook/NotebookRouteLink';
-import { NotebookKind } from '~/k8sTypes';
-import NotebookImagePackageDetails from '~/pages/projects/notebook/NotebookImagePackageDetails';
-import { ProjectDetailsContext } from '~/pages/projects/ProjectDetailsContext';
-import { TableRowTitleDescription } from '~/components/table';
-import DashboardPopupIconButton from '~/concepts/dashboard/DashboardPopupIconButton';
-import { getDescriptionFromK8sResource } from '~/concepts/k8s/utils';
-import { NotebookSize } from '~/types';
-import NotebookStateStatus from '~/pages/projects/notebook/NotebookStateStatus';
-import { NotebookActionsColumn } from '~/pages/projects/notebook/NotebookActionsColumn';
-import { computeNotebooksTolerations } from '~/utilities/tolerations';
-import { startNotebook, stopNotebook } from '~/api';
-import { currentlyHasPipelines } from '~/concepts/pipelines/elyra/utils';
-import { fireNotebookTrackingEvent } from '~/pages/projects/notebook/utils';
-import useStopNotebookModalAvailability from '~/pages/projects/notebook/useStopNotebookModalAvailability';
-import { useAppContext } from '~/app/AppContext';
-import NotebookStateAction from '~/pages/projects/notebook/NotebookStateAction';
-import StopNotebookConfirmModal from '~/pages/projects/notebook/StopNotebookConfirmModal';
-import { useNotebookKindPodSpecOptionsState } from '~/concepts/hardwareProfiles/useNotebookPodSpecOptionsState';
-import { SupportedArea, useIsAreaAvailable } from '~/concepts/areas';
-import NotebookTableRowHardwareProfile from '~/pages/projects/screens/detail/notebooks/NotebookTableRowHardwareProfile';
+import { NotebookState } from '#~/pages/projects/notebook/types';
+import NotebookRouteLink from '#~/pages/projects/notebook/NotebookRouteLink';
+import { NotebookKind } from '#~/k8sTypes';
+import NotebookImagePackageDetails from '#~/pages/projects/notebook/NotebookImagePackageDetails';
+import { ProjectDetailsContext } from '#~/pages/projects/ProjectDetailsContext';
+import { TableRowTitleDescription } from '#~/components/table';
+import DashboardPopupIconButton from '#~/concepts/dashboard/DashboardPopupIconButton';
+import { getDescriptionFromK8sResource } from '#~/concepts/k8s/utils';
+import { NotebookSize } from '#~/types';
+import NotebookStateStatus from '#~/pages/projects/notebook/NotebookStateStatus';
+import { NotebookActionsColumn } from '#~/pages/projects/notebook/NotebookActionsColumn';
+import { startNotebook, stopNotebook } from '#~/api';
+import { currentlyHasPipelines } from '#~/concepts/pipelines/elyra/utils';
+import { fireNotebookTrackingEvent } from '#~/pages/projects/notebook/utils';
+import useStopNotebookModalAvailability from '#~/pages/projects/notebook/useStopNotebookModalAvailability';
+import StopNotebookConfirmModal from '#~/pages/projects/notebook/StopNotebookConfirmModal';
+import { useNotebookKindPodSpecOptionsState } from '#~/concepts/hardwareProfiles/useNotebookPodSpecOptionsState';
+import HardwareProfileTableColumn from '#~/concepts/hardwareProfiles/HardwareProfileTableColumn';
+import StateActionToggle from '#~/components/StateActionToggle';
 import { NotebookImageStatus } from './const';
 import { NotebookImageDisplayName } from './NotebookImageDisplayName';
 import NotebookStorageBars from './NotebookStorageBars';
 import NotebookSizeDetails from './NotebookSizeDetails';
 import useNotebookImage from './useNotebookImage';
 import useNotebookDeploymentSize from './useNotebookDeploymentSize';
-import { extractAcceleratorResources } from './utils';
-import useNotebookImageData from './useNotebookImageData';
 import NotebookUpdateImageModal from './NotebookUpdateImageModal';
 
 type NotebookTableRowProps = {
@@ -54,9 +49,6 @@ const NotebookTableRow: React.FC<NotebookTableRowProps> = ({
   const navigate = useNavigate();
   const [isExpanded, setExpanded] = React.useState(false);
   const { size: notebookSize } = useNotebookDeploymentSize(obj.notebook);
-  const acceleratorResources = extractAcceleratorResources(
-    obj.notebook.spec.template.spec.containers[0].resources,
-  );
 
   const lastDeployedSize: NotebookSize = {
     name: 'Custom',
@@ -65,35 +57,25 @@ const NotebookTableRow: React.FC<NotebookTableRowProps> = ({
       requests: {},
     },
   };
-  const [notebookImage, loaded, loadError] = useNotebookImage(
-    obj.notebook,
-    currentProject.metadata.name,
-  );
-  const [data, notebookImageStreamLoaded] = useNotebookImageData(
-    currentProject.metadata.name,
-    obj.notebook,
-  );
+  const [notebookImage, loaded, loadError] = useNotebookImage(obj.notebook);
+
   const podSpecOptionsState = useNotebookKindPodSpecOptionsState(obj.notebook);
   const [dontShowModalValue] = useStopNotebookModalAvailability();
-  const { dashboardConfig } = useAppContext();
   const [isOpenConfirm, setOpenConfirm] = React.useState(false);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
+  const [isUpdating, setIsUpdating] = React.useState(false);
   const [inProgress, setInProgress] = React.useState(false);
   const { name: notebookName, namespace: notebookNamespace } = obj.notebook.metadata;
-  const isHardwareProfileAvailable = useIsAreaAvailable(SupportedArea.HARDWARE_PROFILES).status;
 
   const onStart = React.useCallback(() => {
     setInProgress(true);
-    const tolerationSettings = computeNotebooksTolerations(dashboardConfig, obj.notebook);
-    startNotebook(
-      obj.notebook,
-      tolerationSettings,
-      canEnablePipelines && !currentlyHasPipelines(obj.notebook),
-    ).then(() => {
-      fireNotebookTrackingEvent('started', obj.notebook, podSpecOptionsState);
-      obj.refresh().then(() => setInProgress(false));
-    });
-  }, [dashboardConfig, obj, canEnablePipelines, podSpecOptionsState]);
+    startNotebook(obj.notebook, canEnablePipelines && !currentlyHasPipelines(obj.notebook)).then(
+      () => {
+        fireNotebookTrackingEvent('started', obj.notebook, podSpecOptionsState);
+        obj.refresh().then(() => setInProgress(false));
+      },
+    );
+  }, [obj, canEnablePipelines, podSpecOptionsState]);
 
   const handleStop = React.useCallback(() => {
     fireNotebookTrackingEvent('stopped', obj.notebook, podSpecOptionsState);
@@ -158,16 +140,15 @@ const NotebookTableRow: React.FC<NotebookTableRowProps> = ({
           <Split>
             <SplitItem>
               <NotebookImageDisplayName
-                isImageStreamProjectScoped={
-                  notebookImageStreamLoaded &&
-                  data.imageStatus !== NotebookImageStatus.DELETED &&
-                  data.imageStream.metadata.namespace === currentProject.metadata.name
-                }
+                notebook={obj.notebook}
                 notebookImage={notebookImage}
+                notebookState={obj}
                 loaded={loaded}
                 loadError={loadError}
                 isExpanded
                 onUpdateImageClick={onUpdateImageClick}
+                isUpdating={isUpdating}
+                setIsUpdating={setIsUpdating}
               />
             </SplitItem>
             {showOutOfDateElyraInfo && (
@@ -209,16 +190,12 @@ const NotebookTableRow: React.FC<NotebookTableRowProps> = ({
             alignItems={{ default: 'alignItemsCenter' }}
           >
             <FlexItem>
-              {isHardwareProfileAvailable ? (
-                <NotebookTableRowHardwareProfile
-                  namespace={obj.notebook.metadata.namespace}
-                  loaded={podSpecOptionsState.hardwareProfile.profilesLoaded}
-                  loadError={podSpecOptionsState.hardwareProfile.profilesLoadError}
-                  hardwareProfile={podSpecOptionsState.hardwareProfile.initialHardwareProfile}
-                />
-              ) : (
-                notebookSize?.name ?? <i>{lastDeployedSize.name}</i>
-              )}
+              <HardwareProfileTableColumn
+                namespace={obj.notebook.metadata.namespace}
+                resource={obj.notebook}
+                containerResources={podSpecOptionsState.podSpecOptions.resources}
+                isActive={obj.isRunning || obj.isStarting}
+              />
             </FlexItem>
           </Flex>
         </Td>
@@ -226,8 +203,8 @@ const NotebookTableRow: React.FC<NotebookTableRowProps> = ({
           <NotebookStateStatus notebookState={obj} stopNotebook={onStop} startNotebook={onStart} />
         </Td>
         <Td>
-          <NotebookStateAction
-            notebookState={obj}
+          <StateActionToggle
+            currentState={obj}
             onStart={onStart}
             onStop={onStop}
             isDisabled={inProgress}
@@ -259,17 +236,14 @@ const NotebookTableRow: React.FC<NotebookTableRowProps> = ({
         </Td>
         <Td dataLabel="Limits">
           <ExpandableRowContent>
-            <NotebookSizeDetails
-              notebookSize={notebookSize || lastDeployedSize}
-              acceleratorResources={acceleratorResources}
-            />
+            <NotebookSizeDetails notebookSize={notebookSize || lastDeployedSize} />
           </ExpandableRowContent>
         </Td>
         <Td />
         <Td />
         <Td />
       </Tr>
-      {isOpenConfirm ? (
+      {isOpenConfirm && (
         <StopNotebookConfirmModal
           notebookState={obj}
           onClose={(confirmStatus) => {
@@ -279,12 +253,14 @@ const NotebookTableRow: React.FC<NotebookTableRowProps> = ({
             setOpenConfirm(false);
           }}
         />
-      ) : null}
+      )}
       {isModalOpen && notebookImage && (
         <NotebookUpdateImageModal
+          notebookState={obj}
           notebookImage={notebookImage}
           notebook={obj.notebook}
           onModalClose={onModalClose}
+          setIsUpdating={setIsUpdating}
         />
       )}
     </Tbody>

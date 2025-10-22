@@ -1,32 +1,31 @@
 import * as React from 'react';
 import {
   ConfigMapKind,
-  DashboardConfigKind,
   DeploymentMode,
   InferenceServiceKind,
   KnownLabels,
   PersistentVolumeClaimKind,
   ProjectKind,
   SecretKind,
+  ServingContainer,
   ServingRuntimeKind,
-} from '~/k8sTypes';
-import { NamespaceApplicationCase, UpdateObjectAtPropAndValue } from '~/pages/projects/types';
-import useGenericObjectState from '~/utilities/useGenericObjectState';
+} from '#~/k8sTypes';
+import { NamespaceApplicationCase, UpdateObjectAtPropAndValue } from '#~/pages/projects/types';
+import useGenericObjectState from '#~/utilities/useGenericObjectState';
 import {
   CreatingInferenceServiceObject,
   CreatingServingRuntimeObject,
   InferenceServiceStorageType,
-  ModelServingSize,
   ServingPlatformStatuses,
   ServingRuntimeEditInfo,
-} from '~/pages/modelServing/screens/types';
-import { ServingRuntimePlatform } from '~/types';
-import { DEFAULT_MODEL_SERVER_SIZES } from '~/pages/modelServing/screens/const';
-import { useDeepCompareMemoize } from '~/utilities/useDeepCompareMemoize';
-import { EMPTY_AWS_SECRET_DATA } from '~/pages/projects/dataConnections/const';
-import { getDisplayNameFromK8sResource } from '~/concepts/k8s/utils';
-import { getDisplayNameFromServingRuntimeTemplate } from '~/pages/modelServing/customServingRuntimes/utils';
-import { getServingRuntimeTokens, setUpTokenAuth } from '~/pages/modelServing/utils';
+} from '#~/pages/modelServing/screens/types';
+import { ServingRuntimePlatform } from '#~/types';
+import { platformKeyMap } from '#~/pages/modelServing/screens/const';
+import { useDeepCompareMemoize } from '#~/utilities/useDeepCompareMemoize';
+import { EMPTY_AWS_SECRET_DATA } from '#~/pages/projects/dataConnections/const';
+import { getDisplayNameFromK8sResource } from '#~/concepts/k8s/utils';
+import { getDisplayNameFromServingRuntimeTemplate } from '#~/pages/modelServing/customServingRuntimes/utils';
+import { getServingRuntimeTokens, setUpTokenAuth } from '#~/pages/modelServing/utils';
 import {
   addSupportServingPlatformProject,
   createInferenceService,
@@ -36,25 +35,17 @@ import {
   getInferenceServiceContext,
   updateInferenceService,
   updateServingRuntime,
-} from '~/api';
-import { containsOnlySlashes, isS3PathValid, removeLeadingSlash } from '~/utilities/string';
-import { getNIMData, getNIMResource } from '~/pages/modelServing/screens/projects/nimUtils';
-import { useKServeDeploymentMode } from '~/pages/modelServing/useKServeDeploymentMode';
-import { Connection } from '~/concepts/connectionTypes/types';
-import { ModelServingPodSpecOptions } from '~/concepts/hardwareProfiles/useModelServingPodSpecOptionsState';
+} from '#~/api';
+import { containsOnlySlashes, isS3PathValid, removeLeadingSlash } from '#~/utilities/string';
+import { getNIMData, getNIMResource } from '#~/pages/modelServing/screens/projects/nimUtils';
+import { Connection } from '#~/concepts/connectionTypes/types';
+import { ModelServingPodSpecOptions } from '#~/concepts/hardwareProfiles/useModelServingPodSpecOptionsState';
 import {
   isModelServingCompatible,
   ModelServingCompatibleTypes,
-} from '~/concepts/connectionTypes/utils';
+} from '#~/concepts/connectionTypes/utils';
+import { useDashboardNamespace } from '#~/redux/selectors';
 import { ModelDeployPrefillInfo } from './usePrefillModelDeployModal';
-
-export const getServingRuntimeSizes = (config: DashboardConfigKind): ModelServingSize[] => {
-  let sizes = config.spec.modelServerSizes || [];
-  if (sizes.length === 0) {
-    sizes = DEFAULT_MODEL_SERVER_SIZES;
-  }
-  return sizes;
-};
 
 export const isServingRuntimeTokenEnabled = (servingRuntime: ServingRuntimeKind): boolean =>
   servingRuntime.metadata.annotations?.['enable-auth'] === 'true';
@@ -62,32 +53,21 @@ export const isServingRuntimeTokenEnabled = (servingRuntime: ServingRuntimeKind)
 export const isServingRuntimeRouteEnabled = (servingRuntime: ServingRuntimeKind): boolean =>
   servingRuntime.metadata.annotations?.['enable-route'] === 'true';
 
-export const isInferenceServiceKServeRaw = (inferenceService: InferenceServiceKind): boolean =>
-  inferenceService.metadata.annotations?.['serving.kserve.io/deploymentMode'] ===
-  DeploymentMode.RawDeployment;
-
 export const isInferenceServiceTokenEnabled = (inferenceService: InferenceServiceKind): boolean =>
   inferenceService.metadata.annotations?.['security.opendatahub.io/enable-auth'] === 'true';
 
 export const isInferenceServiceRouteEnabled = (inferenceService: InferenceServiceKind): boolean =>
-  isInferenceServiceKServeRaw(inferenceService)
-    ? inferenceService.metadata.labels?.['networking.kserve.io/visibility'] === 'exposed'
-    : inferenceService.metadata.labels?.['networking.knative.dev/visibility'] !== 'cluster-local';
+  inferenceService.metadata.labels?.['networking.kserve.io/visibility'] === 'exposed';
 
 export const isGpuDisabled = (servingRuntime: ServingRuntimeKind): boolean =>
   servingRuntime.metadata.annotations?.['opendatahub.io/disable-gpu'] === 'true';
 
-export const getInferenceServiceDeploymentMode = (
-  modelMesh: boolean,
-  kserveRaw: boolean,
-): DeploymentMode => {
+/** @deprecated -- model mesh is removed */
+export const getInferenceServiceDeploymentMode = (modelMesh: boolean): DeploymentMode => {
   if (modelMesh) {
     return DeploymentMode.ModelMesh;
   }
-  if (kserveRaw) {
-    return DeploymentMode.RawDeployment;
-  }
-  return DeploymentMode.Serverless;
+  return DeploymentMode.RawDeployment;
 };
 
 export const getInferenceServiceFromServingRuntime = (
@@ -198,11 +178,11 @@ export const useCreateInferenceServiceObject = (
   setData: UpdateObjectAtPropAndValue<CreatingInferenceServiceObject>,
   resetDefaults: () => void,
 ] => {
-  const { defaultMode } = useKServeDeploymentMode();
+  const { dashboardNamespace } = useDashboardNamespace();
 
   const createInferenceServiceState = useGenericObjectState<CreatingInferenceServiceObject>({
     ...defaultInferenceService,
-    isKServeRawDeployment: defaultMode === DeploymentMode.RawDeployment,
+    dashboardNamespace,
   });
 
   const [, setCreateData] = createInferenceServiceState;
@@ -211,7 +191,6 @@ export const useCreateInferenceServiceObject = (
     existingData?.metadata.annotations?.['openshift.io/display-name'] ||
     existingData?.metadata.name ||
     '';
-  const existingIsKServeRaw = !!existingData && isInferenceServiceKServeRaw(existingData);
   const existingStorage =
     useDeepCompareMemoize(existingData?.spec.predictor.model?.storage) || undefined;
   const existingUri =
@@ -225,7 +204,7 @@ export const useCreateInferenceServiceObject = (
   const existingMaxReplicas =
     existingData?.spec.predictor.maxReplicas ?? existingServingRuntimeData?.spec.replicas ?? 1;
   const existingImagePullSecrets = existingData?.spec.predictor.imagePullSecrets || undefined;
-
+  const existingPvcConnection = existingUri ? getPVCNameFromURI(existingUri) : undefined;
   const existingExternalRoute = !!existingData && isInferenceServiceRouteEnabled(existingData);
   const existingTokenAuth = !!existingData && isInferenceServiceTokenEnabled(existingData);
 
@@ -240,7 +219,6 @@ export const useCreateInferenceServiceObject = (
       setCreateData('name', existingName);
       setCreateData('servingRuntimeName', existingServingRuntime);
       setCreateData('project', existingProject);
-      setCreateData('isKServeRawDeployment', existingIsKServeRaw);
       setCreateData('storage', {
         type:
           existingUri && !existingImagePullSecrets
@@ -252,6 +230,7 @@ export const useCreateInferenceServiceObject = (
           : existingStorage?.key || '',
         uri: existingUri || '',
         awsData: EMPTY_AWS_SECRET_DATA,
+        pvcConnection: isPVCUri(existingUri || '') ? existingPvcConnection : undefined,
       });
       setCreateData(
         'format',
@@ -283,8 +262,8 @@ export const useCreateInferenceServiceObject = (
     existingTokens,
     existingServingRuntimeArgs,
     existingServingRuntimeEnvVars,
-    existingIsKServeRaw,
     existingImagePullSecrets,
+    existingPvcConnection,
   ]);
 
   return [...createInferenceServiceState];
@@ -371,6 +350,9 @@ const createInferenceServiceAndDataConnection = async (
 
   if (connection?.type === 'kubernetes.io/dockerconfigjson') {
     imagePullSecrets = [{ name: connection.metadata.name }];
+  }
+  if (inferenceServiceData.storage.type === InferenceServiceStorageType.PVC_STORAGE) {
+    storageUri = inferenceServiceData.storage.uri;
   }
 
   let inferenceService;
@@ -729,5 +711,78 @@ export const fetchInferenceServiceCount = async (namespace: string): Promise<num
         error instanceof Error ? error.message : String(error)
       }`,
     );
+  }
+};
+
+export function isCurrentServingPlatformEnabled(
+  currentPlatform: ServingRuntimePlatform | undefined,
+  statuses: ServingPlatformStatuses,
+): boolean {
+  if (!currentPlatform) {
+    return false;
+  }
+  const mappedKey = platformKeyMap[currentPlatform];
+  return statuses[mappedKey].enabled;
+}
+
+export const VALID_ENV_VARNAME_REGEX = /^[A-Za-z_][A-Za-z0-9_\-.]*$/;
+export const STARTS_WITH_DIGIT_REGEX = /^\d/;
+
+export const validateEnvVarName = (name: string): string | undefined => {
+  if (!name) {
+    return undefined;
+  }
+  if (STARTS_WITH_DIGIT_REGEX.test(name)) {
+    return 'Must not start with a digit.';
+  }
+  if (!VALID_ENV_VARNAME_REGEX.test(name)) {
+    return "Must consist of alphabetic characters, digits, '_', '-', or '.'";
+  }
+  return undefined;
+};
+
+export const isValueFromEnvVar = (envVar: NonNullable<ServingContainer['env']>[number]): boolean =>
+  envVar.valueFrom !== undefined;
+
+export const getPVCFromURI = (
+  uri: string,
+  pvcs?: PersistentVolumeClaimKind[],
+): PersistentVolumeClaimKind | undefined => {
+  try {
+    const url = new URL(uri);
+    const pvcName = url.hostname;
+    return pvcs?.find((pvc) => pvc.metadata.name === pvcName);
+  } catch {
+    return undefined;
+  }
+};
+
+export const getPVCNameFromURI = (uri: string): string => {
+  try {
+    const url = new URL(uri);
+    if (url.protocol !== 'pvc:') {
+      return '';
+    }
+    return url.hostname;
+  } catch {
+    return '';
+  }
+};
+
+export const isPVCUri = (uri: string): boolean => {
+  try {
+    const url = new URL(uri);
+    return url.protocol === 'pvc:';
+  } catch {
+    return false;
+  }
+};
+
+export const getModelPathFromUri = (uri: string): string => {
+  try {
+    const url = new URL(uri);
+    return url.pathname.replace(/^\//, '');
+  } catch {
+    return '';
   }
 };

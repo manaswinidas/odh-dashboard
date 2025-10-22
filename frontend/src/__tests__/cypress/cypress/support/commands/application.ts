@@ -1,12 +1,12 @@
 import type { MatcherOptions } from '@testing-library/cypress';
 import type { Matcher, MatcherOptions as DTLMatcherOptions } from '@testing-library/dom';
-import type { UserAuthConfig, DashboardConfig } from '~/__tests__/cypress/cypress/types';
-import { HTPASSWD_CLUSTER_ADMIN_USER } from '~/__tests__/cypress/cypress/utils/e2eUsers';
+import type { UserAuthConfig, DashboardConfig } from '#~/__tests__/cypress/cypress/types';
+import { HTPASSWD_CLUSTER_ADMIN_USER } from '#~/__tests__/cypress/cypress/utils/e2eUsers';
 import {
   getDashboardConfig,
   getNotebookControllerConfig,
   getNotebookControllerCullerConfig,
-} from '~/__tests__/cypress/cypress/utils/oc_commands/project';
+} from '#~/__tests__/cypress/cypress/utils/oc_commands/project';
 
 /* eslint-disable @typescript-eslint/no-namespace */
 declare global {
@@ -24,6 +24,19 @@ declare global {
         relativeUrl: string,
         credentials?: UserAuthConfig,
       ) => Cypress.Chainable<void>;
+
+      /**
+       * Finds a app nav item relative to the subject element.
+       *
+       * @param args.name the name of the item
+       * @param args.rootSection the root section of the item
+       * @param args.subSection the sub-section of the item (optional, for nested navigation)
+       */
+      findAppNavItem: (args: {
+        name: string;
+        rootSection?: string;
+        subSection?: string;
+      }) => Cypress.Chainable<JQuery>;
 
       /**
        * Find a patternfly kebab toggle button.
@@ -180,6 +193,67 @@ declare global {
   }
 }
 
+Cypress.Commands.addQuery(
+  'findAppNavItem',
+  (args: { name: string; rootSection?: string; subSection?: string }) => {
+    Cypress.log({
+      displayName: 'findAppNavItem',
+      message: `name: ${args.name}, rootSection: ${args.rootSection ?? 'none'}, subSection: ${
+        args.subSection ?? 'none'
+      }`,
+    });
+
+    return (subject) => {
+      Cypress.ensure.isElement(subject, 'findAppNavItem', cy);
+      const $el: JQuery<HTMLElement> = subject;
+
+      let $parent = $el;
+
+      if (args.rootSection) {
+        const $rootSectionElement = $parent
+          .find(`:contains('${args.rootSection}')`)
+          .closest('button');
+        if ($rootSectionElement.length) {
+          // Expand the root section if it's collapsed
+          if ($rootSectionElement.attr('aria-expanded') === 'false') {
+            $rootSectionElement.trigger('click');
+          }
+          // Move to the expanded root section's content area
+          $parent = $rootSectionElement.parent();
+        } else {
+          Cypress.log({
+            displayName: 'findAppNavItem',
+            message: `Root section '${args.rootSection}' not found`,
+          });
+          return $parent.find('__non_existent_selector__');
+        }
+      }
+
+      if (args.subSection && args.rootSection) {
+        const $subSectionElement = $parent
+          .find(`:contains('${args.subSection}')`)
+          .closest('button');
+        if ($subSectionElement.length) {
+          // Expand the sub-section if it's collapsed
+          if ($subSectionElement.attr('aria-expanded') === 'false') {
+            $subSectionElement.trigger('click');
+          }
+          // Move to the expanded sub-section's content area
+          $parent = $subSectionElement.parent();
+        } else {
+          Cypress.log({
+            displayName: 'findAppNavItem',
+            message: `Sub-section '${args.subSection}' not found in root section '${args.rootSection}'`,
+          });
+          return $parent.find('__non_existent_selector__');
+        }
+      }
+
+      return $parent.find(`:contains('${args.name}')`).closest('a');
+    };
+  },
+);
+
 Cypress.Commands.add('visitWithLogin', (relativeUrl, credentials = HTPASSWD_CLUSTER_ADMIN_USER) => {
   if (Cypress.env('MOCK')) {
     cy.visit(relativeUrl);
@@ -206,8 +280,31 @@ Cypress.Commands.add('visitWithLogin', (relativeUrl, credentials = HTPASSWD_CLUS
         cy.get('input[name=username]').fill(credentials.USERNAME);
         cy.get('input[name=password]').fill(credentials.PASSWORD);
         cy.get('form').submit();
-      } else if (!interception.response || statusCode !== 200) {
+      } else if (!interception.response || (statusCode !== 200 && statusCode !== 302)) {
         throw new Error(`Failed to visit '${fullUrl}'. Status code: ${statusCode || 'unknown'}`);
+      }
+    });
+
+    // Handle OAuth login flow - check if we got redirected to OAuth login
+    cy.url().then((currentUrl) => {
+      if (currentUrl.includes('/oauth/authorize') || currentUrl.includes('oauth-openshift')) {
+        cy.log('OAuth login flow detected - completing authentication');
+
+        // Look for and click the auth provider link
+        cy.findAllByRole('link', credentials.AUTH_TYPE ? { name: credentials.AUTH_TYPE } : {})
+          .last()
+          .click();
+
+        // Fill in credentials
+        cy.get('input[name=username]').clear();
+        cy.get('input[name=username]').type(credentials.USERNAME);
+        cy.get('input[name=password]').clear();
+        cy.get('input[name=password]').type(credentials.PASSWORD);
+        cy.get('input[type="submit"], button[type="submit"]').click();
+
+        // Wait for redirect back to dashboard
+        cy.url().should('include', Cypress.config('baseUrl'));
+        cy.url().should('not.include', '/oauth');
       }
     });
   }

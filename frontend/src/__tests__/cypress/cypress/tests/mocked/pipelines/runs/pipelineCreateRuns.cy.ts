@@ -1,6 +1,6 @@
 /* eslint-disable camelcase */
-import type { PipelineRecurringRunKF, PipelineRunKF } from '~/concepts/pipelines/kfTypes';
-import { InputDefinitionParameterType, StorageStateKF } from '~/concepts/pipelines/kfTypes';
+import type { PipelineRecurringRunKF, PipelineRunKF } from '#~/concepts/pipelines/kfTypes';
+import { InputDefinitionParameterType, StorageStateKF } from '#~/concepts/pipelines/kfTypes';
 import {
   buildMockRunKF,
   buildMockPipeline,
@@ -8,7 +8,7 @@ import {
   buildMockRecurringRunKF,
   buildMockExperimentKF,
   mockArgoWorkflowPipelineVersion,
-} from '~/__mocks__';
+} from '#~/__mocks__';
 import {
   createRunPage,
   duplicateRunPage,
@@ -17,18 +17,62 @@ import {
   activeRunsTable,
   createSchedulePage,
   duplicateSchedulePage,
-} from '~/__tests__/cypress/cypress/pages/pipelines';
-import { verifyRelativeURL } from '~/__tests__/cypress/cypress/utils/url';
-import { getCorePipelineSpec } from '~/concepts/pipelines/getCorePipelineSpec';
+  pipelineVersionImportModal,
+} from '#~/__tests__/cypress/cypress/pages/pipelines';
+import { verifyRelativeURL } from '#~/__tests__/cypress/cypress/utils/url';
+import { getCorePipelineSpec } from '#~/concepts/pipelines/getCorePipelineSpec';
 import {
   configIntercept,
   dspaIntercepts,
   projectsIntercept,
-} from '~/__tests__/cypress/cypress/tests/mocked/pipelines/intercepts';
+} from '#~/__tests__/cypress/cypress/tests/mocked/pipelines/intercepts';
 
 const projectName = 'test-project-name';
 const mockPipeline = buildMockPipeline();
 const mockPipelineVersion = buildMockPipelineVersion({ pipeline_id: mockPipeline.pipeline_id });
+const mockPipelineVersions = [
+  {
+    ...mockPipelineVersion,
+    display_name: 'Test pipeline version (latest)',
+    pipeline_version_id: 'latest',
+  },
+  {
+    ...mockPipelineVersion,
+    display_name: 'Test pipeline version (old)',
+    pipeline_version_id: 'old',
+  },
+  {
+    ...mockPipelineVersion,
+    display_name: 'Test pipeline version (oldest)',
+    pipeline_version_id: 'oldest',
+  },
+];
+const mockPipelineVersionWithEmpties = buildMockPipelineVersion(
+  {
+    pipeline_id: mockPipeline.pipeline_id,
+  },
+  {
+    parameters: {
+      min_max_scaler: {
+        parameterType: InputDefinitionParameterType.BOOLEAN,
+      },
+      neighbors: {
+        parameterType: InputDefinitionParameterType.INTEGER,
+      },
+      standard_scaler: {
+        parameterType: InputDefinitionParameterType.STRING,
+      },
+      empty_param_1: {
+        parameterType: InputDefinitionParameterType.STRING,
+        isOptional: true,
+      },
+      empty_param_2: {
+        parameterType: InputDefinitionParameterType.STRING,
+        isOptional: true,
+      },
+    },
+  },
+);
 const mockArgoPipelineVersion = mockArgoWorkflowPipelineVersion({});
 const pipelineVersionRef = {
   pipeline_id: mockPipeline.pipeline_id,
@@ -63,6 +107,7 @@ const initialMockRecurringRuns = [
     experiment_id: 'experiment-1',
   }),
 ];
+const mockPipelineYamlPath = `./cypress/tests/mocked/pipelines/mock-upload-pipeline.yaml`;
 
 describe('Pipeline create runs', () => {
   beforeEach(() => {
@@ -94,10 +139,10 @@ describe('Pipeline create runs', () => {
 
       // Navigate to the 'Create run' page
       pipelineRunsGlobal.findCreateRunButton().click();
-      verifyRelativeURL(`/pipelineRuns/${projectName}/runs/create`);
+      verifyRelativeURL(`/develop-train/pipelines/runs/${projectName}/runs/create`);
       createRunPage.find();
       createRunPage.findRunTypeSwitchLink().click();
-      verifyRelativeURL(`/pipelineRuns/${projectName}/schedules/create`);
+      verifyRelativeURL(`/develop-train/pipelines/runs/${projectName}/schedules/create`);
     });
 
     it('Unsupported pipeline should not be displayed', () => {
@@ -114,7 +159,7 @@ describe('Pipeline create runs', () => {
 
       // Navigate to the 'Create run' page
       pipelineRunsGlobal.findCreateRunButton().click();
-      verifyRelativeURL(`/pipelineRuns/${projectName}/runs/create`);
+      verifyRelativeURL(`/develop-train/pipelines/runs/${projectName}/runs/create`);
       createRunPage.find();
 
       createRunPage.pipelineSelect.findToggleButton().should('not.be.disabled').click();
@@ -150,7 +195,7 @@ describe('Pipeline create runs', () => {
 
       // Navigate to the 'Create run' page
       pipelineRunsGlobal.findCreateRunButton().click();
-      verifyRelativeURL(`/pipelineRuns/${projectName}/runs/create`);
+      verifyRelativeURL(`/develop-train/pipelines/runs/${projectName}/runs/create`);
       createRunPage.find();
 
       const veryLongDesc = 'Test description'.repeat(30); // A string over 255 characters
@@ -195,7 +240,9 @@ describe('Pipeline create runs', () => {
       });
 
       // Should be redirected to the run details page
-      verifyRelativeURL(`/pipelineRuns/${projectName}/runs/${createRunParams.run_id}`);
+      verifyRelativeURL(
+        `/develop-train/pipelines/runs/${projectName}/runs/${createRunParams.run_id}`,
+      );
     });
 
     it('duplicates an active run', () => {
@@ -212,11 +259,11 @@ describe('Pipeline create runs', () => {
       duplicateRunPage.mockGetPipelines(projectName, [mockPipeline]);
       duplicateRunPage.mockGetPipelineVersions(
         projectName,
-        [mockPipelineVersion],
+        [mockPipelineVersionWithEmpties],
         mockPipelineVersion.pipeline_id,
       );
       duplicateRunPage.mockGetRun(projectName, mockRun);
-      duplicateRunPage.mockGetPipelineVersion(projectName, mockPipelineVersion);
+      duplicateRunPage.mockGetPipelineVersion(projectName, mockPipelineVersionWithEmpties);
       duplicateRunPage.mockGetPipeline(projectName, mockPipeline);
       duplicateRunPage.mockGetExperiment(projectName, mockExperiment);
 
@@ -224,11 +271,11 @@ describe('Pipeline create runs', () => {
       activeRunsTable.mockGetActiveRuns([...initialMockRuns, mockDuplicateRun], projectName);
 
       // Navigate to duplicate run page for a given active run
-      cy.visitWithLogin(`/experiments/${projectName}/experiment-1/runs`);
+      cy.visitWithLogin(`/develop-train/experiments/${projectName}/experiment-1/runs`);
       pipelineRunsGlobal.findActiveRunsTab().click();
       activeRunsTable.getRowByName(mockRun.display_name).findKebabAction('Duplicate').click();
       verifyRelativeURL(
-        `/experiments/${projectName}/experiment-1/runs/duplicate/${mockRun.run_id}`,
+        `/develop-train/experiments/${projectName}/experiment-1/runs/duplicate/${mockRun.run_id}`,
       );
 
       // Verify pre-populated values & submit
@@ -245,12 +292,16 @@ describe('Pipeline create runs', () => {
       paramsSection.findParamById('radio-min_max_scaler-false').should('be.checked');
       paramsSection.findParamById('neighbors').find('input').should('have.value', '1');
       paramsSection.findParamById('standard_scaler').should('have.value', 'false');
+      paramsSection.findParamById('empty_param_1').should('have.value', '');
+      paramsSection.findParamById('empty_param_2').should('have.value', '');
 
       duplicateRunPage
         .mockCreateRun(projectName, mockPipelineVersion, mockDuplicateRun)
         .as('duplicateRun');
       duplicateRunPage.submit();
 
+      // don't include the empty params as they are not included in the request body
+      // since they have no value
       cy.wait('@duplicateRun').then((interception) => {
         expect(interception.request.body).to.eql({
           display_name: 'Duplicate of Test run',
@@ -267,7 +318,9 @@ describe('Pipeline create runs', () => {
       });
 
       // Should redirect to the details of the newly duplicated active run
-      verifyRelativeURL(`/experiments/${projectName}/experiment-1/runs/${mockDuplicateRun.run_id}`);
+      verifyRelativeURL(
+        `/develop-train/experiments/${projectName}/experiment-1/runs/${mockDuplicateRun.run_id}`,
+      );
     });
 
     it('create run with default and optional parameters', () => {
@@ -350,7 +403,7 @@ describe('Pipeline create runs', () => {
 
       // Navigate to the 'Create run' page
       pipelineRunsGlobal.findCreateRunButton().click();
-      verifyRelativeURL(`/pipelineRuns/${projectName}/runs/create`);
+      verifyRelativeURL(`/develop-train/pipelines/runs/${projectName}/runs/create`);
       createRunPage.find();
 
       // Fill required fields
@@ -397,7 +450,9 @@ describe('Pipeline create runs', () => {
       });
 
       // Should be redirected to the run details page
-      verifyRelativeURL(`/pipelineRuns/${projectName}/runs/${createRunParams.run_id}`);
+      verifyRelativeURL(
+        `/develop-train/pipelines/runs/${projectName}/runs/${createRunParams.run_id}`,
+      );
     });
 
     it('create run with all parameter types', () => {
@@ -468,7 +523,7 @@ describe('Pipeline create runs', () => {
 
       // Navigate to the 'Create run' page
       pipelineRunsGlobal.findCreateRunButton().click();
-      verifyRelativeURL(`/pipelineRuns/${projectName}/runs/create`);
+      verifyRelativeURL(`/develop-train/pipelines/runs/${projectName}/runs/create`);
       createRunPage.find();
 
       // Fill out the form with all input parameters
@@ -511,7 +566,139 @@ describe('Pipeline create runs', () => {
         });
       });
       // Should be redirected to the run details page
-      verifyRelativeURL(`/pipelineRuns/${projectName}/runs/${createRunParams.run_id}`);
+      verifyRelativeURL(
+        `/develop-train/pipelines/runs/${projectName}/runs/${createRunParams.run_id}`,
+      );
+    });
+
+    it('should not redirect user after creating a new pipeline version', () => {
+      pipelineRunsGlobal.visit(projectName);
+
+      const createRunParams = {
+        display_name: 'New run with new version',
+        description: 'New run description',
+        run_id: 'new-run-id',
+        runtime_config: {
+          parameters: {
+            min_max_scaler: false,
+            neighbors: 1,
+            standard_scaler: 'no',
+          },
+        },
+      } satisfies Partial<PipelineRunKF>;
+
+      const newPipelineVersion = {
+        pipeline_id: mockPipeline.pipeline_id,
+        display_name: 'New pipeline version',
+        pipeline_version_id: 'new-pipeline-version',
+        description: 'New pipeline description',
+        package_url: {
+          pipeline_url: 'https://example.com/pipeline.yaml',
+        },
+      };
+
+      // Mock experiements, pipelines, and versions
+      createRunPage.mockGetExperiments(projectName, mockExperiments);
+      createRunPage.mockGetPipelines(projectName, [mockPipeline]);
+      createRunPage
+        .mockGetPipelineVersions(
+          projectName,
+          [mockPipelineVersion, buildMockPipelineVersion(newPipelineVersion)],
+          mockPipeline.pipeline_id,
+        )
+        .as('getPipelineVersions');
+
+      // Mock create new pipeline version
+      createRunPage
+        .mockCreatePipelineVersion(projectName, newPipelineVersion)
+        .as('createPipelineVersion');
+
+      // Navigate to the 'Create run' page
+      pipelineRunsGlobal.findCreateRunButton().click();
+      verifyRelativeURL(`/develop-train/pipelines/runs/${projectName}/runs/create`);
+      createRunPage.find();
+
+      // Fill required fields
+      createRunPage.fillName('New run with new version');
+      createRunPage.experimentSelect.findToggleButton().click();
+      createRunPage.selectExperimentByName('Test experiment 1');
+      createRunPage.pipelineSelect.findToggleButton().click();
+      createRunPage.selectPipelineByName('Test pipeline');
+
+      // Wait for pipeline versions to load
+      cy.wait('@getPipelineVersions');
+
+      // open and populate modal
+      createRunPage.findPipelineCreateVersionButton().click();
+
+      pipelineVersionImportModal.find();
+      pipelineVersionImportModal.fillVersionName(newPipelineVersion.display_name);
+      pipelineVersionImportModal.fillVersionDescription(newPipelineVersion.description);
+      pipelineVersionImportModal.uploadPipelineYaml(mockPipelineYamlPath);
+      pipelineVersionImportModal.submit();
+
+      cy.wait('@createPipelineVersion').then((interception) => {
+        expect(interception.response?.body).to.include({
+          display_name: 'New pipeline version',
+          pipeline_id: mockPipeline.pipeline_id,
+          pipeline_version_id: 'new-pipeline-version',
+        });
+      });
+
+      createRunPage.pipelineVersionSelect.openAndSelectItem('New pipeline version');
+
+      // verify the modal is closed and we have not been redirected
+      pipelineVersionImportModal.find().should('not.exist');
+      verifyRelativeURL(`/develop-train/pipelines/runs/${projectName}/runs/create`);
+
+      // populate arbitrary parameters
+      const runParameters = createRunParams.runtime_config.parameters;
+      createRunPage.getParamsSection().findParamById('radio-min_max_scaler-false').click();
+      createRunPage
+        .getParamsSection()
+        .fillParamInputById('neighbors', runParameters.neighbors.toString());
+      createRunPage
+        .getParamsSection()
+        .fillParamInputById('standard_scaler', runParameters.standard_scaler);
+
+      // submit
+      createRunPage
+        .mockCreateRun(projectName, mockPipelineVersion, createRunParams)
+        .as('createRuns');
+      createRunPage.submit();
+
+      cy.wait('@createRuns');
+
+      verifyRelativeURL(
+        `/develop-train/pipelines/runs/${projectName}/runs/${createRunParams.run_id}`,
+      );
+    });
+
+    it('shows and opens the create new experiment button in the experiment dropdown', () => {
+      pipelineRunsGlobal.visit(projectName);
+      // Mock experiments for the dropdown
+      createRunPage.mockGetExperiments(projectName, mockExperiments);
+      createRunPage.mockGetPipelines(projectName, [mockPipeline]);
+      createRunPage.mockGetPipelineVersions(
+        projectName,
+        [mockPipelineVersion],
+        mockPipelineVersion.pipeline_id,
+      );
+
+      // Navigate to the 'Create run' page
+      pipelineRunsGlobal.findCreateRunButton().click();
+      createRunPage.find();
+
+      // Open the experiment selector dropdown
+      createRunPage.experimentSelect.findToggleButton().should('not.be.disabled').click();
+
+      // The button should be visible in the dropdown
+      cy.findByRole('button', { name: /create new experiment/i })
+        .should('be.visible')
+        .click();
+
+      // The create experiment modal should open
+      cy.findByRole('dialog', { name: /create experiment/i }).should('be.visible');
     });
   });
 
@@ -531,10 +718,10 @@ describe('Pipeline create runs', () => {
 
       // Navigate to the 'Create run' page
       pipelineRunsGlobal.findScheduleRunButton().click();
-      verifyRelativeURL(`/pipelineRuns/${projectName}/schedules/create`);
+      verifyRelativeURL(`/develop-train/pipelines/runs/${projectName}/schedules/create`);
       createSchedulePage.find();
       createSchedulePage.findRunTypeSwitchLink().click();
-      verifyRelativeURL(`/pipelineRuns/${projectName}/runs/create`);
+      verifyRelativeURL(`/develop-train/pipelines/runs/${projectName}/runs/create`);
     });
 
     it('creates a schedule', () => {
@@ -573,7 +760,7 @@ describe('Pipeline create runs', () => {
       // Navigate to the 'Create run' page
 
       verifyRelativeURL(
-        `/pipelineRuns/${projectName}/schedules/${createRecurringRunParams.recurring_run_id}`,
+        `/develop-train/pipelines/runs/${projectName}/schedules/${createRecurringRunParams.recurring_run_id}`,
       );
     });
 
@@ -611,7 +798,7 @@ describe('Pipeline create runs', () => {
 
       // Should be redirected to the schedule details page
       verifyRelativeURL(
-        `/pipelineRuns/${projectName}/schedules/${createRecurringRunParams.recurring_run_id}`,
+        `/develop-train/pipelines/runs/${projectName}/schedules/${createRecurringRunParams.recurring_run_id}`,
       );
     });
 
@@ -670,14 +857,14 @@ describe('Pipeline create runs', () => {
       duplicateSchedulePage.mockGetExperiment(projectName, mockExperiment);
 
       // Navigate to duplicate run page for a given schedule
-      cy.visitWithLogin(`/experiments/${projectName}/experiment-1/runs`);
+      cy.visitWithLogin(`/develop-train/experiments/${projectName}/experiment-1/runs`);
       pipelineRunsGlobal.findSchedulesTab().click();
       pipelineRecurringRunTable
         .getRowByName(mockRecurringRun.display_name)
         .findKebabAction('Duplicate')
         .click();
       verifyRelativeURL(
-        `/experiments/${projectName}/experiment-1/schedules/duplicate/${mockRecurringRun.recurring_run_id}`,
+        `/develop-train/experiments/${projectName}/experiment-1/schedules/duplicate/${mockRecurringRun.recurring_run_id}`,
       );
 
       // Verify pre-populated values & submit
@@ -687,6 +874,7 @@ describe('Pipeline create runs', () => {
       duplicateSchedulePage.pipelineSelect
         .findToggleButton()
         .should('have.text', mockPipeline.display_name);
+      duplicateSchedulePage.findUseFixedVersionRadio().should('be.checked');
       duplicateSchedulePage.pipelineVersionSelect
         .findToggleButton()
         .should('have.text', mockPipelineVersion.display_name);
@@ -726,7 +914,7 @@ describe('Pipeline create runs', () => {
 
       // Should be redirected to the schedule details page
       verifyRelativeURL(
-        `/experiments/${projectName}/experiment-1/schedules/${mockDuplicateRecurringRun.recurring_run_id}`,
+        `/develop-train/experiments/${projectName}/experiment-1/schedules/${mockDuplicateRecurringRun.recurring_run_id}`,
       );
     });
 
@@ -748,14 +936,14 @@ describe('Pipeline create runs', () => {
       duplicateSchedulePage.mockGetExperiment(projectName, mockExperiment);
 
       // Navigate to duplicate run page for a given schedule
-      cy.visitWithLogin(`/experiments/${projectName}/experiment-1/runs`);
+      cy.visitWithLogin(`/develop-train/experiments/${projectName}/experiment-1/runs`);
       pipelineRunsGlobal.findSchedulesTab().click();
       pipelineRecurringRunTable
         .getRowByName(mockRecurringRun.display_name)
         .findKebabAction('Duplicate')
         .click();
       verifyRelativeURL(
-        `/experiments/${projectName}/experiment-1/schedules/duplicate/${mockRecurringRun.recurring_run_id}`,
+        `/develop-train/experiments/${projectName}/experiment-1/schedules/duplicate/${mockRecurringRun.recurring_run_id}`,
       );
 
       // Verify pre-populated values & submit
@@ -847,6 +1035,188 @@ describe('Pipeline create runs', () => {
       createSchedulePage.findCatchUpSwitchValue().should('be.checked');
       createSchedulePage.findCatchUpSwitch().click();
       createSchedulePage.findCatchUpSwitchValue().should('not.be.checked');
+    });
+
+    it('should not show the version selection area when the pipeline is not selected', () => {
+      pipelineRunsGlobal.visit(projectName);
+
+      createRunPage.mockGetExperiments(projectName, mockExperiments);
+      createRunPage.mockGetPipelines(projectName, [mockPipeline]);
+
+      pipelineRunsGlobal.findSchedulesTab().click();
+      pipelineRunsGlobal.findScheduleRunButton().click();
+
+      createRunPage.find();
+      createRunPage.findPipelineNotSelectedAlert().should('exist');
+      createRunPage.findUseLatestVersionRadio().should('not.exist');
+    });
+
+    it('should not show the version selection area when no pipeline versions are available', () => {
+      pipelineRunsGlobal.visit(projectName);
+
+      createRunPage.mockGetExperiments(projectName, mockExperiments);
+      createRunPage.mockGetPipelines(projectName, [mockPipeline]);
+      createRunPage.mockGetPipelineVersions(projectName, [], mockPipelineVersion.pipeline_id);
+
+      pipelineRunsGlobal.findSchedulesTab().click();
+      pipelineRunsGlobal.findScheduleRunButton().click();
+
+      createRunPage.find();
+      createRunPage.pipelineSelect.findToggleButton().should('not.be.disabled').click();
+      createRunPage.selectPipelineByName(mockPipeline.display_name);
+      createRunPage.findNoPipelineVersionsAvailableAlert().should('exist');
+      createRunPage.findUseLatestVersionRadio().should('not.exist');
+    });
+
+    it('should not include the pipeline version in the submission when the latest version is selected', () => {
+      const createRunParams = {
+        display_name: 'New run name',
+        description: 'New run description',
+        experiment_id: 'experiment-1',
+        run_id: 'new-run-id',
+        service_account: '',
+        runtime_config: {
+          parameters: {
+            min_max_scaler: false,
+            neighbors: 1,
+            standard_scaler: 'yes',
+          },
+        },
+      } satisfies Partial<PipelineRunKF>;
+
+      pipelineRunsGlobal.visit(projectName);
+
+      createRunPage
+        .mockCreateRecurringRun(projectName, mockPipelineVersion, createRunParams)
+        .as('submitRecurringRun');
+      createRunPage.mockGetExperiments(projectName, mockExperiments);
+      createRunPage.mockGetPipelines(projectName, [mockPipeline]);
+      createRunPage.mockGetPipelineVersions(
+        projectName,
+        mockPipelineVersions,
+        mockPipelineVersion.pipeline_id,
+      );
+
+      pipelineRunsGlobal.findSchedulesTab().click();
+      pipelineRunsGlobal.findScheduleRunButton().click();
+
+      createRunPage.find();
+
+      createRunPage.experimentSelect.findToggleButton().should('not.be.disabled').click();
+      createRunPage.selectExperimentByName(mockExperiments[0].display_name);
+
+      createRunPage.fillName(createRunParams.display_name);
+      createRunPage.fillDescription(createRunParams.description);
+
+      createRunPage.pipelineSelect.findToggleButton().should('not.be.disabled').click();
+      createRunPage.selectPipelineByName(mockPipeline.display_name);
+      createRunPage.pipelineSelect
+        .findToggleButton()
+        .should('not.be.disabled')
+        .should('have.text', mockPipeline.display_name);
+
+      createRunPage.findUseLatestVersionRadio().should('be.checked');
+
+      const { parameters } = createRunParams.runtime_config;
+      const paramsSection = createRunPage.getParamsSection();
+      paramsSection.findParamById('radio-min_max_scaler-false').click();
+      paramsSection.fillParamInputById('neighbors', String(parameters.neighbors));
+      paramsSection.fillParamInputById('standard_scaler', String(parameters.standard_scaler));
+
+      createRunPage.submit();
+
+      cy.wait('@submitRecurringRun').then((interception) => {
+        expect(interception.request.body).to.eql({
+          display_name: createRunParams.display_name,
+          description: createRunParams.description,
+          runtime_config: createRunParams.runtime_config,
+          pipeline_version_reference: { pipeline_id: mockPipeline.pipeline_id },
+          trigger: { periodic_schedule: { interval_second: '604800' } },
+          max_concurrency: '10',
+          mode: 'ENABLE',
+          no_catchup: false,
+          service_account: createRunParams.service_account,
+          experiment_id: createRunParams.experiment_id,
+        });
+      });
+    });
+
+    it('should include the pipeline version in the submission when a fixed version is selected', () => {
+      const createRunParams = {
+        display_name: 'New run name',
+        description: 'New run description',
+        experiment_id: 'experiment-1',
+        run_id: 'new-run-id',
+        service_account: '',
+        runtime_config: {
+          parameters: {
+            min_max_scaler: false,
+            neighbors: 1,
+            standard_scaler: 'yes',
+          },
+        },
+      } satisfies Partial<PipelineRunKF>;
+
+      pipelineRunsGlobal.visit(projectName);
+
+      createRunPage
+        .mockCreateRecurringRun(projectName, mockPipelineVersion, createRunParams)
+        .as('submitRecurringRun');
+      createRunPage.mockGetExperiments(projectName, mockExperiments);
+      createRunPage.mockGetPipelines(projectName, [mockPipeline]);
+      createRunPage.mockGetPipelineVersions(
+        projectName,
+        mockPipelineVersions,
+        mockPipelineVersion.pipeline_id,
+      );
+
+      pipelineRunsGlobal.findSchedulesTab().click();
+      pipelineRunsGlobal.findScheduleRunButton().click();
+
+      createRunPage.find();
+
+      createRunPage.experimentSelect.findToggleButton().should('not.be.disabled').click();
+      createRunPage.selectExperimentByName(mockExperiments[0].display_name);
+
+      createRunPage.fillName(createRunParams.display_name);
+      createRunPage.fillDescription(createRunParams.description);
+
+      createRunPage.pipelineSelect.findToggleButton().should('not.be.disabled').click();
+      createRunPage.selectPipelineByName(mockPipeline.display_name);
+      createRunPage.pipelineSelect
+        .findToggleButton()
+        .should('not.be.disabled')
+        .should('have.text', mockPipeline.display_name);
+
+      const selectedPipelineVersion = mockPipelineVersions[1];
+      createRunPage.findUseFixedVersionRadio().click();
+      createRunPage.pipelineVersionSelect.openAndSelectItem(selectedPipelineVersion.display_name);
+
+      const { parameters } = createRunParams.runtime_config;
+      const paramsSection = createRunPage.getParamsSection();
+      paramsSection.findParamById('radio-min_max_scaler-false').click();
+      paramsSection.fillParamInputById('neighbors', String(parameters.neighbors));
+      paramsSection.fillParamInputById('standard_scaler', String(parameters.standard_scaler));
+
+      createRunPage.submit();
+
+      cy.wait('@submitRecurringRun').then((interception) => {
+        expect(interception.request.body).to.eql({
+          display_name: createRunParams.display_name,
+          description: createRunParams.description,
+          pipeline_version_reference: {
+            pipeline_id: mockPipeline.pipeline_id,
+            pipeline_version_id: selectedPipelineVersion.pipeline_version_id,
+          },
+          runtime_config: createRunParams.runtime_config,
+          trigger: { periodic_schedule: { interval_second: '604800' } },
+          max_concurrency: '10',
+          mode: 'ENABLE',
+          no_catchup: false,
+          service_account: createRunParams.service_account,
+          experiment_id: createRunParams.experiment_id,
+        });
+      });
     });
   });
 });
@@ -940,7 +1310,7 @@ const createScheduleRunCommonTest = () => {
 
   // Navigate to the 'Create run' page
   pipelineRunsGlobal.findScheduleRunButton().click();
-  verifyRelativeURL(`/pipelineRuns/${projectName}/schedules/create`);
+  verifyRelativeURL(`/develop-train/pipelines/runs/${projectName}/schedules/create`);
   createSchedulePage.find();
   createRunPage.fillName(initialMockRecurringRuns[0].display_name);
   cy.findByTestId('duplicate-name-help-text').should('be.visible');
@@ -948,6 +1318,7 @@ const createScheduleRunCommonTest = () => {
   createSchedulePage.fillDescription('New recurring run description');
   createSchedulePage.pipelineSelect.findToggleButton().should('not.be.disabled').click();
   createSchedulePage.selectPipelineByName('Test pipeline');
+  createSchedulePage.findUseFixedVersionRadio().click();
   createSchedulePage.pipelineVersionSelect.findToggleButton().should('not.be.disabled');
   const { parameters } = createRecurringRunParams.runtime_config;
   const paramsSection = createRunPage.getParamsSection();

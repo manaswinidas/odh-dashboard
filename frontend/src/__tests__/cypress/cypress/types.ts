@@ -1,5 +1,4 @@
 import type { RouteMatcher } from 'cypress/types/net-stubbing';
-import type { ConfigMapKind, SecretKind } from '~/k8sTypes';
 
 export type Snapshot = {
   method: string;
@@ -60,6 +59,7 @@ export type DspaReplacements = {
   DSPA_SECRET_NAME: string;
   NAMESPACE: string;
   AWS_S3_BUCKET: string;
+  AWS_REGION: string;
 };
 
 export type StorageClassConfig = {
@@ -67,12 +67,15 @@ export type StorageClassConfig = {
   isEnabled: boolean;
   displayName: string;
   description?: string;
+  accessModeSettings?: SCAccessMode;
 };
 
 export type SCReplacements = {
   SC_NAME: string;
   SC_IS_DEFAULT: string;
   SC_IS_ENABLED: string;
+  SC_ACCESS_MODE: string;
+  SC_PROVISIONER: string;
 };
 
 export type PVCReplacements = {
@@ -81,6 +84,18 @@ export type PVCReplacements = {
   PVC_DISPLAY_NAME: string;
   PVC_SIZE: string;
   STORAGE_CLASS: string;
+};
+
+export type PVCLoaderPodReplacements = {
+  NAMESPACE: string;
+  PVC_NAME: string;
+  AWS_S3_BUCKET: string;
+  AWS_DEFAULT_REGION: string;
+  AWS_S3_ENDPOINT: string;
+  AWS_ACCESS_KEY_ID: string;
+  AWS_SECRET_ACCESS_KEY: string;
+  POD_NAME: string;
+  MODEL_PATH: string;
 };
 
 export type WBEditTestData = {
@@ -151,7 +166,7 @@ export type TestConfig = {
   PIP_INDEX_URL: string;
   PIP_TRUSTED_HOST: string;
   NGC_API_KEY: string;
-  OCI_SECRET_DETAILS_FILE: string;
+  OCI_SECRET_VALUE: string;
   OCI_MODEL_URI: string;
 };
 
@@ -189,24 +204,13 @@ export type NotebookImageData = {
   codeserverImageName: string;
 };
 
-export type NimServingResponse = {
-  body: {
-    body: ConfigMapKind | SecretKind;
-  };
-};
-
 export type SettingsTestData = {
   pvcDefaultSize: number;
-};
-
-export type NotebookTolerationSettings = {
-  enabled: boolean;
 };
 
 export type NotebookController = {
   enabled: boolean;
   pvcSize: string;
-  notebookTolerationSettings: NotebookTolerationSettings;
 };
 
 export type DashboardConfig = {
@@ -286,53 +290,6 @@ export type WorkloadMetricsTestData = {
   refreshIntervals: number[];
 };
 
-export enum KnownFineTuningPipelineParameters {
-  OUTPUT_OCI_MODEL_URI = 'output_oci_model_uri',
-  OUTPUT_OCI_REGISTRY_SECRET = 'output_oci_registry_secret',
-  OUTPUT_MODEL_NAME = 'output_model_name',
-  OUTPUT_MODEL_VERSION = 'output_model_version',
-  OUTPUT_MODEL_REGISTRY_API_URL = 'output_model_registry_api_url',
-  OUTPUT_MODEL_REGISTRY_NAME = 'output_model_registry_name',
-  OUTPUT_MODELCAR_BASE_IMAGE = 'output_modelcar_base_image',
-  SDG_REPO_URL = 'sdg_repo_url',
-  SDG_REPO_SECRET = 'sdg_repo_secret',
-  SDG_REPO_BRANCH = 'sdg_repo_branch',
-  SDG_REPO_PR = 'sdg_repo_pr',
-  SDG_TEACHER_SECRET = 'sdg_teacher_secret',
-  SDG_BASE_MODEL = 'sdg_base_model',
-  SDG_SCALE_FACTOR = 'sdg_scale_factor',
-  SDG_PIPELINE = 'sdg_pipeline',
-  SDG_MAX_BATCH_LEN = 'sdg_max_batch_len',
-  SDG_SAMPLE_SIZE = 'sdg_sample_size',
-  TRAIN_TOLERATIONS = 'train_tolerations',
-  TRAIN_NODE_SELECTORS = 'train_node_selectors',
-  TRAIN_GPU_IDENTIFIER = 'train_gpu_identifier',
-  TRAIN_GPU_PER_WORKER = 'train_gpu_per_worker',
-  TRAIN_CPU_PER_WORKER = 'train_cpu_per_worker',
-  TRAIN_MEMORY_PER_WORKER = 'train_memory_per_worker',
-  TRAIN_NUM_WORKERS = 'train_num_workers',
-  TRAIN_NUM_EPOCHS_PHASE_1 = 'train_num_epochs_phase_1',
-  TRAIN_NUM_EPOCHS_PHASE_2 = 'train_num_epochs_phase_2',
-  TRAIN_EFFECTIVE_BATCH_SIZE_PHASE_1 = 'train_effective_batch_size_phase_1',
-  TRAIN_EFFECTIVE_BATCH_SIZE_PHASE_2 = 'train_effective_batch_size_phase_2',
-  TRAIN_LEARNING_RATE_PHASE_1 = 'train_learning_rate_phase_1',
-  TRAIN_LEARNING_RATE_PHASE_2 = 'train_learning_rate_phase_2',
-  TRAIN_NUM_WARMUP_STEPS_PHASE_1 = 'train_num_warmup_steps_phase_1',
-  TRAIN_NUM_WARMUP_STEPS_PHASE_2 = 'train_num_warmup_steps_phase_2',
-  TRAIN_SAVE_SAMPLES = 'train_save_samples',
-  TRAIN_MAX_BATCH_LEN = 'train_max_batch_len',
-  TRAIN_SEED = 'train_seed',
-  MT_BENCH_MAX_WORKERS = 'mt_bench_max_workers',
-  MT_BENCH_MERGE_SYSTEM_USER_MESSAGE = 'mt_bench_merge_system_user_message',
-  FINAL_EVAL_MAX_WORKERS = 'final_eval_max_workers',
-  FINAL_EVAL_FEW_SHOTS = 'final_eval_few_shots',
-  FINAL_EVAL_BATCH_SIZE = 'final_eval_batch_size',
-  FINAL_EVAL_MERGE_SYSTEM_USER_MESSAGE = 'final_eval_merge_system_user_message',
-  EVAL_GPU_IDENTIFIER = 'eval_gpu_identifier',
-  EVAL_JUDGE_SECRET = 'eval_judge_secret',
-  K8S_STORAGE_CLASS_NAME = 'k8s_storage_class_name',
-}
-
 export type DeployOCIModelData = {
   projectName: string;
   connectionName: string;
@@ -350,10 +307,81 @@ export type ModelTolerationsTestData = {
   modelFilePath: string;
 };
 
+export type AcceleratorProfilesModelTolerationsTestData = {
+  modelServingTolerationsTestNamespace: string;
+  resourceYamlPath: string;
+  acceleratorProfileName: string;
+  modelName: string;
+  modelFilePath: string;
+};
+
 export type NotebookTolerationsTestData = {
   codeserverImageName: string;
   resourceYamlPath: string;
   hardwareProfileName: string;
   tolerationValue: string;
   hardwareProfileDeploymentSize: string;
+};
+
+export type ModelRegistryTestData = {
+  registryNamePrefix: string;
+  createRegistryName: string;
+  // Model Registry Operator Configuration
+  operatorDeploymentName: string;
+  // First model (Object Storage)
+  objectStorageModelName: string;
+  objectStorageModelDescription: string;
+  version1Name: string;
+  version1Description: string;
+  modelFormatOnnx: string;
+  formatVersion1_0: string;
+  objectStorageEndpoint: string;
+  objectStorageBucket: string;
+  objectStorageRegion: string;
+  objectStoragePath: string;
+  modelOpenVinoPath: string;
+  // Second model (URI)
+  uriModelName: string;
+  uriModelDescription: string;
+  uriVersion1Description: string;
+  modelFormatPytorch: string;
+  formatVersion2_0: string;
+  uriPrimary: string;
+  // New version registration (Versions view)
+  version2Name: string;
+  version2Description: string;
+  modelFormatTensorflow: string;
+  formatVersion3_0: string;
+  uriVersion2: string;
+
+  newNameSuffix: string;
+  newDescription: string;
+  deployProjectNamePrefix: string;
+
+  // Permissions management configuration
+  permissionsRegistryNamePrefix: string;
+  testProjectNamePrefix: string;
+  rhodsUsersGroup: string;
+};
+
+export type ManageRegistryPermissionsTestData = {
+  registryNamePrefix: string;
+  testProjectNamePrefix: string;
+  rhodsUsersGroup: string;
+  // Model Registry Operator Configuration
+  operatorDeploymentName: string;
+};
+
+export enum AccessMode {
+  RWO = 'ReadWriteOnce',
+  RWX = 'ReadWriteMany',
+  ROX = 'ReadOnlyMany',
+  RWOP = 'ReadWriteOncePod',
+}
+
+export type SCAccessMode = {
+  ReadWriteOnce?: boolean;
+  ReadWriteMany?: boolean;
+  ReadOnlyMany?: boolean;
+  ReadWriteOncePod?: boolean;
 };

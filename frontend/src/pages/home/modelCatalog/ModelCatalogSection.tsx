@@ -12,18 +12,18 @@ import {
 } from '@patternfly/react-core';
 import useDimensions from 'react-cool-dimensions';
 import { ExclamationCircleIcon } from '@patternfly/react-icons';
-import { conditionalArea, SupportedArea } from '~/concepts/areas';
-import EvenlySpacedGallery from '~/components/EvenlySpacedGallery';
-import ModelCatalogSectionHeader from '~/pages/home/modelCatalog/ModelCatalogSectionHeader';
-import ModelCatalogHint from '~/pages/home/modelCatalog/ModelCatalogHint';
-import { useBrowserStorage } from '~/components/browserStorage';
-import ProjectsLoading from '~/pages/home/projects/ProjectsLoading';
-import { CatalogModel, ModelCatalogSource } from '~/concepts/modelCatalog/types';
-import ModelCatalogSectionFooter from '~/pages/home/modelCatalog/ModelCatalogSectionFooter';
-import { FEATURED_LABEL, MAX_SHOWN_MODELS, MIN_CARD_WIDTH } from '~/concepts/modelCatalog/const';
-import { useMakeFetchObject } from '~/utilities/useMakeFetchObject';
-import { useModelCatalogSources } from '~/concepts/modelCatalog/useModelCatalogSources';
-import { ModelCatalogCard } from '~/concepts/modelCatalog/content/ModelCatalogCard';
+import { conditionalArea, SupportedArea } from '#~/concepts/areas';
+import EvenlySpacedGallery from '#~/components/EvenlySpacedGallery';
+import ModelCatalogSectionHeader from '#~/pages/home/modelCatalog/ModelCatalogSectionHeader';
+import ModelCatalogHint from '#~/pages/home/modelCatalog/ModelCatalogHint';
+import { useBrowserStorage } from '#~/components/browserStorage/BrowserStorageContext';
+import ProjectsLoading from '#~/pages/home/projects/ProjectsLoading';
+import { CatalogModel, ModelCatalogSource } from '#~/concepts/modelCatalog/types';
+import ModelCatalogSectionFooter from '#~/pages/home/modelCatalog/ModelCatalogSectionFooter';
+import { FEATURED_LABEL, MAX_SHOWN_MODELS, MIN_CARD_WIDTH } from '#~/concepts/modelCatalog/const';
+import { useMakeFetchObject } from '#~/utilities/useMakeFetchObject';
+import { useModelCatalogSources } from '#~/concepts/modelCatalog/useModelCatalogSources';
+import { ModelCatalogCard } from '#~/concepts/modelCatalog/content/ModelCatalogCard';
 
 const ModelCatalogSection: React.FC = conditionalArea(
   SupportedArea.MODEL_CATALOG,
@@ -32,16 +32,18 @@ const ModelCatalogSection: React.FC = conditionalArea(
   const modelCatalogSources = useMakeFetchObject(useModelCatalogSources());
   const { data, loaded, error } = modelCatalogSources;
 
-  const models = data
-    .flatMap((sourceModels: ModelCatalogSource) =>
-      sourceModels.models.map((vals: CatalogModel) => ({ source: sourceModels.source, ...vals })),
-    )
-    .filter((model) => model.labels && model.labels.find((l) => l === FEATURED_LABEL));
+  const models = data.flatMap((sourceModels: ModelCatalogSource) =>
+    sourceModels.models.map((vals: CatalogModel) => ({ source: sourceModels.source, ...vals })),
+  );
+
+  const featuredModels = models.filter(
+    (model) => model.labels && model.labels.find((l) => l === FEATURED_LABEL),
+  );
 
   const [visibleCardCount, setVisibleCardCount] = React.useState<number>(MAX_SHOWN_MODELS);
-  const numCards = Math.min(models.length, visibleCardCount);
+  const numCards = Math.min(featuredModels.length, visibleCardCount);
 
-  const shownModels = models.length ? models.slice(0, visibleCardCount) : [];
+  const shownModels = featuredModels.length ? featuredModels.slice(0, visibleCardCount) : [];
 
   const [hintHidden, setHintHidden] = useBrowserStorage<boolean>(
     'odh.dashboard.homepage.model.catalog.hint',
@@ -63,7 +65,7 @@ const ModelCatalogSection: React.FC = conditionalArea(
       <EmptyState
         headingLevel="h3"
         icon={ExclamationCircleIcon}
-        titleText="Error loading model catalog"
+        titleText="Error loading AI hub catalog"
         variant={EmptyStateVariant.lg}
         data-testid="error-loading"
       >
@@ -76,12 +78,12 @@ const ModelCatalogSection: React.FC = conditionalArea(
     return <ProjectsLoading />;
   }
 
-  if (models.length === 0) {
+  if (featuredModels.length === 0) {
     return null;
   }
 
   return (
-    <PageSection variant="secondary" hasBodyWrapper={false} data-testid="homepage-model-catalog">
+    <PageSection variant="secondary" hasBodyWrapper={false} data-testid="homepage-ai-hub-catalog">
       <Stack hasGutter>
         <StackItem>
           <ModelCatalogSectionHeader />

@@ -1,16 +1,16 @@
 import {
   HTPASSWD_CLUSTER_ADMIN_USER,
   LDAP_CONTRIBUTOR_USER,
-} from '~/__tests__/cypress/cypress/utils/e2eUsers';
+} from '#~/__tests__/cypress/cypress/utils/e2eUsers';
 import {
   notebookController,
   administration,
-} from '~/__tests__/cypress/cypress/pages/administration';
+} from '#~/__tests__/cypress/cypress/pages/administration';
 
-describe('[Product Bug:RHOAIENG-24546] Verify Notebook Server Administration', () => {
+describe('Verify Notebook Server Administration', () => {
   it(
     'Verify Admin User Can Access Notebook Administration',
-    { tags: ['@Smoke', '@SmokeSet1', '@Dashboard', '@NotebookAdministration', '@Bug'] },
+    { tags: ['@Smoke', '@SmokeSet1', '@Dashboard', '@NotebookAdministration'] },
     () => {
       // Authentication and navigation
       cy.step('Log into the application');
@@ -30,7 +30,7 @@ describe('[Product Bug:RHOAIENG-24546] Verify Notebook Server Administration', (
   );
   it(
     'Verify Non-Admin User cannot Access Notebook Administration',
-    { tags: ['@Smoke', '@SmokeSet1', '@Dashboard', '@NotebookAdministration', '@Bug'] },
+    { tags: ['@Smoke', '@SmokeSet1', '@Dashboard', '@NotebookAdministration'] },
     () => {
       // Authentication and navigation
       cy.step('Log into the application');

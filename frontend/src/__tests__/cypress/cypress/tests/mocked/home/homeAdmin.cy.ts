@@ -1,11 +1,14 @@
-import { mockDocs } from '~/__mocks__/mockDocs';
-import { mockComponents } from '~/__mocks__/mockComponents';
-import { mockQuickStarts } from '~/__mocks__/mockQuickStarts';
-import { customServingRuntimesIntercept } from '~/__tests__/cypress/cypress/tests/mocked/customServingRuntimes/customServingRuntimesUtils';
-import { notebookImageSettings } from '~/__tests__/cypress/cypress/pages/notebookImageSettings';
-import { asProductAdminUser, asProjectEditUser } from '~/__tests__/cypress/cypress/utils/mockUsers';
-import { homePage } from '~/__tests__/cypress/cypress/pages/home/home';
-import { verifyRelativeURL } from '~/__tests__/cypress/cypress/utils/url';
+import { mockDocs } from '#~/__mocks__/mockDocs';
+import { mockComponents } from '#~/__mocks__/mockComponents';
+import { mockQuickStarts } from '#~/__mocks__/mockQuickStarts';
+import { customServingRuntimesIntercept } from '#~/__tests__/cypress/cypress/tests/mocked/customServingRuntimes/customServingRuntimesUtils';
+import { notebookImageSettings } from '#~/__tests__/cypress/cypress/pages/notebookImageSettings';
+import {
+  asProductAdminUser,
+  asProjectEditUser,
+} from '#~/__tests__/cypress/cypress/utils/mockUsers';
+import { homePage } from '#~/__tests__/cypress/cypress/pages/home/home';
+import { verifyRelativeURL } from '#~/__tests__/cypress/cypress/utils/url';
 
 describe('Home page Admin section', () => {
   beforeEach(() => {
@@ -103,7 +106,7 @@ describe('Home page Admin section', () => {
     homePage.visit();
     const homeAdminSection = homePage.getHomeAdminSection();
     homeAdminSection.findNotebookImageButton().click();
-    verifyRelativeURL('/workbenchImages');
+    verifyRelativeURL('/settings/environment-setup/workbench-images');
 
     // Verify the Settings nav menu is now expanded
     notebookImageSettings.findNavItem().should('be.visible');
@@ -111,12 +114,12 @@ describe('Home page Admin section', () => {
     homePage.returnToHome();
     homeAdminSection.findServingRuntimeButton().click();
     // homePage.findAppPageTitle().should('have.text', 'Serving runtimes');
-    verifyRelativeURL('/servingRuntimes');
+    verifyRelativeURL('/settings/model-resources-operations/serving-runtimes');
     homePage.returnToHome();
     homeAdminSection.findClusterSettingButton().click();
-    homePage.findAppPageTitle().should('have.text', 'Cluster settings');
+    homePage.findAppPageTitle().should('have.text', 'General settings');
     homePage.returnToHome();
     homeAdminSection.findUserManagementButton().click();
-    verifyRelativeURL('/groupSettings');
+    verifyRelativeURL('/settings/user-management');
   });
 });

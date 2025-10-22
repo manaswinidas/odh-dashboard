@@ -15,21 +15,21 @@ import {
   mergePatchUpdateNotebook,
   restartNotebook,
   updateNotebook,
-} from '~/api';
-import { EnvVariable, StartNotebookData, StorageData } from '~/pages/projects/types';
-import { useUser } from '~/redux/selectors';
-import { ProjectDetailsContext } from '~/pages/projects/ProjectDetailsContext';
-import { ProjectSectionID } from '~/pages/projects/screens/detail/types';
-import { Connection } from '~/concepts/connectionTypes/types';
-import { fireFormTrackingEvent } from '~/concepts/analyticsTracking/segmentIOUtils';
+} from '#~/api';
+import { EnvVariable, StartNotebookData, StorageData } from '#~/pages/projects/types';
+import { useUser } from '#~/redux/selectors';
+import { ProjectDetailsContext } from '#~/pages/projects/ProjectDetailsContext';
+import { ProjectSectionID } from '#~/pages/projects/screens/detail/types';
+import { Connection } from '#~/concepts/connectionTypes/types';
+import { fireFormTrackingEvent } from '#~/concepts/analyticsTracking/segmentIOUtils';
 import {
   FormTrackingEventProperties,
   TrackingOutcome,
-} from '~/concepts/analyticsTracking/trackingProperties';
-import { NotebookKind } from '~/k8sTypes';
-import { getNotebookPVCNames } from '~/pages/projects/pvc/utils';
-import { SupportedArea, useIsAreaAvailable } from '~/concepts/areas';
-import { isHardwareProfileConfigValid } from '~/concepts/hardwareProfiles/validationUtils';
+} from '#~/concepts/analyticsTracking/trackingProperties';
+import { NotebookKind } from '#~/k8sTypes';
+import { getNotebookPVCNames } from '#~/pages/projects/pvc/utils';
+import { SupportedArea, useIsAreaAvailable } from '#~/concepts/areas';
+import { isHardwareProfileConfigValid } from '#~/concepts/hardwareProfiles/validationUtils';
 import {
   createConfigMapsAndSecretsForNotebook,
   createPvcDataForNotebook,
@@ -37,7 +37,6 @@ import {
   updatePvcDataForNotebook,
 } from './service';
 import { checkRequiredFieldsForNotebookStart, getPvcVolumeDetails } from './spawnerUtils';
-import { setConnectionsOnEnvFrom } from './connections/utils';
 
 type SpawnerFooterProps = {
   startNotebookData: StartNotebookData;
@@ -55,33 +54,33 @@ const SpawnerFooter: React.FC<SpawnerFooterProps> = ({
   canEnablePipelines,
 }) => {
   const [error, setError] = React.useState<K8sStatusError>();
-
   const {
     notebooks: { data: notebooks, refresh: refreshNotebooks },
-    connections: { data: projectConnections, refresh: refreshConnections },
+    connections: { refresh: refreshConnections },
   } = React.useContext(ProjectDetailsContext);
   const { notebookName } = useParams();
   const notebookState = notebooks.find(
     (currentNotebookState) => currentNotebookState.notebook.metadata.name === notebookName,
   );
 
-  const hardwareProfilesAvailable = useIsAreaAvailable(SupportedArea.HARDWARE_PROFILES).status;
+  const isProjectScopedAvailable = useIsAreaAvailable(SupportedArea.DS_PROJECT_SCOPED).status;
 
   const editNotebook = notebookState?.notebook;
   const { projectName } = startNotebookData;
   const navigate = useNavigate();
   const [createInProgress, setCreateInProgress] = React.useState(false);
-  const isHardwareProfileValid = hardwareProfilesAvailable
-    ? isHardwareProfileConfigValid({
-        selectedProfile: startNotebookData.podSpecOptions.selectedHardwareProfile,
-        useExistingSettings: false, // does not matter for validation
-        resources: startNotebookData.podSpecOptions.resources,
-      })
-    : true;
+  const isHardwareProfileValid = isHardwareProfileConfigValid({
+    selectedProfile: startNotebookData.podSpecOptions.selectedHardwareProfile,
+    useExistingSettings: false, // does not matter for validation
+    resources: startNotebookData.podSpecOptions.resources,
+  });
   const isButtonDisabled =
     createInProgress ||
     !checkRequiredFieldsForNotebookStart(startNotebookData, envVariables) ||
-    !isHardwareProfileValid;
+    !isHardwareProfileValid ||
+    (!isProjectScopedAvailable &&
+      startNotebookData.image.imageStream?.metadata.namespace === projectName);
+
   const { username } = useUser();
 
   const afterStart = (name: string, type: 'created' | 'updated') => {
@@ -167,14 +166,13 @@ const SpawnerFooter: React.FC<SpawnerFooterProps> = ({
 
     await Promise.all(restartConnectedNotebooksPromises);
 
-    let envFrom = await updateConfigMapsAndSecretsForNotebook(
+    const envFrom = await updateConfigMapsAndSecretsForNotebook(
       projectName,
       editNotebook,
       envVariables,
       connections,
       dryRun,
     );
-    envFrom = setConnectionsOnEnvFrom(connections, envFrom, projectConnections);
 
     const annotations = { ...editNotebook.metadata.annotations };
     if (envFrom.length > 0) {
@@ -187,11 +185,12 @@ const SpawnerFooter: React.FC<SpawnerFooterProps> = ({
       volumes,
       volumeMounts,
       envFrom,
+      connections,
     };
     if (dryRun) {
       return updateNotebook(editNotebook, newStartNotebookData, username, { dryRun });
     }
-    return mergePatchUpdateNotebook(newStartNotebookData, username);
+    return mergePatchUpdateNotebook(editNotebook, newStartNotebookData, username);
   };
 
   const onUpdateNotebook = async () => {
@@ -217,20 +216,20 @@ const SpawnerFooter: React.FC<SpawnerFooterProps> = ({
 
     await Promise.all(restartConnectedNotebooksPromises);
 
-    let envFrom = await createConfigMapsAndSecretsForNotebook(
+    const envFrom = await createConfigMapsAndSecretsForNotebook(
       projectName,
       [...envVariables],
       dryRun,
     );
 
     const { volumes, volumeMounts } = pvcVolumeDetails;
-    envFrom = setConnectionsOnEnvFrom(connections, envFrom, projectConnections);
 
     const newStartData: StartNotebookData = {
       ...startNotebookData,
       volumes,
       volumeMounts,
       envFrom: [...envFrom],
+      connections,
     };
     return createNotebook(newStartData, username, canEnablePipelines, { dryRun });
   };
@@ -300,11 +299,12 @@ const SpawnerFooter: React.FC<SpawnerFooterProps> = ({
             <Button
               variant="link"
               id="cancel-button"
+              data-testid="cancel-button"
               onClick={() => {
                 fireFormTrackingEvent(`Workbench ${editNotebook ? 'Updated' : 'Created'}`, {
                   outcome: TrackingOutcome.cancel,
                 });
-                navigate(-1);
+                navigate(`/projects/${projectName}?section=${ProjectSectionID.WORKBENCHES}`);
               }}
             >
               Cancel

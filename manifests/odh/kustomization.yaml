@@ -5,7 +5,7 @@ commonLabels:
   app.kubernetes.io/part-of: odh-dashboard
 resources:
   - ../common
-  - ../core-bases/base
+  - ../modular-architecture
   - ../core-bases/consolelink
 configMapGenerator:
   - name: odh-dashboard-params
@@ -20,6 +20,13 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.odh-dashboard-image
+  - name: kube-rbac-proxy
+    objref:
+      kind: ConfigMap
+      name: odh-dashboard-params
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.kube-rbac-proxy
   - name: section-title
     objref:
       kind: ConfigMap
@@ -34,5 +41,12 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.dashboard-url
+  - name: gateway-name
+    objref:
+      kind: ConfigMap
+      name: odh-dashboard-params
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.gateway-name
 configurations:
   - params.yaml

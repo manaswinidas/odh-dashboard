@@ -4,16 +4,19 @@ import {
   ExistingStorageObjectForNotebook,
   StorageData,
   UpdateObjectAtPropAndValue,
-} from '~/pages/projects/types';
-import { PersistentVolumeClaimKind } from '~/k8sTypes';
+} from '#~/pages/projects/types';
+import { PersistentVolumeClaimKind } from '#~/k8sTypes';
 import {
   useRelatedNotebooks,
   ConnectedNotebookContext,
-} from '~/pages/projects/notebook/useRelatedNotebooks';
-import useGenericObjectState from '~/utilities/useGenericObjectState';
-import { getDescriptionFromK8sResource, getDisplayNameFromK8sResource } from '~/concepts/k8s/utils';
+} from '#~/pages/projects/notebook/useRelatedNotebooks';
+import useGenericObjectState from '#~/utilities/useGenericObjectState';
+import {
+  getDescriptionFromK8sResource,
+  getDisplayNameFromK8sResource,
+} from '#~/concepts/k8s/utils';
 import useDefaultPvcSize from './useDefaultPvcSize';
-import { MountPathFormat } from './types';
+import { MountPathFormat, PvcModelAnnotation } from './types';
 import { MOUNT_PATH_PREFIX } from './const';
 
 export const useCreateStorageObject = (
@@ -30,6 +33,11 @@ export const useCreateStorageObject = (
     size: formData?.size || (existingData ? existingData.spec.resources.requests.storage : size),
     storageClassName: formData?.storageClassName || existingData?.spec.storageClassName,
     existingPvc: existingData,
+    accessMode: formData?.accessMode || existingData?.spec.accessModes[0],
+    modelName:
+      formData?.modelName || existingData?.metadata.annotations?.[PvcModelAnnotation.MODEL_NAME],
+    modelPath:
+      formData?.modelPath || existingData?.metadata.annotations?.[PvcModelAnnotation.MODEL_PATH],
   };
 
   const [data, setData] = useGenericObjectState<StorageData>(createStorageData);

@@ -1,12 +1,14 @@
 import * as React from 'react';
 import { FormGroup, Stack, StackItem, ExpandableSection } from '@patternfly/react-core';
-import { HardwareProfileKind, HardwareProfileFeatureVisibility } from '~/k8sTypes';
-import { useValidation, ValidationContext } from '~/utilities/useValidation';
-import { ContainerResources } from '~/types';
-import { useHardwareProfilesByFeatureVisibility } from '~/pages/hardwareProfiles/migration/useHardwareProfilesByFeatureVisibility';
-import { ZodErrorHelperText } from '~/components/ZodErrorFormHelperText';
-import ProjectScopedPopover from '~/components/ProjectScopedPopover';
-import { SupportedArea, useIsAreaAvailable } from '~/concepts/areas';
+import { HardwareProfileKind, HardwareProfileFeatureVisibility } from '#~/k8sTypes';
+import { useValidation, ValidationContext } from '#~/utilities/useValidation';
+import { ContainerResources } from '#~/types';
+import { useHardwareProfilesByFeatureVisibility } from '#~/pages/hardwareProfiles/useHardwareProfilesByFeatureVisibility';
+import { ZodErrorHelperText } from '#~/components/ZodErrorFormHelperText';
+import ProjectScopedPopover from '#~/components/ProjectScopedPopover';
+import { SupportedArea, useIsAreaAvailable } from '#~/concepts/areas';
+import DashboardHelpTooltip from '#~/concepts/dashboard/DashboardHelpTooltip';
+import { HARDWARE_PROFILE_SELECTION_HELP } from './const';
 import { hardwareProfileValidationSchema } from './validationUtils';
 import HardwareProfileSelect from './HardwareProfileSelect';
 import HardwareProfileCustomize from './HardwareProfileCustomize';
@@ -71,20 +73,25 @@ const HardwareProfileFormSection: React.FC<HardwareProfileFormSectionProps<PodSp
             isRequired
             labelHelp={
               isProjectScoped && project && projectScopedHardwareProfiles[0].length > 0 ? (
-                <ProjectScopedPopover title="Hardware profile" item="hardware profiles" />
-              ) : undefined
+                <ProjectScopedPopover
+                  title="Hardware profile"
+                  item="hardware profiles"
+                  description={HARDWARE_PROFILE_SELECTION_HELP}
+                />
+              ) : (
+                <DashboardHelpTooltip content={HARDWARE_PROFILE_SELECTION_HELP} />
+              )
             }
           >
             <HardwareProfileSelect
+              isProjectScoped={isProjectScoped}
               hardwareProfileConfig={formData}
               previewDescription
               hardwareProfiles={hardwareProfiles}
               hardwareProfilesLoaded={loaded}
               hardwareProfilesError={error}
               projectScopedHardwareProfiles={
-                !project
-                  ? [[], true, undefined, () => Promise.resolve()]
-                  : projectScopedHardwareProfiles
+                !project ? [[], true, undefined] : projectScopedHardwareProfiles
               }
               isHardwareProfileSupported={isHardwareProfileSupported}
               initialHardwareProfile={initialHardwareProfile}

@@ -1,10 +1,10 @@
 import * as React from 'react';
 import { useParams } from 'react-router';
 import { useNavigate } from 'react-router-dom';
-import ApplicationsPage from '~/pages/ApplicationsPage';
-import { useConnectionType } from '~/concepts/connectionTypes/useConnectionType';
-import { updateConnectionType } from '~/services/connectionTypesService';
-import { isOOTB } from '~/concepts/k8s/utils';
+import ApplicationsPage from '#~/pages/ApplicationsPage';
+import { useConnectionType } from '#~/concepts/connectionTypes/useConnectionType';
+import { updateConnectionType } from '#~/services/connectionTypesService';
+import { isOOTB } from '#~/concepts/k8s/utils';
 import ManageConnectionTypePage from './ManageConnectionTypePage';
 
 const EditConnectionTypePage: React.FC = () => {
@@ -13,7 +13,7 @@ const EditConnectionTypePage: React.FC = () => {
   const [existingConnectionType, isLoaded, error] = useConnectionType(name);
 
   if (existingConnectionType && isOOTB(existingConnectionType)) {
-    navigate('/connectionTypes');
+    navigate('/settings/environment-setup/connection-types');
     return null;
   }
 

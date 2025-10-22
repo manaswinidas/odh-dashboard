@@ -1,14 +1,14 @@
-import { appChrome } from '~/__tests__/cypress/cypress/pages/appChrome';
-import { TableRow } from '~/__tests__/cypress/cypress/pages/components/table';
-import { mockStorageClassList } from '~/__mocks__';
-import type { StorageClassKind } from '~/k8sTypes';
-import { StorageClassModel } from '~/__tests__/cypress/cypress/utils/models';
-import { Modal } from './components/Modal';
+import { appChrome } from '#~/__tests__/cypress/cypress/pages/appChrome';
+import { TableRow } from '#~/__tests__/cypress/cypress/pages/components/table';
+import { mockStorageClassList } from '#~/__mocks__';
+import type { StorageClassKind } from '#~/k8sTypes';
+import { StorageClassModel } from '#~/__tests__/cypress/cypress/utils/models';
 import { TableToolbar } from './components/TableToolbar';
+import { Modal } from './components/Modal';
 
 class StorageClassesPage {
   visit() {
-    cy.visitWithLogin('/storageClasses');
+    cy.visitWithLogin('/settings/cluster/storage-classes');
     this.wait();
   }
 
@@ -23,7 +23,11 @@ class StorageClassesPage {
   }
 
   findNavItem() {
-    return appChrome.findNavItem('Storage classes', 'Settings');
+    return appChrome.findNavItem({
+      name: 'Storage classes',
+      rootSection: 'Settings',
+      subSection: 'Cluster settings',
+    });
   }
 
   findEmptyState() {
@@ -96,6 +100,12 @@ class StorageClassesTableRow extends TableRow {
   findCorruptedMetadataAlert() {
     return cy.findByTestId('corrupted-metadata-alert');
   }
+
+  shouldContainAccessModeLabels(labels: string[]) {
+    return this.find()
+      .findByTestId('access-mode-label-group')
+      .within(() => labels.map((label) => cy.contains(label)));
+  }
 }
 
 class StorageClassesTable {
@@ -137,12 +147,12 @@ class StorageClassesTable {
     return this.findEmptyState().findByTestId('clear-filters-button');
   }
 
-  mockUpdateStorageClass(storageClassName: string, times?: number) {
-    return cy.interceptOdh(
-      `PUT /api/storage-class/:name/config`,
-      { path: { name: storageClassName }, times },
-      { success: true, error: '' },
-    );
+  mockGetStorageClass(storageClass: StorageClassKind, times = 1) {
+    return cy.interceptK8s('GET', { model: StorageClassModel, times }, storageClass);
+  }
+
+  mockPatchStorageClass(storageClass: StorageClassKind, times = 1) {
+    return cy.interceptK8s('PATCH', { model: StorageClassModel, times }, storageClass);
   }
 }
 
@@ -152,7 +162,7 @@ class StorageClassEditModal extends Modal {
   }
 
   find() {
-    return cy.findByTestId('edit-sc-modal').parents('div[role="dialog"]');
+    return cy.findByTestId('edit-sc-modal');
   }
 
   findOpenshiftScName() {
@@ -195,12 +205,21 @@ class StorageClassEditModal extends Modal {
     return this.find().findByTestId('edit-sc-modal-info-alert');
   }
 
-  mockUpdateStorageClass(storageClassName: string, times?: number) {
-    return cy.interceptOdh(
-      `PUT /api/storage-class/:name/config`,
-      { path: { name: storageClassName }, times },
-      { success: true, error: '' },
-    );
+  findAccessModeCheckbox(mode: string) {
+    //mode: rwo, rwx, rox, rwop
+    return this.find().findByTestId(`edit-sc-access-mode-checkbox-${mode.toLowerCase()}`);
+  }
+
+  findAccessModeAlert() {
+    return this.find().findByTestId('edit-sc-access-mode-alert');
+  }
+
+  mockGetStorageClass(storageClass: StorageClassKind, times = 1) {
+    return cy.interceptK8s('GET', { model: StorageClassModel, times }, storageClass);
+  }
+
+  mockPatchStorageClass(storageClass: StorageClassKind, times = 1) {
+    return cy.interceptK8s('PATCH', { model: StorageClassModel, times }, storageClass);
   }
 }
 

@@ -10,22 +10,23 @@ import {
   mockProjectK8sResource,
   mockRouteK8sResource,
   buildMockRunKF,
-} from '~/__mocks__';
-import { verifyRelativeURL } from '~/__tests__/cypress/cypress/utils/url';
+  buildMockPipelineVersions,
+} from '#~/__mocks__';
+import { verifyRelativeURL } from '#~/__tests__/cypress/cypress/utils/url';
 import {
   DataSciencePipelineApplicationModel,
   ProjectModel,
   RouteModel,
-} from '~/__tests__/cypress/cypress/utils/models';
+} from '#~/__tests__/cypress/cypress/utils/models';
 import {
   compareRunsGlobal,
   compareRunsListTable,
   compareRunParamsTable,
   compareRunsMetricsContent,
-} from '~/__tests__/cypress/cypress/pages/pipelines/compareRuns';
-import { mockCancelledGoogleRpcStatus } from '~/__mocks__/mockGoogleRpcStatusKF';
-import { mockArtifactStorage } from '~/__mocks__/mockArtifactStorage';
-import { initMlmdIntercepts } from '~/__tests__/cypress/cypress/tests/mocked/pipelines/mlmdUtils';
+} from '#~/__tests__/cypress/cypress/pages/pipelines/compareRuns';
+import { mockCancelledGoogleRpcStatus } from '#~/__mocks__/mockGoogleRpcStatusKF';
+import { mockArtifactStorage } from '#~/__mocks__/mockArtifactStorage';
+import { initMlmdIntercepts } from '#~/__tests__/cypress/cypress/tests/mocked/pipelines/mlmdUtils';
 
 const projectName = 'test-project-name';
 const initialMockPipeline = buildMockPipeline({ display_name: 'Test pipeline' });
@@ -86,6 +87,14 @@ describe('Compare runs', () => {
     initIntercepts({});
   });
 
+  it('renders the project navigator link', () => {
+    compareRunsGlobal.visit(projectName, mockExperiment.experiment_id, [
+      mockRun.run_id,
+      mockRun2.run_id,
+    ]);
+    compareRunsGlobal.findProjectNavigatorLink().should('exist');
+  });
+
   it('zero runs in url', () => {
     compareRunsGlobal.visit(projectName, mockExperiment.experiment_id);
     compareRunsGlobal.findInvalidRunsError().should('exist');
@@ -133,7 +142,7 @@ describe('Compare runs', () => {
     cy.wait('@validRun');
     compareRunsGlobal.findInvalidRunsError().should('not.exist');
     verifyRelativeURL(
-      `/experiments/${projectName}/${mockExperiment.experiment_id}/compareRuns?compareRuns=${mockRun.run_id}`,
+      `/develop-train/experiments/${projectName}/${mockExperiment.experiment_id}/compare-runs?compareRuns=${mockRun.run_id}`,
     );
   });
 
@@ -153,7 +162,7 @@ describe('Compare runs', () => {
     cy.wait('@validRun');
     compareRunsGlobal.findInvalidRunsError().should('not.exist');
     verifyRelativeURL(
-      `/experiments/${projectName}/${mockExperiment.experiment_id}/compareRuns?compareRuns=invalid_run_id,${mockRun.run_id}`,
+      `/develop-train/experiments/${projectName}/${mockExperiment.experiment_id}/compare-runs?compareRuns=invalid_run_id,${mockRun.run_id}`,
     );
   });
 
@@ -335,7 +344,7 @@ describe('Compare runs', () => {
         cy.interceptOdh(
           'GET /api/service/pipelines/:namespace/:serviceName/apis/v2beta1/artifacts/:artifactId',
           {
-            query: { view: 'DOWNLOAD' },
+            query: { view: 'RENDER' },
             path: { namespace: projectName, serviceName: 'dspa', artifactId: '16' },
           },
           mockArtifactStorage({ namespace: projectName }),
@@ -410,6 +419,74 @@ describe('Compare runs', () => {
       compareRunsMetricsContent.findRocCurveTabContent().findRocCurveEmptyState().should('exist');
       compareRunsMetricsContent.findMarkdownTab().click();
       compareRunsMetricsContent.findMarkdownTabContent().findMarkdownEmptyState().should('exist');
+    });
+  });
+
+  describe('redirect from v2 to v3 route', () => {
+    beforeEach(() => {
+      cy.interceptOdh(
+        'GET /api/service/pipelines/:namespace/:serviceName/apis/v2beta1/runs',
+        {
+          path: { namespace: projectName, serviceName: 'dspa' },
+        },
+        { runs: [mockRun, mockRun2, mockRun3] },
+      );
+
+      cy.interceptOdh(
+        'GET /api/service/pipelines/:namespace/:serviceName/apis/v2beta1/pipelines/:pipelineId/versions',
+        {
+          path: {
+            namespace: projectName,
+            serviceName: 'dspa',
+            pipelineId: initialMockPipeline.pipeline_id,
+          },
+        },
+        buildMockPipelineVersions([initialMockPipelineVersion]),
+      );
+    });
+
+    it('experiments - compare runs', () => {
+      cy.visitWithLogin(
+        `/experiments/${projectName}/${mockExperiment.experiment_id}/compareRuns?compareRuns=${mockRun.run_id},${mockRun2.run_id}`,
+      );
+      cy.findByRole('button', { name: 'Manage runs' }).should('exist');
+      cy.url().should(
+        'include',
+        `/develop-train/experiments/${projectName}/${mockExperiment.experiment_id}/compare-runs?compareRuns=${mockRun.run_id},${mockRun2.run_id}`,
+      );
+    });
+
+    it('experiments - compare runs add', () => {
+      cy.visitWithLogin(
+        `/experiments/${projectName}/${mockExperiment.experiment_id}/compareRuns/add?compareRuns=${mockRun.run_id},${mockRun2.run_id}`,
+      );
+      cy.findByTestId('app-page-title').contains('Manage runs');
+      cy.url().should(
+        'include',
+        `/develop-train/experiments/${projectName}/${mockExperiment.experiment_id}/compare-runs/add?compareRuns=${mockRun.run_id},${mockRun2.run_id}`,
+      );
+    });
+
+    it('runs - compare runs', () => {
+      cy.visitWithLogin(
+        `/pipelineRuns/${projectName}/compareRuns?compareRuns=${mockRun.run_id},${mockRun2.run_id}`,
+      );
+      cy.findByRole('button', { name: 'Manage runs' }).should('exist');
+      cy.url().should(
+        'include',
+        `/develop-train/pipelines/runs/${projectName}/compare-runs?compareRuns=${mockRun.run_id},${mockRun2.run_id}`,
+      );
+    });
+
+    it('runs - compare runs add', () => {
+      cy.visitWithLogin(
+        `/pipelineRuns/${projectName}/compareRuns/add?compareRuns=${mockRun.run_id},${mockRun2.run_id}`,
+      );
+      cy.findByTestId('app-page-title').contains('Manage runs');
+      cy.url().should(
+        'include',
+        `/develop-train/pipelines/runs/${projectName}/compare-runs/add?compareRuns=${mockRun.run_id},${mockRun2.run_id}`,
+      );
     });
   });
 });

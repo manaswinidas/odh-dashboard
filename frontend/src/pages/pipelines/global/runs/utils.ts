@@ -1,4 +1,4 @@
-import { ExperimentKF, PipelineRunKF } from '~/concepts/pipelines/kfTypes';
+import { ExperimentKF, PipelineRunKF } from '#~/concepts/pipelines/kfTypes';
 import { PipelineResourceRestoreResult, StatusEntry } from './types';
 
 export const getGroupRunsByExperiment = (
@@ -59,7 +59,7 @@ const processResults = <T>(
     { failedItemsResult: [], successfulItemsResult: [], itemStatusesResult: [] },
   );
 
-// Use the generic processResults for experiments and runs
+// Use the generic processResults for experiments
 export const processExperimentResults = (
   experimentResults: PipelineResourceRestoreResult[],
   archivedExperiments: ExperimentKF[],

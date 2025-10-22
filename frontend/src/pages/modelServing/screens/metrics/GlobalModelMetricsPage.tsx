@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { PerformanceMetricType } from '~/pages/modelServing/screens/types';
-import { getDisplayNameFromK8sResource } from '~/concepts/k8s/utils';
+import { PerformanceMetricType } from '#~/pages/modelServing/screens/types';
+import { getDisplayNameFromK8sResource } from '#~/concepts/k8s/utils';
 import MetricsPage from './MetricsPage';
 import { GlobalModelMetricsOutletContextProps } from './GlobalModelMetricsWrapper';
 
@@ -12,7 +12,7 @@ const GlobalModelMetricsPage: React.FC = () => {
     <MetricsPage
       title={`${modelDisplayName} metrics`}
       breadcrumbItems={[
-        { label: 'Model serving', link: '/modelServing' },
+        { label: 'Deployments', link: '/ai-hub/deployments' },
         {
           label: modelDisplayName,
           isActive: true,

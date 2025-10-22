@@ -1,5 +1,9 @@
-import { SupportedModelFormats, TemplateKind } from '~/k8sTypes';
-import { ServingRuntimeAPIProtocol, ServingRuntimePlatform } from '~/types';
+import { K8sDSGResource, SupportedModelFormats, TemplateKind } from '#~/k8sTypes';
+import {
+  ServingRuntimeAPIProtocol,
+  ServingRuntimeModelType,
+  ServingRuntimePlatform,
+} from '#~/types';
 
 type MockResourceConfigType = {
   name?: string;
@@ -7,12 +11,16 @@ type MockResourceConfigType = {
   displayName?: string;
   replicas?: number;
   platforms?: ServingRuntimePlatform[];
+  modelTypes?: ServingRuntimeModelType[];
   preInstalled?: boolean;
   apiProtocol?: ServingRuntimeAPIProtocol;
   isModelmesh?: boolean;
   containerName?: string;
   containerEnvVars?: { name: string; value: string }[];
   supportedModelFormats?: SupportedModelFormats[];
+  annotations?: Record<string, string>;
+  objects?: K8sDSGResource[];
+  version?: string;
 };
 
 export const mockServingRuntimeTemplateK8sResource = ({
@@ -22,7 +30,8 @@ export const mockServingRuntimeTemplateK8sResource = ({
   replicas = 1,
   isModelmesh = false,
   apiProtocol = ServingRuntimeAPIProtocol.REST,
-  platforms,
+  platforms = [ServingRuntimePlatform.SINGLE],
+  modelTypes = [ServingRuntimeModelType.PREDICTIVE, ServingRuntimeModelType.GENERATIVE],
   preInstalled = false,
   containerName = 'ovms',
   containerEnvVars = undefined,
@@ -38,6 +47,9 @@ export const mockServingRuntimeTemplateK8sResource = ({
       version: '1',
     },
   ],
+  annotations,
+  objects,
+  version = '1.0.0',
 }: MockResourceConfigType): TemplateKind => ({
   apiVersion: 'template.openshift.io/v1',
   kind: 'Template',
@@ -51,9 +63,11 @@ export const mockServingRuntimeTemplateK8sResource = ({
     annotations: {
       'opendatahub.io/modelServingSupport': JSON.stringify(platforms),
       'opendatahub.io/apiProtocol': apiProtocol,
+      'opendatahub.io/model-type': JSON.stringify(modelTypes),
+      ...annotations,
     },
   },
-  objects: [
+  objects: objects || [
     {
       apiVersion: 'serving.kserve.io/v1alpha1',
       kind: 'ServingRuntime',
@@ -61,6 +75,7 @@ export const mockServingRuntimeTemplateK8sResource = ({
         name,
         annotations: {
           'openshift.io/display-name': displayName,
+          'opendatahub.io/runtime-version': version,
         },
         labels: {
           'opendatahub.io/dashboard': 'true',

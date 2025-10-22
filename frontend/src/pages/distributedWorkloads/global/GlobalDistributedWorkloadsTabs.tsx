@@ -12,11 +12,11 @@ import {
   EmptyStateFooter,
 } from '@patternfly/react-core';
 import { WrenchIcon } from '@patternfly/react-icons';
-import MetricsPageToolbar from '~/concepts/metrics/MetricsPageToolbar';
-import { DistributedWorkloadsContext } from '~/concepts/distributedWorkloads/DistributedWorkloadsContext';
-import EmptyStateErrorMessage from '~/components/EmptyStateErrorMessage';
-import { LoadingState } from '~/pages/distributedWorkloads/components/LoadingState';
-import WhosMyAdministrator from '~/components/WhosMyAdministrator';
+import MetricsPageToolbar from '#~/concepts/metrics/MetricsPageToolbar';
+import { DistributedWorkloadsContext } from '#~/concepts/distributedWorkloads/DistributedWorkloadsContext';
+import EmptyStateErrorMessage from '#~/components/EmptyStateErrorMessage';
+import { LoadingState } from '#~/pages/distributedWorkloads/components/LoadingState';
+import WhosMyAdministrator from '#~/components/WhosMyAdministrator';
 import {
   DistributedWorkloadsTabId,
   useDistributedWorkloadsTabs,
@@ -40,10 +40,7 @@ const GlobalDistributedWorkloadsTabs: React.FC<GlobalDistributedWorkloadsTabsPro
 
   if (error) {
     return (
-      <EmptyStateErrorMessage
-        title="Error loading distributed workloads"
-        bodyText={error.message}
-      />
+      <EmptyStateErrorMessage title="Error loading workload metrics" bodyText={error.message} />
     );
   }
 
@@ -79,10 +76,10 @@ const GlobalDistributedWorkloadsTabs: React.FC<GlobalDistributedWorkloadsTabsPro
             const tab = tabs.find(({ id }) => id === tabId);
             if (tab) {
               const namespaceSuffix = namespace ? `/${namespace}` : '';
-              navigate(`/distributedWorkloads/${tab.path}${namespaceSuffix}`);
+              navigate(`/observe-monitor/workload-metrics/${tab.path}${namespaceSuffix}`);
             }
           }}
-          aria-label="Distributed workloads page tabs"
+          aria-label="Workload metrics page tabs"
           role="region"
         >
           {tabs

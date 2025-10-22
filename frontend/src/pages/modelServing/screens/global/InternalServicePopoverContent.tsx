@@ -8,7 +8,7 @@ import {
   DescriptionListTerm,
   ListItem,
 } from '@patternfly/react-core';
-import { InferenceServiceKind } from '~/k8sTypes';
+import { InferenceServiceKind } from '#~/k8sTypes';
 
 type InternalServicePopoverContentProps = {
   inferenceService: InferenceServiceKind;
@@ -31,7 +31,10 @@ const InternalServicePopoverContent: React.FC<InternalServicePopoverContentProps
     return (
       <DescriptionList isCompact>
         <DescriptionListGroup>
-          <DescriptionListTerm>url</DescriptionListTerm>
+          <DescriptionListTerm>Internal</DescriptionListTerm>
+          <DescriptionListDescription>
+            Accessible only from inside the cluster.
+          </DescriptionListDescription>
           <DescriptionListDescription>
             <ClipboardCopy
               hoverTip="Copy"
@@ -48,9 +51,10 @@ const InternalServicePopoverContent: React.FC<InternalServicePopoverContentProps
 
   return (
     <DescriptionList isCompact>
-      <DescriptionListTerm>
-        Internal (can only be accessed from inside the cluster)
-      </DescriptionListTerm>
+      <DescriptionListTerm>Internal</DescriptionListTerm>
+      <DescriptionListDescription>
+        Accessible only from inside the cluster.
+      </DescriptionListDescription>
       {Object.entries(isInternalServiceEnabled)
         .slice(0, 2)
         .map(([route, value]) => (

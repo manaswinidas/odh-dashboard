@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { SVGIconProps } from '@patternfly/react-icons/dist/esm/createIcon';
-import { ProjectObjectType, typedColor } from '~/concepts/design/utils';
+import { ProjectObjectType, typedColor } from '#~/concepts/design/utils';
 import {
   BuildIcon,
   NotebookIcon,
@@ -21,7 +21,7 @@ import {
   ClusterSettingsIcon,
   EnabledApplicationsIcon,
   ExploreApplicationsIcon,
-  PipelineExecutionIcon,
+  CheckmarkIcon,
   ArtifactIcon,
   DistributedWorkloadIcon,
   AcceleratorProfileIcon,
@@ -33,8 +33,9 @@ import {
   ResourcesIcon,
   ModelCatalogIcon,
   ModelRegistrySelectIcon,
+  ModelEvaluationIcon,
   LabTuningIcon,
-} from '~/images/icons';
+} from '#~/images/icons';
 
 type TypedObjectIconProps = SVGIconProps & {
   resourceType: ProjectObjectType;
@@ -74,7 +75,7 @@ const TypedObjectIcon: React.FC<TypedObjectIconProps> = ({
       Icon = ExperimentIcon;
       break;
     case ProjectObjectType.pipelineExecution:
-      Icon = PipelineExecutionIcon;
+      Icon = CheckmarkIcon;
       break;
     case ProjectObjectType.pipelineArtifact:
       Icon = ArtifactIcon;
@@ -114,8 +115,8 @@ const TypedObjectIcon: React.FC<TypedObjectIconProps> = ({
     case ProjectObjectType.deployingModels:
       Icon = DeployedModelIcon;
       break;
-    case ProjectObjectType.deployedModelsList:
-      Icon = PipelineExecutionIcon;
+    case ProjectObjectType.connectedModels:
+      Icon = CheckmarkIcon;
       break;
     case ProjectObjectType.servingRuntime:
       Icon = ServingRuntimeIcon;
@@ -153,6 +154,9 @@ const TypedObjectIcon: React.FC<TypedObjectIconProps> = ({
       break;
     case ProjectObjectType.resources:
       Icon = ResourcesIcon;
+      break;
+    case ProjectObjectType.modelEvaluation:
+      Icon = ModelEvaluationIcon;
       break;
     default:
       return null;

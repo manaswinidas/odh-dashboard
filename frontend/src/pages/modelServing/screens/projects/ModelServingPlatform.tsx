@@ -1,11 +1,8 @@
 import * as React from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
 import { OutlinedQuestionCircleIcon } from '@patternfly/react-icons';
 import {
   Alert,
-  Button,
   Content,
-  EmptyStateActions,
   Flex,
   FlexItem,
   Gallery,
@@ -15,32 +12,35 @@ import {
   Stack,
   StackItem,
 } from '@patternfly/react-core';
-import { ProjectSectionID } from '~/pages/projects/screens/detail/types';
-import { ProjectDetailsContext } from '~/pages/projects/ProjectDetailsContext';
-import { ProjectSectionTitles } from '~/pages/projects/screens/detail/const';
+import { ProjectSectionID } from '#~/pages/projects/screens/detail/types';
+import { ProjectDetailsContext } from '#~/pages/projects/ProjectDetailsContext';
+import { ProjectSectionTitles } from '#~/pages/projects/screens/detail/const';
 import {
   getSortedTemplates,
   getTemplateEnabled,
   getTemplateEnabledForPlatform,
-} from '~/pages/modelServing/customServingRuntimes/utils';
-import { ServingRuntimePlatform } from '~/types';
-import { getProjectModelServingPlatform } from '~/pages/modelServing/screens/projects/utils';
-import KServeInferenceServiceTable from '~/pages/modelServing/screens/projects/KServeSection/KServeInferenceServiceTable';
-import DashboardPopupIconButton from '~/concepts/dashboard/DashboardPopupIconButton';
-import DetailsSection from '~/pages/projects/screens/detail/DetailsSection';
-import EmptyDetailsView from '~/components/EmptyDetailsView';
-import EmptySingleModelServingCard from '~/pages/modelServing/screens/projects/EmptySingleModelServingCard';
-import EmptyMultiModelServingCard from '~/pages/modelServing/screens/projects/EmptyMultiModelServingCard';
-import { ProjectObjectType, typedEmptyImage } from '~/concepts/design/utils';
-import EmptyModelServingPlatform from '~/pages/modelServing/screens/projects/EmptyModelServingPlatform';
-import EmptyNIMModelServingCard from '~/pages/modelServing/screens/projects/EmptyNIMModelServingCard';
-import { isProjectNIMSupported } from '~/pages/modelServing/screens/projects/nimUtils';
-import ManageNIMServingModal from '~/pages/modelServing/screens/projects/NIMServiceModal/ManageNIMServingModal';
-import { NamespaceApplicationCase } from '~/pages/projects/types';
-import ModelServingPlatformSelectButton from '~/pages/modelServing/screens/projects/ModelServingPlatformSelectButton';
-import ModelServingPlatformSelectErrorAlert from '~/pages/modelServing/screens/ModelServingPlatformSelectErrorAlert';
-import { modelVersionRoute } from '~/routes';
-import useServingPlatformStatuses from '~/pages/modelServing/useServingPlatformStatuses';
+} from '#~/pages/modelServing/customServingRuntimes/utils';
+import { ServingRuntimePlatform } from '#~/types';
+import {
+  getProjectModelServingPlatform,
+  isCurrentServingPlatformEnabled,
+} from '#~/pages/modelServing/screens/projects/utils';
+import KServeInferenceServiceTable from '#~/pages/modelServing/screens/projects/KServeSection/KServeInferenceServiceTable';
+import DashboardPopupIconButton from '#~/concepts/dashboard/DashboardPopupIconButton';
+import DetailsSection from '#~/pages/projects/screens/detail/DetailsSection';
+import EmptyDetailsView from '#~/components/EmptyDetailsView';
+import EmptySingleModelServingCard from '#~/pages/modelServing/screens/projects/EmptySingleModelServingCard';
+import EmptyMultiModelServingCard from '#~/pages/modelServing/screens/projects/EmptyMultiModelServingCard';
+import { ProjectObjectType, typedEmptyImage } from '#~/concepts/design/utils';
+import EmptyModelServingPlatform from '#~/pages/modelServing/screens/projects/EmptyModelServingPlatform';
+import EmptyNIMModelServingCard from '#~/pages/modelServing/screens/projects/EmptyNIMModelServingCard';
+import { isProjectNIMSupported } from '#~/pages/modelServing/screens/projects/nimUtils';
+import ManageNIMServingModal from '#~/pages/modelServing/screens/projects/NIMServiceModal/ManageNIMServingModal';
+import { NamespaceApplicationCase } from '#~/pages/projects/types';
+import ModelServingPlatformSelectButton from '#~/pages/modelServing/screens/projects/ModelServingPlatformSelectButton';
+import ModelServingPlatformSelectErrorAlert from '#~/concepts/modelServing/Platforms/ModelServingPlatformSelectErrorAlert';
+import useServingPlatformStatuses from '#~/pages/modelServing/useServingPlatformStatuses';
+import { NavigateBackToRegistryButton } from '#~/concepts/modelServing/NavigateBackToRegistryButton.tsx';
 import ManageServingRuntimeModal from './ServingRuntimeModal/ManageServingRuntimeModal';
 import ModelMeshServingRuntimeTable from './ModelMeshSection/ServingRuntimeTable';
 import ModelServingPlatformButtonAction from './ModelServingPlatformButtonAction';
@@ -53,14 +53,6 @@ const ModelServingPlatform: React.FC = () => {
 
   const [errorSelectingPlatform, setErrorSelectingPlatform] = React.useState<Error>();
 
-  const navigate = useNavigate();
-  const [queryParams] = useSearchParams();
-  const modelRegistryName = queryParams.get('modelRegistryName');
-  const registeredModelId = queryParams.get('registeredModelId');
-  const modelVersionId = queryParams.get('modelVersionId');
-  // deployingFromRegistry = User came from the Model Registry page because this project didn't have a serving platform selected
-  const deployingFromRegistry = !!(modelRegistryName && registeredModelId && modelVersionId);
-
   const servingPlatformStatuses = useServingPlatformStatuses();
   const kServeEnabled = servingPlatformStatuses.kServe.enabled;
   const modelMeshEnabled = servingPlatformStatuses.modelMesh.enabled;
@@ -68,7 +60,7 @@ const ModelServingPlatform: React.FC = () => {
 
   const {
     servingRuntimes: {
-      data: servingRuntimes,
+      data: { items: servingRuntimes },
       loaded: servingRuntimesLoaded,
       error: servingRuntimeError,
       refresh: refreshServingRuntime,
@@ -78,7 +70,10 @@ const ModelServingPlatform: React.FC = () => {
     servingRuntimeTemplateDisablement: { data: templateDisablement },
     connections: { data: connections },
     serverSecrets: { refresh: refreshTokens },
-    inferenceServices: { refresh: refreshInferenceServices },
+    inferenceServices: {
+      data: { items: inferenceServices },
+      refresh: refreshInferenceServices,
+    },
     currentProject,
   } = React.useContext(ProjectDetailsContext);
 
@@ -90,7 +85,6 @@ const ModelServingPlatform: React.FC = () => {
   );
 
   const emptyTemplates = templatesEnabled.length === 0;
-  const emptyModelServer = servingRuntimes.length === 0;
 
   const { platform: currentProjectServingPlatform, error: platformError } =
     getProjectModelServingPlatform(currentProject, servingPlatformStatuses);
@@ -99,6 +93,15 @@ const ModelServingPlatform: React.FC = () => {
     servingPlatformStatuses.platformEnabledCount !== 1 && !currentProjectServingPlatform;
 
   const isProjectModelMesh = currentProjectServingPlatform === ServingRuntimePlatform.MULTI;
+
+  const emptyModelServer = isProjectModelMesh
+    ? servingRuntimes.length === 0
+    : inferenceServices.length === 0;
+
+  const isCurrentPlatformEnabled = isCurrentServingPlatformEnabled(
+    currentProjectServingPlatform,
+    servingPlatformStatuses,
+  );
 
   const onSubmit = (submit: boolean) => {
     setPlatformSelected(undefined);
@@ -148,22 +151,7 @@ const ModelServingPlatform: React.FC = () => {
             />
           }
           footerExtraChildren={
-            deployingFromRegistry &&
-            !isProjectModelMesh && ( // For modelmesh we don't want to offer this until there is a model server
-              <EmptyStateActions>
-                <Button
-                  variant="link"
-                  onClick={() =>
-                    navigate(
-                      modelVersionRoute(modelVersionId, registeredModelId, modelRegistryName),
-                    )
-                  }
-                  data-testid="deploy-from-registry"
-                >
-                  Deploy model from model registry
-                </Button>
-              </EmptyStateActions>
-            )
+            !isProjectModelMesh && <NavigateBackToRegistryButton isEmptyStateAction /> // For modelmesh we don't want to offer this until there is a model server
           }
         />
       );
@@ -237,7 +225,7 @@ const ModelServingPlatform: React.FC = () => {
         popover={
           !emptyModelServer ? (
             <Popover
-              headerContent="About models"
+              headerContent="About deployments"
               bodyContent="Deploy models to test them and integrate them into applications. Deploying a model makes it accessible via an API, enabling you to return predictions based on data inputs."
             >
               <DashboardPopupIconButton
@@ -324,21 +312,26 @@ const ModelServingPlatform: React.FC = () => {
                   <Label data-testid="serving-platform-label">
                     {isKServeNIMEnabled
                       ? 'NVIDIA NIM serving enabled'
-                      : isProjectModelMesh
-                      ? 'Multi-model serving enabled'
-                      : 'Single-model serving enabled'}
+                      : isCurrentPlatformEnabled
+                      ? isProjectModelMesh
+                        ? 'Multi-model serving enabled'
+                        : 'Single-model serving enabled'
+                      : 'Current platform disabled'}
                   </Label>
 
-                  {emptyModelServer && servingPlatformStatuses.platformEnabledCount > 1 && (
-                    <ModelServingPlatformSelectButton
-                      namespace={currentProject.metadata.name}
-                      servingPlatform={NamespaceApplicationCase.RESET_MODEL_SERVING_PLATFORM}
-                      setError={setErrorSelectingPlatform}
-                      variant="link"
-                      isInline
-                      data-testid="change-serving-platform-button"
-                    />
-                  )}
+                  {emptyModelServer &&
+                    (servingPlatformStatuses.platformEnabledCount > 1 ||
+                      !isCurrentPlatformEnabled ||
+                      platformError) && (
+                      <ModelServingPlatformSelectButton
+                        namespace={currentProject.metadata.name}
+                        servingPlatform={NamespaceApplicationCase.RESET_MODEL_SERVING_PLATFORM}
+                        setError={setErrorSelectingPlatform}
+                        variant="link"
+                        isInline
+                        data-testid="change-serving-platform-button"
+                      />
+                    )}
                 </Flex>,
               ]
             : undefined

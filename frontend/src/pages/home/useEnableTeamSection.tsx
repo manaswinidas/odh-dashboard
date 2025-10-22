@@ -1,15 +1,15 @@
 import * as React from 'react';
 import { PageSection, Content, ContentVariants } from '@patternfly/react-core';
 import { useNavigate } from 'react-router-dom';
-import CollapsibleSection from '~/concepts/design/CollapsibleSection';
-import { ProjectObjectType, SectionType, sectionTypeBorderColor } from '~/concepts/design/utils';
-import DividedGallery from '~/concepts/design/DividedGallery';
-import { useUser } from '~/redux/selectors';
-import InfoGalleryItem from '~/concepts/design/InfoGalleryItem';
-import { useBrowserStorage } from '~/components/browserStorage';
-import { SupportedArea } from '~/concepts/areas';
-import useIsAreaAvailable from '~/concepts/areas/useIsAreaAvailable';
-import { fireLinkTrackingEvent } from '~/concepts/analyticsTracking/segmentIOUtils';
+import CollapsibleSection from '#~/concepts/design/CollapsibleSection';
+import { ProjectObjectType, SectionType, sectionTypeBorderColor } from '#~/concepts/design/utils';
+import DividedGallery from '#~/concepts/design/DividedGallery';
+import { useUser } from '#~/redux/selectors';
+import InfoGalleryItem from '#~/concepts/design/InfoGalleryItem';
+import { useBrowserStorage } from '#~/components/browserStorage/BrowserStorageContext';
+import { SupportedArea } from '#~/concepts/areas';
+import useIsAreaAvailable from '#~/concepts/areas/useIsAreaAvailable';
+import { fireLinkTrackingEvent } from '#~/concepts/analyticsTracking/segmentIOUtils';
 
 export const useEnableTeamSection = (): React.ReactNode => {
   const navigate = useNavigate();
@@ -46,8 +46,10 @@ export const useEnableTeamSection = (): React.ReactNode => {
         key="notebook-images"
         testId="landing-page-admin--notebook-images"
         isOpen={resourcesOpen}
-        title="Notebook images"
-        onClick={() => trackAndNavigate('notebook-images', '/workbenchImages')}
+        title="Workbench images"
+        onClick={() =>
+          trackAndNavigate('workbench-images', '/settings/environment-setup/workbench-images')
+        }
         resourceType={ProjectObjectType.notebookImage}
         sectionType={SectionType.setup}
         description={
@@ -68,7 +70,12 @@ export const useEnableTeamSection = (): React.ReactNode => {
         testId="landing-page-admin--serving-runtimes"
         isOpen={resourcesOpen}
         title="Serving runtimes"
-        onClick={() => trackAndNavigate('serving-runtimes', '/servingRuntimes')}
+        onClick={() =>
+          trackAndNavigate(
+            'serving-runtimes',
+            '/settings/model-resources-operations/serving-runtimes',
+          )
+        }
         resourceType={ProjectObjectType.servingRuntime}
         sectionType={SectionType.setup}
         description={
@@ -89,7 +96,7 @@ export const useEnableTeamSection = (): React.ReactNode => {
         testId="landing-page-admin--cluster-settings"
         isOpen={resourcesOpen}
         title="Cluster settings"
-        onClick={() => trackAndNavigate('cluster-settings', '/clusterSettings')}
+        onClick={() => trackAndNavigate('cluster-settings', '/settings/cluster/general')}
         resourceType={ProjectObjectType.clusterSettings}
         sectionType={SectionType.setup}
         description={
@@ -110,7 +117,7 @@ export const useEnableTeamSection = (): React.ReactNode => {
         testId="landing-page-admin--user-management"
         isOpen={resourcesOpen}
         title="User management"
-        onClick={() => trackAndNavigate('user-management', '/groupSettings')}
+        onClick={() => trackAndNavigate('user-management', '/settings/user-management')}
         resourceType={ProjectObjectType.permissions}
         sectionType={SectionType.setup}
         description={

@@ -9,7 +9,7 @@ import {
 } from '@patternfly/react-core';
 import { ExclamationCircleIcon } from '@patternfly/react-icons';
 import { useNavigate } from 'react-router-dom';
-import { TemplateKind } from '~/k8sTypes';
+import { TemplateKind } from '#~/k8sTypes';
 import { getServingRuntimeNameFromTemplate } from './utils';
 import CustomServingRuntimeAddTemplate from './CustomServingRuntimeAddTemplate';
 import { CustomServingRuntimeContext } from './CustomServingRuntimeContext';
@@ -37,7 +37,10 @@ const CustomServingRuntimeEditTemplate: React.FC = () => {
         >
           <EmptyStateBody>We were unable to find a serving runtime by this name</EmptyStateBody>
           <EmptyStateFooter>
-            <Button variant="primary" onClick={() => navigate(`/servingRuntimes`)}>
+            <Button
+              variant="primary"
+              onClick={() => navigate(`/settings/model-resources-operations/serving-runtimes`)}
+            >
               Return to the list
             </Button>
           </EmptyStateFooter>

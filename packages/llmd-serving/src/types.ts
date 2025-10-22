@@ -1,0 +1,72 @@
+import type { K8sModelCommon, K8sResourceCommon } from '@openshift/dynamic-plugin-sdk-utils';
+import type {
+  DisplayNameAnnotations,
+  ImagePullSecret,
+  MetadataAnnotation,
+} from '@odh-dashboard/internal/k8sTypes';
+import type { Deployment } from '@odh-dashboard/model-serving/extension-points';
+import type { PodContainer } from '@odh-dashboard/internal/types';
+import { MAAS_TIERS_ANNOTATION } from './wizardFields/modelAvailability';
+
+export type LLMdContainer = { name: string; args?: string[] } & Partial<PodContainer>;
+
+export type LLMInferenceServiceKind = K8sResourceCommon & {
+  kind: 'LLMInferenceService';
+  metadata: {
+    name: string;
+    namespace: string;
+    annotations?: DisplayNameAnnotations & {
+      [MetadataAnnotation.ConnectionName]?: string;
+    } & {
+      'opendatahub.io/model-type'?: 'generative';
+      'opendatahub.io/genai-use-case'?: string;
+      [MAAS_TIERS_ANNOTATION]?: string;
+    };
+    labels?: {
+      'opendatahub.io/genai-asset'?: 'true' | 'false';
+    };
+  };
+  spec: {
+    model: {
+      uri: string;
+      name?: string;
+    };
+    replicas?: number;
+    router?: {
+      gateway?: {
+        refs?: {
+          name?: string;
+          namespace?: string;
+        }[];
+      };
+      route?: object;
+      scheduler?: object;
+    };
+    template?: {
+      containers?: LLMdContainer[];
+      imagePullSecrets?: ImagePullSecret[];
+    };
+  };
+  status?: {
+    conditions?: {
+      lastTransitionTime?: string;
+      message?: string;
+      reason?: string;
+      severity?: string;
+      status?: string;
+      type?: string;
+    }[];
+    url?: string;
+    addresses?: { name?: string; url?: string }[];
+    observedGeneration?: number;
+  };
+};
+
+export type LLMdDeployment = Deployment<LLMInferenceServiceKind>;
+
+export const LLMInferenceServiceModel: K8sModelCommon = {
+  apiVersion: 'v1alpha1',
+  apiGroup: 'serving.kserve.io',
+  kind: 'LLMInferenceService',
+  plural: 'llminferenceservices',
+};

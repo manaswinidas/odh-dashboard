@@ -10,25 +10,26 @@ import {
   mock404Error,
   buildMockPipeline,
   buildMockPipelines,
-} from '~/__mocks__';
+} from '#~/__mocks__';
 import {
   pipelinesTable,
   configurePipelineServerModal,
   pipelineVersionImportModal,
   PipelineSort,
   pipelinesGlobal,
-  viewPipelineServerModal,
-} from '~/__tests__/cypress/cypress/pages/pipelines';
-import { pipelinesSection } from '~/__tests__/cypress/cypress/pages/pipelines/pipelinesSection';
-import { projectDetails } from '~/__tests__/cypress/cypress/pages/projects';
+  managePipelineServerModal,
+} from '#~/__tests__/cypress/cypress/pages/pipelines';
+import { pipelinesSection } from '#~/__tests__/cypress/cypress/pages/pipelines/pipelinesSection';
+import { projectDetails } from '#~/__tests__/cypress/cypress/pages/projects';
 import {
   DataSciencePipelineApplicationModel,
   ProjectModel,
   RouteModel,
   SecretModel,
-} from '~/__tests__/cypress/cypress/utils/models';
-import { verifyRelativeURL } from '~/__tests__/cypress/cypress/utils/url';
-import type { PipelineKF } from '~/concepts/pipelines/kfTypes';
+} from '#~/__tests__/cypress/cypress/utils/models';
+import { verifyRelativeURL } from '#~/__tests__/cypress/cypress/utils/url';
+import { MANAGE_PIPELINE_SERVER_CONFIGURATION_TITLE } from '#~/concepts/pipelines/content/const';
+import type { PipelineKF } from '#~/concepts/pipelines/kfTypes';
 
 const projectName = 'test-project-name';
 const initialMockPipeline = buildMockPipeline({ display_name: 'Test pipeline' });
@@ -93,14 +94,20 @@ describe('PipelinesList', () => {
     );
     projectDetails.visitSection(projectName, 'pipelines-projects');
 
-    pipelinesGlobal.selectPipelineServerAction('View pipeline server configuration');
-    viewPipelineServerModal.shouldHaveAccessKey('sdsd');
-    viewPipelineServerModal.findPasswordHiddenButton().click();
-    viewPipelineServerModal.shouldHaveSecretKey('sdsd');
-    viewPipelineServerModal.shouldHaveEndPoint('https://s3.amazonaws.com');
-    viewPipelineServerModal.shouldHaveBucketName('test-pipelines-bucket');
+    pipelinesGlobal.selectPipelineServerAction(MANAGE_PIPELINE_SERVER_CONFIGURATION_TITLE);
+    managePipelineServerModal.shouldHaveAccessKey('sdsd');
+    managePipelineServerModal.findPasswordHiddenButton().click();
+    managePipelineServerModal.shouldHaveSecretKey('sdsd');
+    managePipelineServerModal.shouldHaveEndPoint('https://s3.amazonaws.com');
+    managePipelineServerModal.shouldHaveBucketName('test-pipelines-bucket');
 
-    viewPipelineServerModal.findCloseButton().click();
+    const checkbox = managePipelineServerModal.getPipelineCachingCheckbox();
+    checkbox.should('be.checked');
+
+    managePipelineServerModal.checkButtonState('save', false);
+    managePipelineServerModal.checkButtonState('cancel', true);
+
+    managePipelineServerModal.findCloseButton().click();
   });
 
   it('should disable the upload version button when the list is empty', () => {
@@ -166,7 +173,7 @@ describe('PipelinesList', () => {
       .click();
 
     verifyRelativeURL(
-      `/pipelines/${projectName}/${initialMockPipeline.pipeline_id}/${initialMockPipelineVersion.pipeline_version_id}/view`,
+      `/develop-train/pipelines/definitions/${projectName}/${initialMockPipeline.pipeline_id}/${initialMockPipelineVersion.pipeline_version_id}/view`,
     );
   });
 
@@ -199,7 +206,7 @@ describe('PipelinesList', () => {
       .findKebabAction('Create run')
       .click();
 
-    verifyRelativeURL(`/pipelineRuns/${projectName}/runs/create`);
+    verifyRelativeURL(`/develop-train/pipelines/runs/${projectName}/runs/create`);
   });
 
   it('navigates to "Schedule run" page from pipeline row', () => {
@@ -212,7 +219,7 @@ describe('PipelinesList', () => {
       .findKebabAction('Create schedule')
       .click();
 
-    verifyRelativeURL(`/pipelineRuns/${projectName}/schedules/create`);
+    verifyRelativeURL(`/develop-train/pipelines/runs/${projectName}/schedules/create`);
   });
 });
 

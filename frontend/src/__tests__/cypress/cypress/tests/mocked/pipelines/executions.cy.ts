@@ -7,19 +7,19 @@ import {
   mockK8sResourceList,
   mockProjectK8sResource,
   mockRouteK8sResource,
-} from '~/__mocks__';
+} from '#~/__mocks__';
 import {
   DataSciencePipelineApplicationModel,
   RouteModel,
   ProjectModel,
-} from '~/__tests__/cypress/cypress/utils/models';
+} from '#~/__tests__/cypress/cypress/utils/models';
 import {
   executionPage,
   executionFilter,
-} from '~/__tests__/cypress/cypress/pages/pipelines/executions';
-import { mockGetExecutions, mockGetNextPageExecutions } from '~/__mocks__/mlmd/mockGetExecutions';
-import { tablePagination } from '~/__tests__/cypress/cypress/pages/components/Pagination';
-import { verifyRelativeURL } from '~/__tests__/cypress/cypress/utils/url';
+} from '#~/__tests__/cypress/cypress/pages/pipelines/executions';
+import { mockGetExecutions, mockGetNextPageExecutions } from '#~/__mocks__/mlmd/mockGetExecutions';
+import { tablePagination } from '#~/__tests__/cypress/cypress/pages/components/Pagination';
+import { verifyRelativeURL } from '#~/__tests__/cypress/cypress/utils/url';
 import { decodeGetExecutionsRequest, initMlmdIntercepts } from './mlmdUtils';
 
 const projectName = 'test-project-name';
@@ -55,6 +55,12 @@ describe('Executions', () => {
     testEntriesToggle();
     testPagePagination();
     testExecutionDetailsPage();
+  });
+
+  it('redirect from v2 to v3 route', () => {
+    cy.visitWithLogin('/executions');
+    cy.findByTestId('app-page-title').contains('Executions');
+    cy.url().should('include', '/develop-train/pipelines/executions');
   });
 });
 
@@ -203,5 +209,5 @@ const testExecutionDetailsPage = () => {
   executionPage.findText('system.ContainerExecution');
   executionPage.findText('Custom properties');
   executionPage.shouldFailToLoadRun();
-  verifyRelativeURL(`/executions/${projectName}/${id}`);
+  verifyRelativeURL(`/develop-train/pipelines/executions/${projectName}/${id}`);
 };

@@ -1,8 +1,14 @@
 import { Contextual } from './components/Contextual';
+import { appChrome } from './appChrome';
 
 class Resources {
   visit() {
-    cy.visitWithLogin('/resources');
+    cy.visitWithLogin('/learning-resources');
+    this.wait();
+  }
+
+  navigate() {
+    appChrome.findNavItem({ name: 'Learning resources' }).click();
     this.wait();
   }
 
@@ -39,7 +45,7 @@ class Resources {
   }
 
   getQuickStartDrawer() {
-    return new QuickStartDrawer(() => cy.findByTestId('qs-drawer-creatingAJupyterNotebook'));
+    return new QuickStartDrawer(() => cy.findByTestId('qs-drawer-creatingABasicWorkbench'));
   }
 
   findLeaveQuickStartDialogue() {
@@ -149,9 +155,7 @@ class LearningCenterFilters extends Contextual<HTMLElement> {
   findResourceCountById(id: string) {
     return this.find()
       .findCheckboxLabelNumberByTestId(id)
-      .then((count) => {
-        return count;
-      });
+      .then((count) => count);
   }
 
   findCategoryFilter(index: number) {

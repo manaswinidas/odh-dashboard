@@ -1,5 +1,5 @@
 import { K8sResourceCommon } from '@openshift/dynamic-plugin-sdk-utils';
-import { EitherNotBoth, ExactlyOne } from '~/typeHelpers';
+import { EitherNotBoth, ExactlyOne } from '#~/typeHelpers';
 
 /* Types pulled from https://www.kubeflow.org/docs/components/pipelines/v1/reference/api/kubeflow-pipeline-api-spec */
 // TODO: Determine what is optional and what is not
@@ -376,6 +376,7 @@ export type TriggerKF = {
 
 export type PipelineCoreResourceKF = {
   display_name: string;
+  name?: string;
   description?: string;
   created_at: string;
 };
@@ -396,7 +397,7 @@ export type PipelineKF = PipelineCoreResourceKF & {
 
 export type PipelineVersionReferenceKF = {
   pipeline_id: string;
-  pipeline_version_id: string;
+  pipeline_version_id?: string;
 };
 
 export enum RuntimeStateKF {
@@ -510,7 +511,7 @@ export type PipelineRunKF = PipelineCoreResourceKF & {
 
 export type PipelineVersionReference = {
   pipeline_id: string;
-  pipeline_version_id: string;
+  pipeline_version_id?: string;
 };
 
 export type PipelineRecurringRunKF = PipelineCoreResourceKF & {

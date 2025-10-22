@@ -1,14 +1,15 @@
+import type { AccessMode } from '#~/__tests__/cypress/cypress/types';
 import { Modal } from './components/Modal';
 import { TableRow } from './components/table';
 
 class ClusterStorageRow extends TableRow {
   shouldHaveStorageTypeValue(name: string) {
-    this.find().find(`[data-label=Type]`).contains(name).should('exist');
+    this.find().find(`[data-label="Storage context"]`).contains(name).should('exist');
     return this;
   }
 
-  findConnectedWorkbenches() {
-    return this.find().find('[data-label="Workbench connections"]');
+  findConnectedResources() {
+    return this.find().find('[data-label="Connected resources"]');
   }
 
   toggleExpandableContent() {
@@ -30,6 +31,10 @@ class ClusterStorageRow extends TableRow {
 
   findStorageClassColumn() {
     return this.find().find('[data-label="Storage class"]');
+  }
+
+  findStorageTypeColumn() {
+    return this.find().find('[data-label="Storage context"]');
   }
 
   findSizeColumn() {
@@ -62,6 +67,20 @@ class ClusterStorageRow extends TableRow {
   }
 }
 
+class SelectStorageClass {
+  find() {
+    return cy.findByTestId('storage-classes-selector');
+  }
+
+  selectStorageClassSelectOption(name: string | RegExp) {
+    cy.findByRole('option', { name, hidden: true }).click();
+  }
+
+  findSelectStorageClassLabel(name: string | RegExp, accessMode: AccessMode) {
+    return cy.findByRole('option', { name, hidden: true }).findByTestId(`${accessMode}-label`);
+  }
+}
+
 class ClusterStorageModal extends Modal {
   constructor(private edit = false) {
     super(edit ? 'Update cluster storage' : 'Add cluster storage');
@@ -91,7 +110,7 @@ class ClusterStorageModal extends Modal {
     return this.findWorkbenchTable()
       .find(`[data-label=Name]`)
       .eq(row)
-      .findByTestId('typeahead-menu-toggle');
+      .findByTestId('cluster-storage-workbench-select');
   }
 
   findWorkbenchSelectValueField(row: number) {
@@ -175,20 +194,47 @@ class ClusterStorageModal extends Modal {
   }
 
   findStorageClassSelect() {
-    return this.find().findByTestId('storage-classes-selector');
-  }
-
-  selectStorageClassSelectOption(name: string | RegExp) {
-    this.findStorageClassSelect().click();
-    cy.findByRole('option', { name, hidden: true }).click();
-  }
-
-  findStorageClassOption(name: string) {
-    return cy.get('#storage-classes-selector').findByText(name);
+    return new SelectStorageClass();
   }
 
   findStorageClassDeprecatedWarning() {
     return this.find().findByTestId('deprecated-storage-warning');
+  }
+
+  findRWOAccessMode() {
+    return this.find().findByTestId('ReadWriteOnce-radio');
+  }
+
+  findRWXAccessMode() {
+    return this.find().findByTestId('ReadWriteMany-radio');
+  }
+
+  findROXAccessMode() {
+    return this.find().findByTestId('ReadOnlyMany-radio');
+  }
+
+  findRWOPAccessMode() {
+    return this.find().findByTestId('ReadWriteOncePod-radio');
+  }
+
+  findExistingAccessMode() {
+    return this.find().findByTestId('existing-access-mode');
+  }
+
+  findModelNameInput() {
+    return this.find().findByTestId('model-name-input');
+  }
+
+  findModelPathInput() {
+    return this.find().findByTestId('model-path-input');
+  }
+
+  findGeneralPurposeRadio() {
+    return this.find().findByTestId('general-purpose-radio');
+  }
+
+  findModelStorageRadio() {
+    return this.find().findByTestId('model-storage-radio');
   }
 }
 

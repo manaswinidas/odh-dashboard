@@ -1,4 +1,5 @@
-import type { MockDashboardConfigType } from '~/__mocks__';
+import { mockDefaultHardwareProfile } from '@odh-dashboard/internal/__mocks__/mockHardwareProfile';
+import type { MockDashboardConfigType } from '#~/__mocks__';
 import {
   mock200Status,
   mockDashboardConfig,
@@ -6,10 +7,10 @@ import {
   mockK8sResourceList,
   mockProjectK8sResource,
   mockSecretK8sResource,
-} from '~/__mocks__';
+} from '#~/__mocks__';
 import {
-  AcceleratorProfileModel,
   ConfigMapModel,
+  HardwareProfileModel,
   InferenceServiceModel,
   NIMAccountModel,
   ProjectModel,
@@ -17,7 +18,7 @@ import {
   SecretModel,
   ServingRuntimeModel,
   TemplateModel,
-} from '~/__tests__/cypress/cypress/utils/models';
+} from '#~/__tests__/cypress/cypress/utils/models';
 import {
   mockNimImages,
   mockNimInferenceService,
@@ -28,11 +29,11 @@ import {
   mockNimServingRuntimeTemplate,
   mockNvidiaNimAccessSecret,
   mockNvidiaNimImagePullSecret,
-} from '~/__mocks__/mockNimResource';
-import { mockAcceleratorProfile } from '~/__mocks__/mockAcceleratorProfile';
-import type { InferenceServiceKind } from '~/k8sTypes';
-import { mockNimAccount } from '~/__mocks__/mockNimAccount';
-import { mockOdhApplication } from '~/__mocks__/mockOdhApplication';
+} from '#~/__mocks__/mockNimResource';
+import type { InferenceServiceKind } from '#~/k8sTypes';
+import { mockNimAccount } from '#~/__mocks__/mockNimAccount';
+import { mockOdhApplication } from '#~/__mocks__/mockOdhApplication';
+import { DataScienceStackComponent } from '#~/concepts/areas/types';
 
 /* ###################################################
    ###### Interception Initialization Utilities ######
@@ -47,9 +48,9 @@ export const initInterceptsToEnableNim = ({ hasAllModels = false }: EnableNimCon
   cy.interceptOdh(
     'GET /api/dsc/status',
     mockDscStatus({
-      installedComponents: {
-        kserve: true,
-        'model-mesh': true,
+      components: {
+        [DataScienceStackComponent.K_SERVE]: { managementState: 'Managed' },
+        [DataScienceStackComponent.MODEL_MESH_SERVING]: { managementState: 'Managed' },
       },
     }),
   );
@@ -84,16 +85,9 @@ export const initInterceptsToEnableNim = ({ hasAllModels = false }: EnableNimCon
   cy.interceptK8s(TemplateModel, templateMock);
 
   cy.interceptK8sList(
-    AcceleratorProfileModel,
-    mockK8sResourceList([mockAcceleratorProfile({ namespace: 'opendatahub' })]),
-  );
-
-  cy.interceptOdh('GET /api/accelerators', {
-    configured: true,
-    available: { 'nvidia.com/gpu': 1 },
-    total: { 'nvidia.com/gpu': 1 },
-    allocated: { 'nvidia.com/gpu': 1 },
-  });
+    { model: HardwareProfileModel, ns: 'opendatahub' },
+    mockK8sResourceList([mockDefaultHardwareProfile]),
+  ).as('defaultHardwareProfile');
 };
 
 // intercept all APIs required for deploying new NIM models in existing projects

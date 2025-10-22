@@ -1,6 +1,14 @@
 import * as React from 'react';
-import { Form, getUniqueId, Stack, StackItem } from '@patternfly/react-core';
-import { Modal } from '@patternfly/react-core/deprecated';
+import {
+  Form,
+  getUniqueId,
+  Stack,
+  StackItem,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+} from '@patternfly/react-core';
 import { EitherOrNone } from '@openshift/dynamic-plugin-sdk';
 import {
   createNIMPVC,
@@ -9,7 +17,8 @@ import {
   getSubmitServingRuntimeResourcesFn,
   useCreateInferenceServiceObject,
   useCreateServingRuntimeObject,
-} from '~/pages/modelServing/screens/projects/utils';
+  validateEnvVarName,
+} from '#~/pages/modelServing/screens/projects/utils';
 import {
   AccessReviewResourceAttributes,
   InferenceServiceKind,
@@ -17,43 +26,52 @@ import {
   ProjectKind,
   SecretKind,
   ServingRuntimeKind,
-} from '~/k8sTypes';
-import { requestsUnderLimits, resourcesArePositive } from '~/pages/modelServing/utils';
-import useCustomServingRuntimesEnabled from '~/pages/modelServing/customServingRuntimes/useCustomServingRuntimesEnabled';
-import DashboardModalFooter from '~/concepts/dashboard/DashboardModalFooter';
-import { ModelServingSize, ServingRuntimeEditInfo } from '~/pages/modelServing/screens/types';
-import ServingRuntimeSizeSection from '~/pages/modelServing/screens/projects/ServingRuntimeModal/ServingRuntimeSizeSection';
-import NIMModelListSection from '~/pages/modelServing/screens/projects/NIMServiceModal/NIMModelListSection';
-import NIMModelDeploymentNameSection from '~/pages/modelServing/screens/projects/NIMServiceModal/NIMModelDeploymentNameSection';
-import ProjectSection from '~/pages/modelServing/screens/projects/InferenceServiceModal/ProjectSection';
-import { NamespaceApplicationCase } from '~/pages/projects/types';
+} from '#~/k8sTypes';
+import { EMPTY_AWS_SECRET_DATA } from '#~/pages/projects/dataConnections/const';
+import useCustomServingRuntimesEnabled from '#~/pages/modelServing/customServingRuntimes/useCustomServingRuntimesEnabled';
+import DashboardModalFooter from '#~/concepts/dashboard/DashboardModalFooter';
+import {
+  InferenceServiceStorageType,
+  ModelServingSize,
+  ServingRuntimeEditInfo,
+} from '#~/pages/modelServing/screens/types';
+import ServingRuntimeSizeSection from '#~/pages/modelServing/screens/projects/ServingRuntimeModal/ServingRuntimeSizeSection';
+import NIMModelListSection from '#~/pages/modelServing/screens/projects/NIMServiceModal/NIMModelListSection';
+import NIMModelDeploymentNameSection from '#~/pages/modelServing/screens/projects/NIMServiceModal/NIMModelDeploymentNameSection';
+import ProjectSection from '#~/pages/modelServing/screens/projects/InferenceServiceModal/ProjectSection';
+import { NamespaceApplicationCase } from '#~/pages/projects/types';
 import {
   getDisplayNameFromK8sResource,
   translateDisplayNameForK8s,
   translateDisplayNameForK8sAndReport,
-} from '~/concepts/k8s/utils';
-import { getSecret, updatePvc, useAccessReview } from '~/api';
-import { SupportedArea, useIsAreaAvailable } from '~/concepts/areas';
-import KServeAutoscalerReplicaSection from '~/pages/modelServing/screens/projects/kServeModal/KServeAutoscalerReplicaSection';
-import NIMPVCSizeSection from '~/pages/modelServing/screens/projects/NIMServiceModal/NIMPVCSizeSection';
+} from '#~/concepts/k8s/utils';
+import { getSecret, updatePvc, useAccessReview } from '#~/api';
+import { SupportedArea, useIsAreaAvailable } from '#~/concepts/areas';
+import KServeAutoscalerReplicaSection from '#~/pages/modelServing/screens/projects/kServeModal/KServeAutoscalerReplicaSection';
+import NIMPVCSizeSection, {
+  PVCMode,
+} from '#~/pages/modelServing/screens/projects/NIMServiceModal/NIMPVCSizeSection';
 import {
   getNIMServingRuntimeTemplate,
   updateServingRuntimeTemplate,
-} from '~/pages/modelServing/screens/projects/nimUtils';
-import { useDashboardNamespace } from '~/redux/selectors';
-import { getServingRuntimeFromTemplate } from '~/pages/modelServing/customServingRuntimes/utils';
-import { useNIMPVC } from '~/pages/modelServing/screens/projects/NIMServiceModal/useNIMPVC';
-import AuthServingRuntimeSection from '~/pages/modelServing/screens/projects/ServingRuntimeModal/AuthServingRuntimeSection';
-import { useNIMTemplateName } from '~/pages/modelServing/screens/projects/useNIMTemplateName';
-import { KServeDeploymentModeDropdown } from '~/pages/modelServing/screens/projects/kServeModal/KServeDeploymentModeDropdown';
-import { useModelServingPodSpecOptionsState } from '~/concepts/hardwareProfiles/useModelServingPodSpecOptionsState';
-import { useKServeDeploymentMode } from '~/pages/modelServing/useKServeDeploymentMode';
-import StorageClassSelect from '~/pages/projects/screens/spawner/storage/StorageClassSelect';
-import useAdminDefaultStorageClass from '~/pages/projects/screens/spawner/storage/useAdminDefaultStorageClass';
-import { NoAuthAlert } from './NoAuthAlert';
+} from '#~/pages/modelServing/screens/projects/nimUtils';
+import { useDashboardNamespace } from '#~/redux/selectors';
+import { getServingRuntimeFromTemplate } from '#~/pages/modelServing/customServingRuntimes/utils';
+import { useNIMPVC } from '#~/pages/modelServing/screens/projects/NIMServiceModal/useNIMPVC';
+import AuthServingRuntimeSection from '#~/pages/modelServing/screens/projects/ServingRuntimeModal/AuthServingRuntimeSection';
+import { useNIMTemplateName } from '#~/pages/modelServing/screens/projects/useNIMTemplateName';
+import { useModelServingPodSpecOptionsState } from '#~/concepts/hardwareProfiles/useModelServingPodSpecOptionsState';
+import StorageClassSelect from '#~/pages/projects/screens/spawner/storage/StorageClassSelect';
+import { useDefaultStorageClass } from '#~/pages/projects/screens/spawner/storage/useDefaultStorageClass';
+import { useModelDeploymentNotification } from '#~/pages/modelServing/screens/projects/useModelDeploymentNotification';
+import { useGetStorageClassConfig } from '#~/pages/projects/screens/spawner/storage/useGetStorageClassConfig';
+import useModelServerSizeValidation from '#~/pages/modelServing/screens/projects/useModelServerSizeValidation.ts';
+import { getKServeContainerEnvVarStrs } from '#~/pages/modelServing/utils';
+import EnvironmentVariablesSection from '#~/pages/modelServing/screens/projects/kServeModal/EnvironmentVariablesSection';
 
 const NIM_SECRET_NAME = 'nvidia-nim-secrets';
 const NIM_NGC_SECRET_NAME = 'ngc-secret';
+const DEFAULT_MODEL_PATH = '/mnt/models/cache';
 
 const accessReviewResource: AccessReviewResourceAttributes = {
   group: 'rbac.authorization.k8s.io',
@@ -83,7 +101,8 @@ const ManageNIMServingModal: React.FC<ManageNIMServingModalProps> = ({
   projectContext,
   editInfo,
 }) => {
-  const { isRawAvailable, isServerlessAvailable } = useKServeDeploymentMode();
+  const { storageClasses, storageClassesLoaded, selectedStorageClassConfig } =
+    useGetStorageClassConfig();
 
   const [createDataServingRuntime, setCreateDataServingRuntime, resetDataServingRuntime] =
     useCreateServingRuntimeObject(editInfo?.servingRuntimeEditInfo);
@@ -94,16 +113,23 @@ const ManageNIMServingModal: React.FC<ManageNIMServingModalProps> = ({
       editInfo?.secrets,
     );
 
+  const currentProjectName = projectContext?.currentProject.metadata.name;
+  const namespace = currentProjectName || createDataInferenceService.project;
+
+  const { watchDeployment } = useModelDeploymentNotification(
+    namespace,
+    createDataInferenceService.k8sName,
+    false,
+  );
+
   const podSpecOptionsState = useModelServingPodSpecOptionsState(
     editInfo?.servingRuntimeEditInfo?.servingRuntime,
     editInfo?.inferenceServiceEditInfo,
   );
 
-  const isAuthAvailable =
-    useIsAreaAvailable(SupportedArea.K_SERVE_AUTH).status ||
-    createDataInferenceService.isKServeRawDeployment;
-  const currentProjectName = projectContext?.currentProject.metadata.name;
-  const namespace = currentProjectName || createDataInferenceService.project;
+  const servingRuntimeParamsEnabled = useIsAreaAvailable(
+    SupportedArea.SERVING_RUNTIME_PARAMS,
+  ).status;
 
   const [translatedName] = translateDisplayNameForK8sAndReport(createDataInferenceService.name, {
     maxLength: 253,
@@ -121,19 +147,28 @@ const ManageNIMServingModal: React.FC<ManageNIMServingModalProps> = ({
 
   const [actionInProgress, setActionInProgress] = React.useState(false);
   const [error, setError] = React.useState<Error | undefined>();
-  const [alertVisible, setAlertVisible] = React.useState(true);
   const { pvcSize, setPvcSize, pvc } = useNIMPVC(
     editInfo?.inferenceServiceEditInfo?.metadata.namespace,
     editInfo?.servingRuntimeEditInfo?.servingRuntime,
   );
 
   const isStorageClassesAvailable = useIsAreaAvailable(SupportedArea.STORAGE_CLASSES).status;
-  const [defaultSc] = useAdminDefaultStorageClass();
-  const defaultStorageClassName = defaultSc?.metadata.name || '';
+  const [defaultSc] = useDefaultStorageClass();
+  const defaultStorageClassName = defaultSc?.metadata.name ?? '';
   const deployedStorageClassName = pvc?.spec.storageClassName || '';
   const [storageClassName, setStorageClassName] = React.useState(
     deployedStorageClassName || defaultStorageClassName,
   );
+  const [pvcMode, setPvcMode] = React.useState<PVCMode>('create-new');
+  const [existingPvcName, setExistingPvcName] = React.useState<string>('');
+  const [modelPath, setModelPath] = React.useState<string>(DEFAULT_MODEL_PATH);
+  const [selectedModelName, setSelectedModelName] = React.useState<string>('');
+
+  // Add useEffect to track selected model from inference service data
+  React.useEffect(() => {
+    const modelName = createDataInferenceService.format.name || '';
+    setSelectedModelName(modelName);
+  }, [createDataInferenceService.format]);
 
   React.useEffect(() => {
     if (pvc?.spec.storageClassName) {
@@ -177,11 +212,12 @@ const ManageNIMServingModal: React.FC<ManageNIMServingModalProps> = ({
   const isDisabledServingRuntime =
     namespace === '' || actionInProgress || createDataServingRuntime.imageName === undefined;
 
-  const baseInputValueValid =
-    createDataServingRuntime.numReplicas >= 0 &&
-    podSpecOptionsState.podSpecOptions.resources &&
-    resourcesArePositive(podSpecOptionsState.podSpecOptions.resources) &&
-    requestsUnderLimits(podSpecOptionsState.podSpecOptions.resources);
+  const { isValid: isModelServerSizeValid } = useModelServerSizeValidation(podSpecOptionsState);
+
+  const baseInputValueValid = createDataServingRuntime.numReplicas >= 0 && isModelServerSizeValid;
+
+  const isExistingPvcValid =
+    pvcMode === 'create-new' || (existingPvcName.trim() !== '' && modelPath.trim() !== '');
 
   const isDisabledInferenceService =
     actionInProgress ||
@@ -189,7 +225,11 @@ const ManageNIMServingModal: React.FC<ManageNIMServingModalProps> = ({
     createDataInferenceService.project === '' ||
     !translatedName ||
     !baseInputValueValid ||
-    !podSpecOptionsState.hardwareProfile.isFormDataValid;
+    !podSpecOptionsState.hardwareProfile.isFormDataValid ||
+    !isExistingPvcValid ||
+    createDataInferenceService.servingRuntimeEnvVars?.some(
+      (envVar) => !envVar.name || !!validateEnvVarName(envVar.name),
+    );
 
   const { dashboardNamespace } = useDashboardNamespace();
   const templateName = useNIMTemplateName();
@@ -227,7 +267,9 @@ const ManageNIMServingModal: React.FC<ManageNIMServingModalProps> = ({
     podSpecOptionsState.acceleratorProfile.resetFormData();
     podSpecOptionsState.hardwareProfile.resetFormData();
     podSpecOptionsState.modelSize.setSelectedSize(podSpecOptionsState.modelSize.sizes[0]);
-    setAlertVisible(true);
+    setPvcMode('create-new');
+    setExistingPvcName('');
+    setModelPath(DEFAULT_MODEL_PATH);
   };
 
   const setErrorModal = (e: Error) => {
@@ -248,7 +290,8 @@ const ManageNIMServingModal: React.FC<ManageNIMServingModalProps> = ({
       editInfo?.inferenceServiceEditInfo?.spec.predictor.model?.runtime ||
       translateDisplayNameForK8s(createDataInferenceService.name, { safeK8sPrefix: 'nim-' });
 
-    const nimPVCName = getUniqueId('nim-pvc');
+    const nimPVCName = pvcMode === 'create-new' ? getUniqueId('nim-pvc') : existingPvcName;
+
     const finalServingRuntime =
       !editInfo && servingRuntimeSelected
         ? updateServingRuntimeTemplate(servingRuntimeSelected, nimPVCName)
@@ -269,11 +312,21 @@ const ManageNIMServingModal: React.FC<ManageNIMServingModalProps> = ({
     );
 
     const inferenceServiceName = createDataInferenceService.k8sName;
+    if (pvcMode === 'use-existing') {
+      // For existing PVC, configure storage to use local path instead of remote URI
+      setCreateDataInferenceService('storage', {
+        type: InferenceServiceStorageType.EXISTING_URI,
+        path: modelPath,
+        dataConnection: '',
+        uri: modelPath,
+        awsData: EMPTY_AWS_SECRET_DATA,
+      });
+    }
     const submitInferenceServiceResource = getSubmitInferenceServiceResourceFn(
       createDataInferenceService,
       editInfo?.inferenceServiceEditInfo,
-      servingRuntimeName,
-      inferenceServiceName,
+      editInfo?.servingRuntimeEditInfo?.servingRuntime?.metadata.name || servingRuntimeName,
+      editInfo?.inferenceServiceEditInfo?.metadata.name || inferenceServiceName,
       false,
       podSpecOptionsState.podSpecOptions,
       allowCreate,
@@ -298,7 +351,9 @@ const ManageNIMServingModal: React.FC<ManageNIMServingModalProps> = ({
           if (await isSecretNeeded(namespace, NIM_NGC_SECRET_NAME)) {
             promises.push(createNIMSecret(namespace, 'nimPullSecret', true, false));
           }
-          promises.push(createNIMPVC(namespace, nimPVCName, pvcSize, false, storageClassName));
+          if (pvcMode === 'create-new') {
+            promises.push(createNIMPVC(namespace, nimPVCName, pvcSize, false, storageClassName));
+          }
         } else if (pvc && pvc.spec.resources.requests.storage !== pvcSize) {
           const updatePvcData = {
             size: pvcSize, // New size
@@ -306,11 +361,18 @@ const ManageNIMServingModal: React.FC<ManageNIMServingModalProps> = ({
             description: pvc.metadata.annotations?.description || '',
             storageClassName: pvc.spec.storageClassName,
           };
-          promises.push(updatePvc(updatePvcData, pvc, namespace, { dryRun: false }));
+          promises.push(
+            updatePvc(updatePvcData, pvc, namespace, { dryRun: false }, false, {
+              'runtimes.opendatahub.io/force-redeploy': new Date().toISOString(),
+            }),
+          );
         }
         return Promise.all(promises);
       })
-      .then(() => onSuccess())
+      .then(() => {
+        onSuccess();
+        watchDeployment();
+      })
       .catch((e) => {
         setErrorModal(e);
       });
@@ -324,13 +386,98 @@ const ManageNIMServingModal: React.FC<ManageNIMServingModalProps> = ({
   };
 
   return (
-    <Modal
-      title={`${editInfo ? 'Edit' : 'Deploy'} model with NVIDIA NIM`}
-      description="Configure properties for deploying your model using an NVIDIA NIM."
-      variant="medium"
-      isOpen
-      onClose={() => onBeforeClose(false)}
-      footer={
+    <Modal variant="medium" isOpen onClose={() => onBeforeClose(false)}>
+      <ModalHeader
+        title={`${editInfo ? 'Edit' : 'Deploy'} model with NVIDIA NIM`}
+        description="Configure properties for deploying your model using an NVIDIA NIM."
+      />
+      <ModalBody>
+        <Form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          <Stack hasGutter>
+            <StackItem>
+              <ProjectSection projectName={getProjectName()} />
+            </StackItem>
+            <StackItem>
+              <NIMModelDeploymentNameSection
+                data={createDataInferenceService}
+                setData={setCreateDataInferenceService}
+              />
+            </StackItem>
+            <StackItem>
+              <StackItem>
+                <NIMModelListSection
+                  inferenceServiceData={createDataInferenceService}
+                  setInferenceServiceData={setCreateDataInferenceService}
+                  setServingRuntimeData={setCreateDataServingRuntime}
+                  isEditing={!!editInfo}
+                />
+              </StackItem>
+            </StackItem>
+            <StackItem>
+              {isStorageClassesAvailable && (
+                <StorageClassSelect
+                  storageClasses={storageClasses}
+                  storageClassesLoaded={storageClassesLoaded}
+                  selectedStorageClassConfig={selectedStorageClassConfig}
+                  storageClassName={storageClassName}
+                  setStorageClassName={setStorageClassName}
+                  isRequired
+                  disableStorageClassSelect={!!editInfo}
+                  showDefaultWhenNoConfig
+                />
+              )}
+            </StackItem>
+            <StackItem>
+              <NIMPVCSizeSection
+                pvcSize={pvcSize}
+                setPvcSize={setPvcSize}
+                pvcMode={pvcMode}
+                setPvcMode={setPvcMode}
+                existingPvcName={existingPvcName}
+                setExistingPvcName={setExistingPvcName}
+                modelPath={modelPath}
+                setModelPath={setModelPath}
+                isEditing={!!editInfo}
+                selectedModel={selectedModelName} // Add this prop
+                namespace={namespace} // Add this prop
+              />
+            </StackItem>
+            <StackItem>
+              <KServeAutoscalerReplicaSection
+                data={createDataInferenceService}
+                setData={setCreateDataInferenceService}
+                infoContent="Consider network traffic and failover scenarios when specifying the number of model
+                server replicas."
+              />
+            </StackItem>
+            <ServingRuntimeSizeSection
+              isEditing={!!editInfo}
+              servingRuntimeSelected={servingRuntimeSelected}
+              podSpecOptionState={podSpecOptionsState}
+              infoContent="Select CPU and memory resources large enough to support the NIM being deployed."
+              customDefaults={NIM_CUSTOM_DEFAULTS}
+            />
+            <AuthServingRuntimeSection
+              data={createDataInferenceService}
+              setData={setCreateDataInferenceService}
+              allowCreate={allowCreate}
+            />
+            {servingRuntimeParamsEnabled && (
+              <EnvironmentVariablesSection
+                predefinedVars={getKServeContainerEnvVarStrs(servingRuntimeSelected)}
+                data={createDataInferenceService}
+                setData={setCreateDataInferenceService}
+              />
+            )}
+          </Stack>
+        </Form>
+      </ModalBody>
+      <ModalFooter>
         <DashboardModalFooter
           submitLabel={editInfo ? 'Redeploy' : 'Deploy'}
           onSubmit={submit}
@@ -339,87 +486,7 @@ const ManageNIMServingModal: React.FC<ManageNIMServingModalProps> = ({
           error={error}
           alertTitle="Error creating model server"
         />
-      }
-      showClose
-    >
-      <Form
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit();
-        }}
-      >
-        <Stack hasGutter>
-          {!isAuthAvailable && alertVisible && !isRawAvailable && (
-            <NoAuthAlert onClose={() => setAlertVisible(false)} />
-          )}
-          <StackItem>
-            <ProjectSection projectName={getProjectName()} />
-          </StackItem>
-          <StackItem>
-            <NIMModelDeploymentNameSection
-              data={createDataInferenceService}
-              setData={setCreateDataInferenceService}
-            />
-          </StackItem>
-          <StackItem>
-            <StackItem>
-              <NIMModelListSection
-                inferenceServiceData={createDataInferenceService}
-                setInferenceServiceData={setCreateDataInferenceService}
-                setServingRuntimeData={setCreateDataServingRuntime}
-                isEditing={!!editInfo}
-              />
-            </StackItem>
-          </StackItem>
-          <StackItem>
-            {isStorageClassesAvailable && (
-              <StorageClassSelect
-                storageClassName={storageClassName}
-                setStorageClassName={setStorageClassName}
-                isRequired
-                disableStorageClassSelect={!!editInfo}
-              />
-            )}
-          </StackItem>
-          <StackItem>
-            <NIMPVCSizeSection pvcSize={pvcSize} setPvcSize={setPvcSize} />
-          </StackItem>
-          {isRawAvailable && isServerlessAvailable && (
-            <StackItem>
-              <KServeDeploymentModeDropdown
-                isRaw={!!createDataInferenceService.isKServeRawDeployment}
-                setIsRaw={(isRaw) => setCreateDataInferenceService('isKServeRawDeployment', isRaw)}
-                isDisabled={!!editInfo}
-              />
-            </StackItem>
-          )}
-          {!isAuthAvailable && alertVisible && isRawAvailable && (
-            <NoAuthAlert onClose={() => setAlertVisible(false)} />
-          )}
-          <StackItem>
-            <KServeAutoscalerReplicaSection
-              data={createDataInferenceService}
-              setData={setCreateDataInferenceService}
-              infoContent="Consider network traffic and failover scenarios when specifying the number of model
-                server replicas."
-            />
-          </StackItem>
-          <ServingRuntimeSizeSection
-            isEditing={!!editInfo}
-            servingRuntimeSelected={servingRuntimeSelected}
-            podSpecOptionState={podSpecOptionsState}
-            infoContent="Select CPU and memory resources large enough to support the NIM being deployed."
-            customDefaults={NIM_CUSTOM_DEFAULTS}
-          />
-          <AuthServingRuntimeSection
-            data={createDataInferenceService}
-            setData={setCreateDataInferenceService}
-            allowCreate={allowCreate}
-            publicRoute
-            showModelRoute={isAuthAvailable}
-          />
-        </Stack>
-      </Form>
+      </ModalFooter>
     </Modal>
   );
 };

@@ -2,13 +2,14 @@
 import * as React from 'react';
 import { FormGroup, StackItem } from '@patternfly/react-core';
 import { useNavigate } from 'react-router';
-import { usePipelinesAPI } from '~/concepts/pipelines/context';
-import { PipelineKF, PipelineVersionKF } from '~/concepts/pipelines/kfTypes';
-import PipelineSelector from '~/concepts/pipelines/content/pipelineSelector/PipelineSelector';
-import { getNameEqualsFilter } from '~/concepts/pipelines/utils';
-import { fireFormTrackingEvent } from '~/concepts/analyticsTracking/segmentIOUtils';
-import { TrackingOutcome } from '~/concepts/analyticsTracking/trackingProperties';
-import { pipelineVersionDetailsRoute } from '~/routes';
+import { usePipelinesAPI } from '#~/concepts/pipelines/context';
+import { PipelineKF, PipelineVersionKF } from '#~/concepts/pipelines/kfTypes';
+import PipelineSelector from '#~/concepts/pipelines/content/pipelineSelector/PipelineSelector';
+import { getNameEqualsFilter } from '#~/concepts/pipelines/utils';
+import { fireFormTrackingEvent } from '#~/concepts/analyticsTracking/segmentIOUtils';
+import { TrackingOutcome } from '#~/concepts/analyticsTracking/trackingProperties';
+import { pipelineVersionDetailsRoute } from '#~/routes/pipelines/global';
+import { DSPipelineAPIServerStore } from '#~/k8sTypes.ts';
 import { generatePipelineVersionName, PipelineUploadOption } from './utils';
 import { usePipelineVersionImportModalData } from './useImportModalData';
 import PipelineImportBase from './PipelineImportBase';
@@ -16,12 +17,15 @@ import PipelineImportBase from './PipelineImportBase';
 type PipelineVersionImportModalProps = {
   existingPipeline?: PipelineKF | null;
   onClose: (pipelineVersion?: PipelineVersionKF, pipeline?: PipelineKF | null) => void;
+  redirectAfterImport?: boolean;
 };
 
 const eventName = 'Pipeline Version Updated';
+
 const PipelineVersionImportModal: React.FC<PipelineVersionImportModalProps> = ({
   existingPipeline,
   onClose,
+  redirectAfterImport = true,
 }) => {
   const { api, namespace } = usePipelinesAPI();
   const navigate = useNavigate();
@@ -35,26 +39,47 @@ const PipelineVersionImportModal: React.FC<PipelineVersionImportModalProps> = ({
 
       if (result && 'pipeline_version_id' in result && pipeline) {
         onClose(result, pipeline);
-        navigate(
-          pipelineVersionDetailsRoute(namespace, pipeline.pipeline_id, result.pipeline_version_id),
-        );
+        if (redirectAfterImport) {
+          navigate(
+            pipelineVersionDetailsRoute(
+              namespace,
+              pipeline.pipeline_id,
+              result.pipeline_version_id,
+            ),
+          );
+        }
       } else {
         onClose();
       }
     },
-    [namespace, navigate, onClose],
+    [namespace, navigate, onClose, redirectAfterImport],
   );
 
   const checkForDuplicateName = React.useCallback(
-    async (value: string) => {
+    async (value: string, pipelineStore?: DSPipelineAPIServerStore) => {
       if (modalData.pipeline?.pipeline_id && value) {
-        const { pipeline_versions: duplicateVersions } = await api.listPipelineVersions(
-          {},
-          modalData.pipeline.pipeline_id,
-          getNameEqualsFilter(value),
-        );
+        // extra handling for k8s store pipelines since DSPA does not support getNameEqualsFilter for k8s store
+        let duplicateVersions: PipelineVersionKF[];
+        if (pipelineStore === DSPipelineAPIServerStore.KUBERNETES) {
+          const allPipelineVersions = await api.listPipelineVersions(
+            {},
+            modalData.pipeline.pipeline_id,
+          );
+          duplicateVersions = (allPipelineVersions.pipeline_versions || []).filter(
+            (version) => version.display_name === value,
+          );
+        } else {
+          duplicateVersions =
+            (
+              await api.listPipelineVersions(
+                {},
+                modalData.pipeline.pipeline_id,
+                getNameEqualsFilter(value),
+              )
+            ).pipeline_versions || [];
+        }
 
-        if (duplicateVersions?.length) {
+        if (duplicateVersions.length) {
           return true;
         }
       }
@@ -62,8 +87,10 @@ const PipelineVersionImportModal: React.FC<PipelineVersionImportModalProps> = ({
     },
     [api, modalData.pipeline?.pipeline_id],
   );
+
   const submitAction = React.useCallback(() => {
-    const { name, description, fileContents, pipelineUrl, uploadOption, pipeline } = modalData;
+    const { name, displayName, description, fileContents, pipelineUrl, uploadOption, pipeline } =
+      modalData;
     const pipelineId = pipeline?.pipeline_id || '';
 
     fireFormTrackingEvent(eventName, {
@@ -72,11 +99,19 @@ const PipelineVersionImportModal: React.FC<PipelineVersionImportModalProps> = ({
     });
 
     if (uploadOption === PipelineUploadOption.FILE_UPLOAD) {
-      return api.uploadPipelineVersion({}, name, description, fileContents, pipelineId);
+      return api.uploadPipelineVersion(
+        {},
+        name,
+        description,
+        fileContents,
+        pipelineId,
+        displayName,
+      );
     }
     return api.createPipelineVersion({}, pipelineId, {
       pipeline_id: pipelineId,
-      display_name: name,
+      name,
+      display_name: displayName,
       description,
       package_url: {
         pipeline_url: pipelineUrl,
@@ -102,6 +137,7 @@ const PipelineVersionImportModal: React.FC<PipelineVersionImportModalProps> = ({
             onSelect={(newPipeline) => {
               setData('pipeline', newPipeline);
               setData('name', generatePipelineVersionName(newPipeline));
+              setData('displayName', generatePipelineVersionName(newPipeline));
             }}
           />
         </FormGroup>

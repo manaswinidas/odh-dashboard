@@ -3,40 +3,38 @@ import {
   mockDscStatus,
   mockK8sResourceList,
   mockProjectK8sResource,
-} from '~/__mocks__';
+} from '#~/__mocks__';
 import {
   mockConnectionTypeConfigMap,
   mockModelServingFields,
-} from '~/__mocks__/mockConnectionType';
+} from '#~/__mocks__/mockConnectionType';
 import {
   mockGlobalScopedHardwareProfiles,
   mockProjectScopedHardwareProfiles,
-} from '~/__mocks__/mockHardwareProfile';
-import { mockNimAccount } from '~/__mocks__/mockNimAccount';
+} from '#~/__mocks__/mockHardwareProfile';
+import { mockNimAccount } from '#~/__mocks__/mockNimAccount';
 import {
   mockServingRuntimeTemplateK8sResource,
   mockInvalidTemplateK8sResource,
-} from '~/__mocks__/mockServingRuntimeTemplateK8sResource';
+} from '#~/__mocks__/mockServingRuntimeTemplateK8sResource';
 import {
   HardwareProfileModel,
   NIMAccountModel,
   ProjectModel,
   TemplateModel,
-} from '~/__tests__/cypress/cypress/utils/models';
-import { ConnectionTypeFieldType } from '~/concepts/connectionTypes/types';
-import { ServingRuntimePlatform } from '~/types';
+} from '#~/__tests__/cypress/cypress/utils/models';
+import { ConnectionTypeFieldType } from '#~/concepts/connectionTypes/types';
+import { ServingRuntimePlatform } from '#~/types';
+import { DataScienceStackComponent } from '#~/concepts/areas/types';
 
 export const initDeployPrefilledModelIntercepts = ({
   modelMeshInstalled = true,
-  kServeInstalled = true,
   disableProjectScoped = true,
-  disableHardwareProfiles = true,
   isEmpty = false,
 }: {
   modelMeshInstalled?: boolean;
   kServeInstalled?: boolean;
   disableProjectScoped?: boolean;
-  disableHardwareProfiles?: boolean;
   isEmpty?: boolean;
 }): void => {
   cy.interceptOdh(
@@ -45,17 +43,18 @@ export const initDeployPrefilledModelIntercepts = ({
       disableModelRegistry: false,
       disableModelCatalog: false,
       disableProjectScoped,
-      disableHardwareProfiles,
     }),
   );
 
   cy.interceptOdh(
     'GET /api/dsc/status',
     mockDscStatus({
-      installedComponents: {
-        kserve: kServeInstalled,
-        'model-mesh': modelMeshInstalled,
-        'model-registry-operator': true,
+      components: {
+        [DataScienceStackComponent.K_SERVE]: { managementState: 'Managed' },
+        [DataScienceStackComponent.MODEL_MESH_SERVING]: {
+          managementState: modelMeshInstalled ? 'Managed' : 'Removed',
+        },
+        [DataScienceStackComponent.MODEL_REGISTRY]: { managementState: 'Managed' },
       },
     }),
   );

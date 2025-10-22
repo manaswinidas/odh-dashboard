@@ -1,14 +1,14 @@
 import React from 'react';
-import { useIsAreaAvailable, SupportedArea } from '~/concepts/areas';
-import { ContainerResources } from '~/types';
-import { assemblePodSpecOptions } from '~/utilities/podSpec';
-import { InferenceServiceKind, ServingRuntimeKind } from '~/k8sTypes';
-import useServingAcceleratorProfileFormState from '~/pages/modelServing/screens/projects/useServingAcceleratorProfileFormState';
-import { useAppContext } from '~/app/AppContext';
-import { getServingRuntimeSizes, isGpuDisabled } from '~/pages/modelServing/screens/projects/utils';
-import { useDeepCompareMemoize } from '~/utilities/useDeepCompareMemoize';
-import { ModelServingSize } from '~/pages/modelServing/screens/types';
-import { getInferenceServiceSize } from '~/pages/modelServing/utils';
+import { ContainerResources } from '#~/types';
+import { assemblePodSpecOptions } from '#~/utilities/podSpec';
+import { InferenceServiceKind, ServingRuntimeKind } from '#~/k8sTypes';
+import useServingAcceleratorProfileFormState from '#~/pages/modelServing/screens/projects/useServingAcceleratorProfileFormState';
+import { useAppContext } from '#~/app/AppContext';
+import { getModelServingSizes } from '#~/concepts/modelServing/modelServingSizesUtils';
+import { useDeepCompareMemoize } from '#~/utilities/useDeepCompareMemoize';
+import { ModelServingSize } from '#~/pages/modelServing/screens/types';
+import { getInferenceServiceSize } from '#~/pages/modelServing/utils';
+import { isGpuDisabled } from '#~/pages/modelServing/screens/projects/utils.ts';
 import useServingHardwareProfileConfig from './useServingHardwareProfileConfig';
 import { PodSpecOptions, PodSpecOptionsState } from './types';
 
@@ -29,9 +29,10 @@ export type ModelServingPodSpecOptionsState = PodSpecOptionsState<ModelServingPo
 export const useModelServingPodSpecOptionsState = (
   servingRuntime?: ServingRuntimeKind,
   inferenceService?: InferenceServiceKind,
+  isModelMesh?: boolean,
 ): ModelServingPodSpecOptionsState => {
   const { dashboardConfig } = useAppContext();
-  const sizes = useDeepCompareMemoize(getServingRuntimeSizes(dashboardConfig));
+  const sizes = useDeepCompareMemoize(getModelServingSizes(dashboardConfig));
   const existingSize = useDeepCompareMemoize(
     getInferenceServiceSize(sizes, inferenceService, servingRuntime),
   );
@@ -48,7 +49,7 @@ export const useModelServingPodSpecOptionsState = (
     servingRuntime,
     inferenceService,
   );
-  const hardwareProfile = useServingHardwareProfileConfig(servingRuntime, inferenceService);
+  const hardwareProfile = useServingHardwareProfileConfig(inferenceService);
 
   // Handle GPU disabled state
   const controlledAcceleratorProfile = {
@@ -58,8 +59,6 @@ export const useModelServingPodSpecOptionsState = (
         ? { count: 0, useExistingSettings: false }
         : acceleratorProfile.formData,
   };
-
-  const isHardwareProfilesAvailable = useIsAreaAvailable(SupportedArea.HARDWARE_PROFILES).status;
 
   let podSpecOptions: ModelServingPodSpecOptions = {
     resources: {},
@@ -76,12 +75,10 @@ export const useModelServingPodSpecOptionsState = (
   const existingNodeSelector =
     inferenceService?.spec.predictor.nodeSelector || servingRuntime?.spec.nodeSelector;
 
-  const annotationData = {
-    selectedAcceleratorProfile: acceleratorProfile.formData.profile,
-    selectedHardwareProfile: hardwareProfile.formData.selectedProfile,
-  };
-
-  if (isHardwareProfilesAvailable) {
+  if (!isModelMesh) {
+    const annotationData = {
+      selectedHardwareProfile: hardwareProfile.formData.selectedProfile,
+    };
     if (hardwareProfile.formData.useExistingSettings) {
       podSpecOptions = {
         resources: existingResources,
@@ -92,8 +89,8 @@ export const useModelServingPodSpecOptionsState = (
     } else {
       podSpecOptions = {
         resources: hardwareProfile.formData.resources,
-        tolerations: hardwareProfile.formData.selectedProfile?.spec.tolerations,
-        nodeSelector: hardwareProfile.formData.selectedProfile?.spec.nodeSelector,
+        tolerations: hardwareProfile.formData.selectedProfile?.spec.scheduling?.node?.tolerations,
+        nodeSelector: hardwareProfile.formData.selectedProfile?.spec.scheduling?.node?.nodeSelector,
         ...annotationData,
       };
     }
@@ -113,7 +110,6 @@ export const useModelServingPodSpecOptionsState = (
       resourceSettings,
       acceleratorProfile.initialState,
       acceleratorProfile.formData,
-      undefined,
       existingTolerations,
       undefined,
       existingResources,
@@ -123,7 +119,7 @@ export const useModelServingPodSpecOptionsState = (
       resources: newResources,
       tolerations: newTolerations,
       nodeSelector: existingNodeSelector,
-      ...annotationData,
+      selectedAcceleratorProfile: acceleratorProfile.formData.profile,
     };
   }
 

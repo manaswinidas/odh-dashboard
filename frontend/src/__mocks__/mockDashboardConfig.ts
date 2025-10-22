@@ -1,6 +1,6 @@
-import { DashboardConfigKind, KnownLabels } from '~/k8sTypes';
-import { ModelServingSize } from '~/pages/modelServing/screens/types';
-import { NotebookSize } from '~/types';
+import { DashboardConfigKind, KnownLabels } from '#~/k8sTypes';
+import { ModelServingSize } from '#~/pages/modelServing/screens/types';
+import { NotebookSize } from '#~/types';
 
 export type MockDashboardConfigType = {
   disableInfo?: boolean;
@@ -22,8 +22,6 @@ export type MockDashboardConfigType = {
   disableKServeMetrics?: boolean;
   disableKServeRaw?: boolean;
   disableModelMesh?: boolean;
-  disableAcceleratorProfiles?: boolean;
-  disableHardwareProfiles?: boolean;
   disablePerformanceMetrics?: boolean;
   disableTrustyBiasMetrics?: boolean;
   disableDistributedWorkloads?: boolean;
@@ -38,7 +36,14 @@ export type MockDashboardConfigType = {
   notebookSizes?: NotebookSize[];
   disableNIMModelServing?: boolean;
   disableFineTuning?: boolean;
+  disableLlamaStackChatBot?: boolean;
   modelServerSizes?: ModelServingSize[];
+  disableLMEval?: boolean;
+  disableKueue?: boolean;
+  disableFeatureStore?: boolean;
+  disableModelTraining?: boolean;
+  disableModelAsService?: boolean;
+  hardwareProfileOrder?: string[];
 };
 
 export const mockDashboardConfig = ({
@@ -61,18 +66,23 @@ export const mockDashboardConfig = ({
   disableKServeMetrics = true,
   disableKServeRaw = true,
   disableModelMesh = false,
-  disableAcceleratorProfiles = false,
-  disableHardwareProfiles = true,
   disablePerformanceMetrics = false,
   disableTrustyBiasMetrics = false,
   disableDistributedWorkloads = false,
-  disableModelCatalog = true,
+  disableModelCatalog = false,
   disableModelRegistry = false,
   disableModelRegistrySecureDB = false,
   disableServingRuntimeParams = false,
   disableStorageClasses = false,
   disableNotebookController = false,
   disableNIMModelServing = false,
+  disableLlamaStackChatBot = false,
+  disableLMEval = true,
+  disableKueue = true,
+  disableFeatureStore = true,
+  disableModelTraining = true,
+  disableModelAsService = true,
+  hardwareProfileOrder = ['test-hardware-profile'],
   modelServerSizes = [
     {
       name: 'Small',
@@ -217,8 +227,6 @@ export const mockDashboardConfig = ({
       disableKServeMetrics,
       disableKServeRaw,
       disableModelMesh,
-      disableAcceleratorProfiles,
-      disableHardwareProfiles,
       disableDistributedWorkloads,
       disableModelCatalog,
       disableModelRegistry,
@@ -228,14 +236,15 @@ export const mockDashboardConfig = ({
       disableNIMModelServing,
       disableAdminConnectionTypes: false,
       disableFineTuning,
+      disableLlamaStackChatBot,
+      disableLMEval,
+      disableKueue,
+      disableFeatureStore,
+      disableModelTraining,
+      disableModelAsService,
     },
     notebookController: {
       enabled: !disableNotebookController,
-      notebookNamespace: 'openshift-ai-notebooks',
-      notebookTolerationSettings: {
-        enabled: true,
-        key: 'NotebooksOnlyChange',
-      },
       pvcSize: '20Gi',
     },
     groupsConfig: {
@@ -246,5 +255,6 @@ export const mockDashboardConfig = ({
     notebookSizes,
     templateOrder: ['test-model'],
     templateDisablement: ['test-model'],
+    hardwareProfileOrder,
   },
 });

@@ -1,16 +1,16 @@
 import React from 'react';
 import { act, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import EmptyProjects from '~/pages/projects/screens/projects/EmptyProjects';
-import { useUser } from '~/redux/selectors';
+import EmptyProjects from '#~/pages/projects/screens/projects/EmptyProjects';
+import { useUser } from '#~/redux/selectors';
 
-jest.mock('~/app/AppContext', () => ({
+jest.mock('#~/app/AppContext', () => ({
   __esModule: true,
   useAppContext: jest.fn(),
 }));
 
-jest.mock('~/redux/selectors', () => ({
-  ...jest.requireActual('~/redux/selectors'),
+jest.mock('#~/redux/selectors', () => ({
+  ...jest.requireActual('#~/redux/selectors'),
   useUser: jest.fn(),
   useClusterInfo: jest.fn(),
 }));
@@ -32,7 +32,7 @@ useUserMock.mockReturnValue({
 describe('EmptyProjects', () => {
   it('should show the create project button when allowed to create projects', async () => {
     render(<EmptyProjects allowCreate />);
-    const createProject = await screen.findByTestId('create-data-science-project');
+    const createProject = await screen.findByTestId('create-project');
     expect(createProject).toBeEnabled();
     const bodyText = await screen.findByTestId('projects-empty-body-text');
     expect(bodyText).toHaveTextContent(

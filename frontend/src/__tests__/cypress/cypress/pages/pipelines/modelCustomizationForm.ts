@@ -1,4 +1,4 @@
-import { Contextual } from '~/__tests__/cypress/cypress/pages/components/Contextual';
+import { Contextual } from '#~/__tests__/cypress/cypress/pages/components/Contextual';
 
 class ModelCustomizationFormGlobal {
   visit(projectName: string, empty = false) {
@@ -14,7 +14,7 @@ class ModelCustomizationFormGlobal {
 
     cy.visit('/', {
       onBeforeLoad(win) {
-        win.history.pushState(state, '', `/modelCustomization/fine-tune/${projectName}`);
+        win.history.pushState(state, '', `/ai-hub/model-customization/fine-tune/${projectName}`);
       },
     });
 
@@ -30,7 +30,7 @@ class ModelCustomizationFormGlobal {
   }
 
   invalidVisit() {
-    cy.visitWithLogin('/modelCustomization/fine-tune');
+    cy.visitWithLogin('/ai-hub/model-customization/fine-tune');
     this.emptyWait();
   }
 
@@ -173,7 +173,6 @@ class HardwareSection {
     return this.findCustomizeForm().findByTestId('cpu-requests-input').findByLabelText('Input');
   }
 }
-
 class BaseModelSection {
   find() {
     return cy.findByTestId('fine-tune-section-base-model');
@@ -259,7 +258,7 @@ class SSHFileUpload extends Contextual<HTMLElement> {
 
 class DataScienceProjectSection {
   findProjectName() {
-    return cy.findByTestId('data-science-project-name');
+    return cy.findByTestId('project-name');
   }
 }
 

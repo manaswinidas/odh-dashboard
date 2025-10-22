@@ -49,26 +49,26 @@ Before you begin, ensure you have the following installed:
    npm install
    ```
 
-3. **Navigate to the directory containing test variables:**
-
-   ```bash
-   cd frontend/src/__tests__/cypress/
-   ```
-
-   > **NOTE:** Test variables are required to execute tests. Contact the QE Dashboard team for access.
-
-4. **Export the test variables:**
+3. **Export the test variables:**
 
    ```bash
    export CY_TEST_CONFIG='PATH_TO_YOUR_TEST_VARIABLES'
    ```
 
-5. **Open Cypress:**
+4. **Navigate to the frontend directory:**
+
+   ```bash
+   cd frontend
+   ```
+
+   > **NOTE:** Test variables are required to execute tests. Contact the QE Dashboard team for access.
+
+5. **Run Cypress:**
 
    This command launches the Cypress Test Runner, where you can run your tests interactively.
 
    ```bash
-   npx cypress open
+   npm run cypress:open
    ```
 
 ## Running Tests
@@ -78,7 +78,7 @@ Before you begin, ensure you have the following installed:
 Use the Cypress Test Runner for an interactive GUI:
 
 ```bash
-npx cypress open
+npm run cypress:open
 ```
 
 ### Run Tests Headlessly
@@ -86,7 +86,7 @@ npx cypress open
 Run tests from the command line:
 
 ```bash
-npx cypress run --env grepTags="@<Test-Case-Tag>",skipTags="@<Flaky-Bug>" --browser chrome
+npm run cypress:run --env grepTags="@<Test-Case-Tag>",skipTags="@<Flaky-Bug>" --browser chrome
 ```
 
 **Examples:**
@@ -94,19 +94,19 @@ npx cypress run --env grepTags="@<Test-Case-Tag>",skipTags="@<Flaky-Bug>" --brow
 * Run Smoke Tests, skipping tests tagged with `Bug`:
 
   ```bash
-  npx cypress run --env grepTags="@Smoke",skipTags="@Bug" --browser chrome
+  npm run cypress:run --env grepTags="@Smoke",skipTags="@Bug" --browser chrome
   ```
 
 * Run Smoke Tests, skipping tests tagged with `Bug` or `ModelServing`:
 
   ```bash
-  npx cypress run --env grepTags="@Smoke",skipTags="@Bug @Modelserving" --browser chrome
+  npm run cypress:run --env grepTags="@Smoke",skipTags="@Bug @Modelserving" --browser chrome
   ```
 
 * Run Individual tests, in this example by test case ID `ODS-1234`:
 
   ```bash
-  npx cypress run --env grepTags="@ODS-1234" --browser chrome
+  npm run cypress:run --env grepTags="@ODS-1234" --browser chrome
   ```
 
 ### Run Tests by Test Spec
@@ -118,14 +118,34 @@ Run tests by Test Spec from the command line:
 * Run Individual Test Spec:
 
   ```bash
-  npx cypress run --spec "cypress/tests/e2e/<test-Name>.cy.ts" --browser chrome
+  npm run cypress:run --spec "cypress/tests/e2e/<test-Name>.cy.ts" --browser chrome
   ```
 
 * Run Multiple Test Specs:
 
   ```bash
-  npx cypress run --spec "cypress/tests/e2e/<test-Name1>.ts,cypress/tests/e2e/<test-Name2>.cy.ts" --browser chrome
+  npm run cypress:run --spec "cypress/tests/e2e/<test-Name1>.ts,cypress/tests/e2e/<test-Name2>.cy.ts" --browser chrome
   ```
+
+### Running Tests Concurrently
+
+When running tests concurrently against the same cluster (e.g., in multiple terminals/prs), it's important to skip certain tests to prevent conflicts:
+
+```bash
+npm run cypress:run \
+  --env grepTags="@Smoke" \
+  --env skipTags="@Bug @Maintain @NonConcurrent" \
+  --browser chrome
+```
+
+**Skip Tags Explanation:**
+- `@Bug`: Skip tests that are currently failing due to product bugs
+- `@Maintain`: Skip tests that require maintenance
+- `@NonConcurrent`: Skip tests that cannot run concurrently (to prevent resource conflicts)
+
+## Environment Variables
+
+For comprehensive documentation of all Cypress environment variables, see the [Cypress Environment Variables section in the main testing documentation](/docs/testing.md#cypress-environment-variables).
 
 ## Writing Tests
 
@@ -165,7 +185,7 @@ Test Data should be referenced from fixture files and loaded into the test in th
 It's recommended to use `testIDs` when referencing page objects. If an element does not have a `testID`, please add one:
 
 ```javascript
-findActions() {
+function findActions() {
   return cy.findByTestId('project-actions');
 }
 ```
@@ -182,11 +202,12 @@ Tests are parameterized using tags and applied to the 'it' block:
 * `Workbenches/Pipelines etc.`: Functional Area
 * `Destructive`: Tests that have the potential to break other tests (changing configuration etc.) 
 * `Bug`: Tests that are currently failing due to a Product Bug
-* `Maintain`: Tests that are currently failing and require maintenance 
+* `Maintain`: Tests that are currently failing and require maintenance
+* `NonConcurrent`: Tests that cannot run concurrently (to prevent resource conflicts)
 
 **Usage in tests:**
 ```javascript
-{ tags: ['@Sanity', '@SanitySet1', '@ODS-1931', '@Dashboard', '@Workbenches'] },
+it('test name', { tags: ['@Sanity', '@SanitySet1', '@ODS-1931', '@Dashboard', '@Workbenches'] }, () => {})
 ```
 
 ### Test Contents
@@ -254,4 +275,3 @@ unset CY_TEST_CONFIG
 [Dashboard documentation]: docs/README.md
 [contributing guidelines]: CONTRIBUTING.md
 [issue]: https://github.com/opendatahub-io/odh-dashboard/issues/new/choose
-[definition of ready]: docs/definition-of-ready.md

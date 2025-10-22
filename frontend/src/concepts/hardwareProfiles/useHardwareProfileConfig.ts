@@ -1,11 +1,17 @@
 import React, { useRef } from 'react';
-import { HardwareProfileKind, HardwareProfileFeatureVisibility } from '~/k8sTypes';
-import { UpdateObjectAtPropAndValue } from '~/pages/projects/types';
-import useGenericObjectState from '~/utilities/useGenericObjectState';
-import { ContainerResources, NodeSelector, Toleration } from '~/types';
-import { isCpuLimitLarger, isMemoryLimitLarger } from '~/utilities/valueUnits';
-import { SupportedArea, useIsAreaAvailable } from '~/concepts/areas';
-import { useHardwareProfilesByFeatureVisibility } from '~/pages/hardwareProfiles/migration/useHardwareProfilesByFeatureVisibility';
+import { HardwareProfileKind, HardwareProfileFeatureVisibility } from '#~/k8sTypes';
+import { UpdateObjectAtPropAndValue } from '#~/pages/projects/types';
+import useGenericObjectState from '#~/utilities/useGenericObjectState';
+import { ContainerResources, NodeSelector, Toleration } from '#~/types';
+import { isCpuLimitLarger, isMemoryLimitLarger } from '#~/utilities/valueUnits';
+import { useHardwareProfilesByFeatureVisibility } from '#~/pages/hardwareProfiles/useHardwareProfilesByFeatureVisibility';
+import { isHardwareProfileEnabled } from '#~/pages/hardwareProfiles/utils.ts';
+import { useDashboardNamespace } from '#~/redux/selectors';
+import {
+  filterProfilesByKueue,
+  useKueueConfiguration,
+} from '#~/concepts/hardwareProfiles/kueueUtils';
+import { ProjectDetailsContext } from '#~/pages/projects/ProjectDetailsContext.tsx';
 import { isHardwareProfileConfigValid } from './validationUtils';
 import { getContainerResourcesFromHardwareProfile } from './utils';
 
@@ -77,7 +83,7 @@ const matchToHardwareProfile = (
       );
     });
 
-    const tolerationsMatch = profile.spec.tolerations?.every((toleration) =>
+    const tolerationsMatch = profile.spec.scheduling?.node?.tolerations?.every((toleration) =>
       tolerations.some(
         (t) =>
           t.key === toleration.key &&
@@ -88,9 +94,9 @@ const matchToHardwareProfile = (
       ),
     );
 
-    const nodeSelectorMatch = Object.entries(profile.spec.nodeSelector || {}).every(
-      ([key, value]) => nodeSelector[key] === value,
-    );
+    const nodeSelectorMatch = Object.entries(
+      profile.spec.scheduling?.node?.nodeSelector || {},
+    ).every(([key, value]) => nodeSelector[key] === value);
 
     return identifiersMatch && tolerationsMatch && nodeSelectorMatch;
   });
@@ -105,6 +111,7 @@ export const useHardwareProfileConfig = (
   nodeSelector?: NodeSelector,
   visibleIn?: HardwareProfileFeatureVisibility[],
   namespace?: string,
+  hardwareProfileNamespace?: string | null,
 ): UseHardwareProfileConfigResult => {
   const [dashboardProfiles, dashboardProfilesLoaded, dashboardProfilesLoadError] =
     useHardwareProfilesByFeatureVisibility(visibleIn);
@@ -125,11 +132,11 @@ export const useHardwareProfileConfig = (
     profilesLoadError = dashboardProfilesLoadError || projectScopedProfilesLoadError;
   }
 
-  const hardwareProfilesAvailable = useIsAreaAvailable(SupportedArea.HARDWARE_PROFILES).status;
-  const isFormDataValid = React.useMemo(
-    () => (hardwareProfilesAvailable ? isHardwareProfileConfigValid(formData) : true),
-    [formData, hardwareProfilesAvailable],
-  );
+  const isFormDataValid = React.useMemo(() => isHardwareProfileConfigValid(formData), [formData]);
+
+  const { dashboardNamespace } = useDashboardNamespace();
+  const { currentProject } = React.useContext(ProjectDetailsContext);
+  const { kueueFilteringState } = useKueueConfiguration(currentProject);
 
   React.useEffect(() => {
     if (!profilesLoaded || formData.selectedProfile) {
@@ -143,22 +150,37 @@ export const useHardwareProfileConfig = (
       if (resources) {
         // try to match to existing profile
         if (existingHardwareProfileName) {
-          selectedProfile = profiles.find(
-            (profile) => profile.metadata.name === existingHardwareProfileName,
-          );
+          if (hardwareProfileNamespace && hardwareProfileNamespace !== dashboardNamespace) {
+            selectedProfile = projectScopedProfiles.find(
+              (profile) =>
+                profile.metadata.name === existingHardwareProfileName &&
+                profile.metadata.namespace === hardwareProfileNamespace,
+            );
+          } else {
+            selectedProfile = dashboardProfiles.find(
+              (profile) => profile.metadata.name === existingHardwareProfileName,
+            );
+          }
         } else {
           selectedProfile = matchToHardwareProfile(profiles, resources, tolerations, nodeSelector);
         }
 
         initialHardwareProfile.current = selectedProfile;
-        setFormData('resources', resources);
+        const mergedResources = selectedProfile
+          ? mergeProfileIdentifiersIntoResources(resources, selectedProfile)
+          : resources;
+        setFormData('resources', mergedResources);
         setFormData('useExistingSettings', !selectedProfile);
         setFormData('selectedProfile', selectedProfile);
       }
 
       // if not editing existing profile, select the first enabled profile
       else {
-        selectedProfile = profiles.find((profile) => profile.spec.enabled);
+        const filteredProfiles = filterProfilesByKueue(
+          profiles.filter(isHardwareProfileEnabled),
+          kueueFilteringState,
+        );
+        selectedProfile = filteredProfiles.length > 0 ? filteredProfiles[0] : undefined;
         if (selectedProfile) {
           setFormData('resources', getContainerResourcesFromHardwareProfile(selectedProfile));
           setFormData('selectedProfile', selectedProfile);
@@ -175,6 +197,11 @@ export const useHardwareProfileConfig = (
     nodeSelector,
     formData.resources,
     formData.selectedProfile,
+    hardwareProfileNamespace,
+    projectScopedProfiles,
+    dashboardProfiles,
+    dashboardNamespace,
+    kueueFilteringState,
   ]);
 
   return {
@@ -185,5 +212,46 @@ export const useHardwareProfileConfig = (
     resetFormData,
     profilesLoaded,
     profilesLoadError,
+  };
+};
+
+const mergeProfileIdentifiersIntoResources = (
+  existingResources: ContainerResources,
+  hardwareProfile: HardwareProfileKind,
+): ContainerResources => {
+  if (!hardwareProfile.spec.identifiers || hardwareProfile.spec.identifiers.length === 0) {
+    return { requests: {}, limits: {} };
+  }
+  const profileResources = getContainerResourcesFromHardwareProfile(hardwareProfile);
+  const profileIdentifierKeys = new Set(
+    hardwareProfile.spec.identifiers.map((id) => id.identifier),
+  );
+  const mergedRequests = { ...(existingResources.requests || {}) };
+  const mergedLimits = { ...(existingResources.limits || {}) };
+
+  Object.keys(mergedRequests).forEach((key) => {
+    if (!profileIdentifierKeys.has(key)) {
+      delete mergedRequests[key];
+    }
+  });
+  Object.keys(mergedLimits).forEach((key) => {
+    if (!profileIdentifierKeys.has(key)) {
+      delete mergedLimits[key];
+    }
+  });
+
+  hardwareProfile.spec.identifiers.forEach((identifier) => {
+    if (!(identifier.identifier in mergedRequests)) {
+      mergedRequests[identifier.identifier] =
+        profileResources.requests?.[identifier.identifier] ?? identifier.defaultCount;
+    }
+    if (!(identifier.identifier in mergedLimits)) {
+      mergedLimits[identifier.identifier] =
+        profileResources.limits?.[identifier.identifier] ?? identifier.defaultCount;
+    }
+  });
+  return {
+    requests: mergedRequests,
+    limits: mergedLimits,
   };
 };

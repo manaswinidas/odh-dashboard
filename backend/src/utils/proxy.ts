@@ -1,7 +1,8 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
 import httpProxy from '@fastify/http-proxy';
+import { FastifyReplyFromHooks } from '@fastify/reply-from';
 import { K8sResourceCommon, KubeFastifyInstance, ServiceAddressAnnotation } from '../types';
-import { isK8sStatus, passThroughResource } from '../routes/api/k8s/pass-through';
+import { isK8sStatus, passThroughResource } from './pass-through';
 import { DEV_MODE } from './constants';
 import { createCustomError } from './requestUtils';
 import { getAccessToken, getDirectCallOptions } from './directCallUtils';
@@ -199,6 +200,7 @@ export const registerProxy = async (
     local,
     authorize,
     tls,
+    onError,
   }: {
     prefix: string;
     rewritePrefix: string;
@@ -213,6 +215,7 @@ export const registerProxy = async (
       host?: string;
       port?: number | string;
     };
+    onError?: FastifyReplyFromHooks['onError'];
   },
 ): Promise<void> => {
   const scheme = tls ? 'https' : 'http';
@@ -226,6 +229,7 @@ export const registerProxy = async (
     upstream,
     replyOptions: {
       getUpstream: () => upstream,
+      onError,
     },
     preHandler: async (request, reply) => {
       if (checkRequestLimitExceeded(request, fastify, reply)) {

@@ -6,21 +6,26 @@ import {
   Label,
   Skeleton,
   Content,
-  ContentVariants,
   Tooltip,
+  Truncate,
 } from '@patternfly/react-core';
 import { ExclamationTriangleIcon, HddIcon } from '@patternfly/react-icons';
-import { PersistentVolumeClaimKind } from '~/k8sTypes';
-import StorageSizeBar from '~/pages/projects/components/StorageSizeBars';
-import ConnectedNotebookNames from '~/pages/projects/notebook/ConnectedNotebookNames';
-import { ConnectedNotebookContext } from '~/pages/projects/notebook/useRelatedNotebooks';
-import { TableRowTitleDescription } from '~/components/table';
-import { getDescriptionFromK8sResource, getDisplayNameFromK8sResource } from '~/concepts/k8s/utils';
-import { SupportedArea, useIsAreaAvailable } from '~/concepts/areas';
-import { getStorageClassConfig } from '~/pages/storageClasses/utils';
+import { PersistentVolumeClaimKind } from '#~/k8sTypes';
+import StorageSizeBar from '#~/pages/projects/components/StorageSizeBars';
+import { TableRowTitleDescription } from '#~/components/table';
+import {
+  getDescriptionFromK8sResource,
+  getDisplayNameFromK8sResource,
+} from '#~/concepts/k8s/utils';
+import { SupportedArea, useIsAreaAvailable } from '#~/concepts/areas';
+import { getStorageClassConfig } from '#~/pages/storageClasses/utils';
+import { getPvcAccessMode } from '#~/pages/projects/utils.ts';
+import AccessModeFullName from '#~/pages/projects/screens/detail/storage/AccessModeFullName';
+import ConnectedResources from '#~/pages/projects/screens/detail/connections/ConnectedResources';
 import useIsRootVolume from './useIsRootVolume';
 import StorageWarningStatus from './StorageWarningStatus';
 import { StorageTableData } from './types';
+import { isModelStorage } from './utils';
 
 type StorageTableRowProps = {
   rowIndex: number;
@@ -40,11 +45,10 @@ const StorageTableRow: React.FC<StorageTableRowProps> = ({
   onAddPVC,
 }) => {
   const isRootVolume = useIsRootVolume(obj.pvc);
-
   const isStorageClassesAvailable = useIsAreaAvailable(SupportedArea.STORAGE_CLASSES).status;
   const workbenchEnabled = useIsAreaAvailable(SupportedArea.WORKBENCHES).status;
   const storageClassConfig = obj.storageClass && getStorageClassConfig(obj.storageClass);
-
+  const modelStorage = isModelStorage(obj.pvc);
   const actions: IAction[] = [
     {
       title: 'Edit storage',
@@ -82,7 +86,7 @@ const StorageTableRow: React.FC<StorageTableRowProps> = ({
       </Td>
 
       {isStorageClassesAvailable && (
-        <Td modifier="truncate" dataLabel="Storage class">
+        <Td dataLabel="Storage class">
           <Flex
             spaceItems={{ default: 'spaceItemsSm' }}
             alignItems={{ default: 'alignItemsCenter' }}
@@ -90,12 +94,18 @@ const StorageTableRow: React.FC<StorageTableRowProps> = ({
             <FlexItem>
               <TableRowTitleDescription
                 title={
-                  storageClassConfig?.displayName ??
-                  obj.storageClass?.metadata.name ??
-                  obj.pvc.spec.storageClassName ??
-                  ''
+                  <Truncate
+                    content={
+                      storageClassConfig?.displayName ??
+                      obj.storageClass?.metadata.name ??
+                      obj.pvc.spec.storageClassName ??
+                      ''
+                    }
+                  />
                 }
                 resource={obj.storageClass}
+                description={storageClassesLoaded ? storageClassConfig?.description : <Skeleton />}
+                truncateDescriptionLines={1}
               />
             </FlexItem>
             {storageClassesLoaded && (
@@ -131,18 +141,20 @@ const StorageTableRow: React.FC<StorageTableRowProps> = ({
               </FlexItem>
             )}
           </Flex>
-          <Content component={ContentVariants.small}>
-            {storageClassesLoaded ? storageClassConfig?.description : <Skeleton />}
-          </Content>
         </Td>
       )}
-      <Td dataLabel="Type">
+      <Td dataLabel="Access Mode">
+        <Content component="p">
+          <AccessModeFullName accessModeString={getPvcAccessMode(obj.pvc)} />
+        </Content>
+      </Td>
+      <Td dataLabel="Storage context">
         <Content component="p">
           <Flex>
             <FlexItem spacer={{ default: 'spacerSm' }}>
               <HddIcon />
             </FlexItem>
-            <FlexItem>{` Persistent storage`}</FlexItem>
+            <FlexItem>{` ${modelStorage ? 'Model storage' : 'General purpose'}`}</FlexItem>
           </Flex>
         </Content>
       </Td>
@@ -150,11 +162,8 @@ const StorageTableRow: React.FC<StorageTableRowProps> = ({
         <StorageSizeBar pvc={obj.pvc} />
       </Td>
       {workbenchEnabled && (
-        <Td dataLabel="Workbench connections">
-          <ConnectedNotebookNames
-            context={ConnectedNotebookContext.EXISTING_PVC}
-            relatedResourceName={obj.pvc.metadata.name}
-          />
+        <Td dataLabel="Connected resources">
+          <ConnectedResources pvc={obj.pvc} />
         </Td>
       )}
       <Td isActionCell>

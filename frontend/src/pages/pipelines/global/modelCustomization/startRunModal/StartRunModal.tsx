@@ -16,13 +16,13 @@ import {
   StackItem,
 } from '@patternfly/react-core';
 import { Link } from 'react-router-dom';
-import ProjectSelector from '~/concepts/projects/ProjectSelector';
-import DashboardModalFooter from '~/concepts/dashboard/DashboardModalFooter';
-import { PipelineContextProvider } from '~/concepts/pipelines/context';
-import MissingConditionAlert from '~/pages/pipelines/global/modelCustomization/startRunModal/MissingConditionAlert';
-import { modelCustomizationRootPath } from '~/routes';
-import { fireFormTrackingEvent } from '~/concepts/analyticsTracking/segmentIOUtils';
-import { TrackingOutcome } from '~/concepts/analyticsTracking/trackingProperties';
+import ProjectSelector from '#~/concepts/projects/ProjectSelector';
+import DashboardModalFooter from '#~/concepts/dashboard/DashboardModalFooter';
+import { PipelineContextProvider } from '#~/concepts/pipelines/context';
+import MissingConditionAlert from '#~/pages/pipelines/global/modelCustomization/startRunModal/MissingConditionAlert';
+import { modelCustomizationRootPath } from '#~/routes/pipelines/modelCustomization';
+import { fireFormTrackingEvent } from '#~/concepts/analyticsTracking/segmentIOUtils';
+import { TrackingOutcome } from '#~/concepts/analyticsTracking/trackingProperties';
 
 export type StartRunModalProps = {
   onSubmit: (selectedProject: string) => void;
@@ -89,7 +89,7 @@ const StartRunModal: React.FC<StartRunModalProps> = ({
         )}
         <Form>
           <FormGroup
-            label="Data science project"
+            label="Project"
             fieldId="start-run-modal-project-name"
             isRequired
             labelHelp={
@@ -108,7 +108,7 @@ const StartRunModal: React.FC<StartRunModalProps> = ({
                     setSelectedProject(projectName);
                   }}
                   namespace={selectedProject ?? ''}
-                  placeholder="Select a Data science project"
+                  placeholder="Select a project"
                   isLoading={isLoadingProject}
                 />
                 <FormHelperText>

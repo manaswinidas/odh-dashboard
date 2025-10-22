@@ -1,6 +1,6 @@
-import { NotebookState } from '~/pages/projects/notebook/types';
-import { EventStatus, NotebookStatus } from '~/types';
-import { EventKind, NotebookKind } from '~/k8sTypes';
+import { NotebookState } from '#~/pages/projects/notebook/types';
+import { EventStatus, NotebookStatus } from '#~/types';
+import { EventKind, NotebookKind } from '#~/k8sTypes';
 
 const fauxRefresh = (): Promise<void> =>
   new Promise((resolve) => {
@@ -12,11 +12,9 @@ const notebook: NotebookKind = {
   kind: 'Notebook',
   metadata: {
     annotations: {
-      'notebooks.opendatahub.io/inject-oauth': 'true',
+      'notebooks.opendatahub.io/inject-auth': 'true',
       'notebooks.opendatahub.io/last-image-selection': 'tensorflow:2024.2',
       'notebooks.opendatahub.io/last-size-selection': 'Large',
-      'notebooks.opendatahub.io/oauth-logout-url':
-        'http://localhost:4010/projects/testing?notebookLogout=test-workbench',
       'opendatahub.io/accelerator-name': '',
       'opendatahub.io/image-display-name': 'TensorFlow',
       'opendatahub.io/username': 'cluster-admin',

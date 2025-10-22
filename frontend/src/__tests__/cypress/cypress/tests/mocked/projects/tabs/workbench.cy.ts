@@ -1,4 +1,8 @@
 import {
+  mockGlobalScopedHardwareProfiles,
+  mockProjectScopedHardwareProfiles,
+} from '@odh-dashboard/internal/__mocks__/mockHardwareProfile';
+import {
   mockCustomSecretK8sResource,
   mockDashboardConfig,
   mockDscStatus,
@@ -8,11 +12,11 @@ import {
   mockRouteK8sResource,
   mockSecretK8sResource,
   mockStorageClassList,
-} from '~/__mocks__';
-import { mockConfigMap } from '~/__mocks__/mockConfigMap';
-import { mockImageStreamK8sResource } from '~/__mocks__/mockImageStreamK8sResource';
-import { mockPVCK8sResource } from '~/__mocks__/mockPVCK8sResource';
-import { mockPodK8sResource } from '~/__mocks__/mockPodK8sResource';
+} from '#~/__mocks__';
+import { mockConfigMap } from '#~/__mocks__/mockConfigMap';
+import { mockImageStreamK8sResource } from '#~/__mocks__/mockImageStreamK8sResource';
+import { mockPVCK8sResource } from '#~/__mocks__/mockPVCK8sResource';
+import { mockPodK8sResource } from '#~/__mocks__/mockPodK8sResource';
 import {
   attachConnectionModal,
   createSpawnerPage,
@@ -21,10 +25,11 @@ import {
   notebookConfirmModal,
   notebookImageUpdateModal,
   workbenchPage,
-} from '~/__tests__/cypress/cypress/pages/workbench';
-import { verifyRelativeURL } from '~/__tests__/cypress/cypress/utils/url';
-import { be } from '~/__tests__/cypress/cypress/utils/should';
-import { deleteModal } from '~/__tests__/cypress/cypress/pages/components/DeleteModal';
+  attachExistingStorageModal,
+} from '#~/__tests__/cypress/cypress/pages/workbench';
+import { verifyRelativeURL } from '#~/__tests__/cypress/cypress/utils/url';
+import { be } from '#~/__tests__/cypress/cypress/utils/should';
+import { deleteModal } from '#~/__tests__/cypress/cypress/pages/components/DeleteModal';
 import {
   ConfigMapModel,
   ImageStreamModel,
@@ -35,48 +40,39 @@ import {
   RouteModel,
   SecretModel,
   StorageClassModel,
-  AcceleratorProfileModel,
-} from '~/__tests__/cypress/cypress/utils/models';
-import { mock200Status, mock404Error } from '~/__mocks__/mockK8sStatus';
-import type { NotebookSize } from '~/types';
-import { mockAcceleratorProfile } from '~/__mocks__/mockAcceleratorProfile';
-import { mockConnectionTypeConfigMap } from '~/__mocks__/mockConnectionType';
-import type { NotebookKind, PodKind } from '~/k8sTypes';
-import type { EnvironmentFromVariable } from '~/pages/projects/types';
+  HardwareProfileModel,
+} from '#~/__tests__/cypress/cypress/utils/models';
+import { mock200Status, mock404Error } from '#~/__mocks__/mockK8sStatus';
+import { mockConnectionTypeConfigMap } from '#~/__mocks__/mockConnectionType';
+import type { HardwareProfileKind, NotebookKind, PodKind } from '#~/k8sTypes';
+import type { EnvironmentFromVariable } from '#~/pages/projects/types';
+import { SpawnerPageSectionID } from '#~/pages/projects/screens/spawner/types';
+import { AccessMode } from '#~/pages/storageClasses/storageEnums.ts';
+import { DataScienceStackComponent } from '#~/concepts/areas/types';
+import { hardwareProfileSection } from '../../../../pages/components/HardwareProfileSection.ts';
 
 const configYamlPath = '../../__mocks__/mock-upload-configmap.yaml';
 
 type HandlersProps = {
   isEmpty?: boolean;
-  notebookSizes?: NotebookSize[];
   mockPodList?: PodKind[];
   envFrom?: EnvironmentFromVariable[];
   disableProjectScoped?: boolean;
   notebooks?: NotebookKind[];
+  hardwareProfiles?: {
+    global: HardwareProfileKind[];
+    project: HardwareProfileKind[];
+  };
 };
 
 const initIntercepts = ({
   isEmpty = false,
   envFrom,
-  notebookSizes = [
-    {
-      name: 'Medium',
-      resources: {
-        limits: {
-          cpu: '6',
-          memory: '24Gi',
-        },
-        requests: {
-          cpu: '3',
-          memory: '24Gi',
-        },
-      },
-    },
-  ],
   mockPodList = [mockPodK8sResource({})],
   disableProjectScoped = true,
   notebooks = [
     mockNotebookK8sResource({
+      lastImageSelection: 'test-imagestream:1.2',
       envFrom,
       opts: {
         metadata: {
@@ -95,6 +91,7 @@ const initIntercepts = ({
       name: 'outdated-notebook',
       displayName: 'Outdated Notebook',
       image: 'test-10:2023.1',
+      lastImageSelection: 'test-10:2023.1',
       envFrom,
       opts: {
         metadata: {
@@ -104,6 +101,7 @@ const initIntercepts = ({
           },
           annotations: {
             'opendatahub.io/image-display-name': 'Outdated image',
+            'notebooks.opendatahub.io/last-image-version-git-commit-selection': '1234',
           },
         },
       },
@@ -112,6 +110,7 @@ const initIntercepts = ({
       name: 'latest-notebook',
       displayName: 'Latest Notebook',
       image: 'test-10:2024.2',
+      lastImageSelection: 'test-10:2024.2',
       envFrom,
       opts: {
         metadata: {
@@ -121,14 +120,16 @@ const initIntercepts = ({
           },
           annotations: {
             'opendatahub.io/image-display-name': 'Latest image',
+            'notebooks.opendatahub.io/last-image-version-git-commit-selection': '12345',
           },
         },
       },
     }),
     mockNotebookK8sResource({
       name: 'mismatch-commit-notebook',
-      displayName: 'Deleted Notebook',
+      displayName: 'Deprecated Notebook',
       image: 'test-10:2023.1',
+      lastImageSelection: 'test-10:2023.1',
       envFrom,
       opts: {
         metadata: {
@@ -143,21 +144,36 @@ const initIntercepts = ({
         },
       },
     }),
+    mockNotebookK8sResource({
+      name: 'mismatch-commit-byon-notebook',
+      displayName: 'BYON Notebook',
+      image: 'test-6:2024.2',
+      lastImageSelection: 'test-6:2024.2',
+      envFrom,
+      opts: {
+        metadata: {
+          name: 'mismatch-commit-byon-notebook',
+          labels: {
+            'opendatahub.io/notebook-image': 'true',
+          },
+        },
+      },
+    }),
   ],
+  hardwareProfiles,
 }: HandlersProps) => {
   cy.interceptK8sList(StorageClassModel, mockStorageClassList());
   cy.interceptOdh(
     'GET /api/dsc/status',
     mockDscStatus({
-      installedComponents: {
-        workbenches: true,
+      components: {
+        [DataScienceStackComponent.WORKBENCHES]: { managementState: 'Managed' },
       },
     }),
   );
   cy.interceptOdh(
     'GET /api/config',
     mockDashboardConfig({
-      notebookSizes,
       disableProjectScoped,
     }),
   );
@@ -199,6 +215,52 @@ const initIntercepts = ({
         namespace: 'opendatahub',
         name: 'test-6',
         displayName: 'Test image 6',
+        opts: {
+          metadata: {
+            name: 'test-6',
+            labels: {
+              'component.opendatahub.io/name': 'notebooks',
+              'opendatahub.io/component': 'true',
+              'opendatahub.io/notebook-image': 'true',
+              'app.kubernetes.io/created-by': 'byon',
+            },
+          },
+          spec: {
+            tags: [
+              {
+                name: '2024.2',
+                annotations: {
+                  'opendatahub.io/notebook-python-dependencies':
+                    '[{"name":"JupyterLab","version": "3.2"}, {"name": "Notebook","version": "6.4"}]',
+                  'opendatahub.io/notebook-software': '[{"name":"Python","version":"v3.8"}]',
+                },
+                from: {
+                  kind: 'DockerImage',
+                  name: 'quay.io/opendatahub/notebooks@sha256:a138838e1c9acd7708462e420bf939e03296b97e9cf6c0aa0fd9a5d20361ab75',
+                },
+              },
+            ],
+          },
+          status: {
+            dockerImageRepository:
+              'image-registry.openshift-image-registry.svc:5000/opendatahub/jupyter-minimal-notebook',
+            tags: [
+              {
+                tag: '2024.2',
+                items: [
+                  {
+                    created: '2023-06-30T15:07:36Z',
+                    dockerImageReference:
+                      'quay.io/opendatahub/notebooks@sha256:a138838e1c9acd7708462e420bf939e03296b97e9cf6c0aa0fd9a5d20361ab75',
+                    image:
+                      'quay.io/opendatahub/notebooks@sha256:a138838e1c9acd7708462e420bf939e03296b97e9cf6c0aa0fd9a5d20361ab75',
+                    generation: 2,
+                  },
+                ],
+              },
+            ],
+          },
+        },
       }),
       mockImageStreamK8sResource({
         namespace: 'opendatahub',
@@ -209,6 +271,72 @@ const initIntercepts = ({
         namespace: 'opendatahub',
         name: 'test-8',
         displayName: 'Test image 8',
+        opts: {
+          spec: {
+            tags: [
+              {
+                name: '2023.1',
+                annotations: {
+                  'opendatahub.io/workbench-image-recommended': 'false',
+                  'opendatahub.io/notebook-python-dependencies':
+                    '[{"name":"JupyterLab","version": "3.2"}, {"name": "Notebook","version": "6.4"}]',
+                  'opendatahub.io/notebook-software': '[{"name":"Python","version":"v3.8"}]',
+                  'opendatahub.io/notebook-build-commit': '1234',
+                },
+                from: {
+                  kind: 'DockerImage',
+                  name: 'quay.io/opendatahub/notebooks@sha256:a138838e1c9acd7708462e420bf939e03296b97e9cf6c0aa0fd9a5d20361ab75',
+                },
+              },
+              {
+                name: '2024.2',
+                annotations: {
+                  'opendatahub.io/workbench-image-recommended': 'true',
+                  'opendatahub.io/notebook-python-dependencies':
+                    '[{"name":"JupyterLab","version": "3.2"}, {"name": "Notebook","version": "6.4"}]',
+                  'opendatahub.io/notebook-software': '[{"name":"Python","version":"v3.8"}]',
+                  'opendatahub.io/notebook-build-commit': '12345',
+                },
+                from: {
+                  kind: 'DockerImage',
+                  name: 'quay.io/opendatahub/notebooks@sha256:a138838e1c9acd7708462e420bf939e03296b97e9cf6c0aa0fd9a5d20361ab75',
+                },
+              },
+            ],
+          },
+          status: {
+            dockerImageRepository:
+              'image-registry.openshift-image-registry.svc:5000/opendatahub/jupyter-minimal-notebook',
+            tags: [
+              {
+                tag: '2023.1',
+                items: [
+                  {
+                    created: '2023-06-30T15:07:36Z',
+                    dockerImageReference:
+                      'quay.io/opendatahub/notebooks@sha256:a138838e1c9acd7708462e420bf939e03296b97e9cf6c0aa0fd9a5d20361ab75',
+                    image:
+                      'quay.io/opendatahub/notebooks@sha256:a138838e1c9acd7708462e420bf939e03296b97e9cf6c0aa0fd9a5d20361ab75',
+                    generation: 2,
+                  },
+                ],
+              },
+              {
+                tag: '2024.2',
+                items: [
+                  {
+                    created: '2023-06-30T15:07:36Z',
+                    dockerImageReference:
+                      'quay.io/opendatahub/notebooks@sha256:a138838e1c9acd7708462e420bf939e03296b97e9cf6c0aa0fd9a5d20361ab75',
+                    image:
+                      'quay.io/opendatahub/notebooks@sha256:a138838e1c9acd7708462e420bf939e03296b97e9cf6c0aa0fd9a5d20361ab75',
+                    generation: 2,
+                  },
+                ],
+              },
+            ],
+          },
+        },
       }),
       mockImageStreamK8sResource({
         namespace: 'opendatahub',
@@ -244,6 +372,7 @@ const initIntercepts = ({
                   'opendatahub.io/notebook-python-dependencies':
                     '[{"name":"JupyterLab","version": "3.2"}, {"name": "Notebook","version": "6.4"}]',
                   'opendatahub.io/notebook-software': '[{"name":"Python","version":"v3.8"}]',
+                  'opendatahub.io/notebook-build-commit': '12345',
                 },
                 from: {
                   kind: 'DockerImage',
@@ -331,19 +460,27 @@ const initIntercepts = ({
 
   cy.interceptK8s('POST', NotebookModel, mockNotebookK8sResource({})).as('createWorkbench');
 
-  cy.interceptK8sList(
-    AcceleratorProfileModel,
-    mockK8sResourceList([
-      mockAcceleratorProfile({
-        name: 'test-accelerator',
-        namespace: 'opendatahub',
-        displayName: 'Test Accelerator',
-        description: 'A test accelerator profile',
-        enabled: true,
-        identifier: 'test.com/accelerator',
-      }),
-    ]),
-  );
+  if (hardwareProfiles) {
+    cy.interceptK8sList(
+      { model: HardwareProfileModel, ns: 'opendatahub' },
+      mockK8sResourceList(hardwareProfiles.global),
+    ).as('globalHardwareProfiles');
+
+    cy.interceptK8sList(
+      { model: HardwareProfileModel, ns: 'test-project' },
+      mockK8sResourceList(hardwareProfiles.project),
+    ).as('projectHardwareProfiles');
+  } else {
+    cy.interceptK8sList(
+      { model: HardwareProfileModel, ns: 'opendatahub' },
+      mockK8sResourceList(mockGlobalScopedHardwareProfiles),
+    ).as('globalHardwareProfiles');
+
+    cy.interceptK8sList(
+      { model: HardwareProfileModel, ns: 'test-project' },
+      mockK8sResourceList(mockProjectScopedHardwareProfiles),
+    ).as('projectHardwareProfiles');
+  }
 };
 
 describe('Workbench page', () => {
@@ -354,37 +491,29 @@ describe('Workbench page', () => {
     workbenchPage.findCreateButton().should('be.enabled');
   });
 
+  it('Cancel button', () => {
+    initIntercepts({ isEmpty: true });
+    workbenchPage.visit('test-project');
+    //cancel button should work
+    workbenchPage.findCreateButton().click();
+    createSpawnerPage.findCancelButton().click();
+    verifyRelativeURL('/projects/test-project?section=workbenches');
+
+    //cancel button should work after clicking on sidebar items
+    workbenchPage.findCreateButton().click();
+    createSpawnerPage.findSideBarItems(SpawnerPageSectionID.NAME_DESCRIPTION).click();
+    createSpawnerPage.findSideBarItems(SpawnerPageSectionID.WORKBENCH_IMAGE).click();
+    createSpawnerPage.findSideBarItems(SpawnerPageSectionID.DEPLOYMENT_SIZE).click();
+    createSpawnerPage.findSideBarItems(SpawnerPageSectionID.ENVIRONMENT_VARIABLES).click();
+    createSpawnerPage.findSideBarItems(SpawnerPageSectionID.CLUSTER_STORAGE).click();
+    createSpawnerPage.findSideBarItems(SpawnerPageSectionID.CONNECTIONS).click();
+    createSpawnerPage.findCancelButton().click();
+    verifyRelativeURL('/projects/test-project?section=workbenches');
+  });
+
   it('Create workbench', () => {
     initIntercepts({
       isEmpty: true,
-      notebookSizes: [
-        {
-          name: 'XSmall',
-          resources: {
-            limits: {
-              cpu: '0.5',
-              memory: '500Mi',
-            },
-            requests: {
-              cpu: '0.1',
-              memory: '100Mi',
-            },
-          },
-        },
-        {
-          name: 'Small',
-          resources: {
-            limits: {
-              cpu: '2',
-              memory: '8Gi',
-            },
-            requests: {
-              cpu: '1',
-              memory: '8Gi',
-            },
-          },
-        },
-      ],
     });
     workbenchPage.visit('test-project');
     workbenchPage.findCreateButton().click();
@@ -393,10 +522,19 @@ describe('Workbench page', () => {
     createSpawnerPage.k8sNameDescription.findDisplayNameInput().fill('test-project');
     createSpawnerPage.k8sNameDescription.findDescriptionInput().fill('test-description');
     //to check scrollable dropdown selection
-    createSpawnerPage.findNotebookImage('test-9').click();
-    createSpawnerPage.selectContainerSize(
-      'XSmall Limits: 0.5 CPU, 500MiB Memory Requests: 0.1 CPU, 100MiB Memory',
-    );
+    createSpawnerPage.findNotebookImageSelector().should('contain.text', 'Select one');
+    createSpawnerPage.findNotebookImage('test-8').click();
+    createSpawnerPage.findNotebookImageVersionSelector().click();
+    cy.findByTestId('workbench-image-version-dropdown').should('be.visible');
+    const notebookImageVersionDropdown = createSpawnerPage.findNotebookImageDropdown();
+    notebookImageVersionDropdown.findNotebookImageLabel().should('be.visible');
+    notebookImageVersionDropdown
+      .findImageVersionButton(
+        '2024.2 (12345) Latest Software: Python v3.8 Build date: 6/30/2023, 3:07:36 PM UTC',
+      )
+      .click();
+    hardwareProfileSection.findSelect().should('exist').click();
+    hardwareProfileSection.selectProfileContaining('Small Profile');
     createSpawnerPage.findSubmitButton().should('be.enabled');
     createSpawnerPage.findAddVariableButton().click();
 
@@ -453,6 +591,8 @@ describe('Workbench page', () => {
           annotations: {
             'openshift.io/display-name': 'test-project',
             'openshift.io/description': 'test-description',
+            'opendatahub.io/hardware-profile-name': 'small-profile',
+            'opendatahub.io/hardware-profile-namespace': 'opendatahub',
           },
           name: 'test-project',
           namespace: 'test-project',
@@ -466,34 +606,6 @@ describe('Workbench page', () => {
     initIntercepts({
       disableProjectScoped: false,
       isEmpty: true,
-      notebookSizes: [
-        {
-          name: 'XSmall',
-          resources: {
-            limits: {
-              cpu: '0.5',
-              memory: '500Mi',
-            },
-            requests: {
-              cpu: '0.1',
-              memory: '100Mi',
-            },
-          },
-        },
-        {
-          name: 'Small',
-          resources: {
-            limits: {
-              cpu: '2',
-              memory: '8Gi',
-            },
-            requests: {
-              cpu: '1',
-              memory: '8Gi',
-            },
-          },
-        },
-      ],
     });
     cy.interceptK8sList(
       ImageStreamModel,
@@ -512,9 +624,10 @@ describe('Workbench page', () => {
     createSpawnerPage.k8sNameDescription.findDescriptionInput().fill('test-description');
 
     // Verify both groups are initially visible
+    createSpawnerPage.findNotebookImageSearchSelector().should('contain.text', 'Select one');
     createSpawnerPage.findNotebookImageSearchSelector().click();
     cy.contains('Project-scoped images').should('be.visible');
-    cy.contains('Global images').should('be.visible');
+    cy.contains('Global-scoped images').should('be.visible');
 
     // Search for a value that exists in Global images but not in Project-scoped images
     createSpawnerPage.findNotebookImageSearchInput().should('be.visible').type('9');
@@ -539,9 +652,8 @@ describe('Workbench page', () => {
       .findByRole('menuitem', { name: 'Project-scoped test image', hidden: true })
       .click();
     createSpawnerPage.findProjectScopedLabel().should('exist');
-    createSpawnerPage.selectContainerSize(
-      'XSmall Limits: 0.5 CPU, 500MiB Memory Requests: 0.1 CPU, 100MiB Memory',
-    );
+    hardwareProfileSection.findHardwareProfileSearchSelector().should('exist').click();
+    hardwareProfileSection.selectProjectScopedProfile(/Large Profile-1/);
     createSpawnerPage.findSubmitButton().should('be.enabled');
 
     // Check for global specific serving runtimes
@@ -554,37 +666,60 @@ describe('Workbench page', () => {
     createSpawnerPage.findGlobalScopedLabel().should('exist');
   });
 
+  it('Display project-scoped hardware profile selection', () => {
+    initIntercepts({
+      disableProjectScoped: false,
+    });
+    workbenchPage.visit('test-project');
+    workbenchPage.findCreateButton().click();
+    createSpawnerPage.findSubmitButton().should('be.disabled');
+    verifyRelativeURL('/projects/test-project/spawner');
+
+    // Verify hardware profile section exists
+    hardwareProfileSection.findHardwareProfileSearchSelector().should('exist').click();
+
+    // verify available project-scoped hardware profile
+    hardwareProfileSection.selectProjectScopedProfile(/Small Profile/);
+    hardwareProfileSection.findHardwareProfileSearchSelector().click();
+    hardwareProfileSection.selectProjectScopedProfile(/Large Profile-1/);
+
+    // verify available global-scoped hardware profile
+    hardwareProfileSection.findHardwareProfileSearchSelector().click();
+    hardwareProfileSection.selectGlobalScopedProfile(/Small Profile/);
+    hardwareProfileSection.findHardwareProfileSearchSelector().click();
+    hardwareProfileSection.selectGlobalScopedProfile(/Large Profile/);
+  });
+
+  it('Should show correct message when no hardware profiles available', () => {
+    initIntercepts({
+      disableProjectScoped: false,
+      hardwareProfiles: {
+        global: [],
+        project: [],
+      },
+    });
+
+    workbenchPage.visit('test-project');
+    workbenchPage.findCreateButton().click();
+    createSpawnerPage.findSubmitButton().should('be.disabled');
+    verifyRelativeURL('/projects/test-project/spawner');
+
+    // Verify hardware profile section exists
+    hardwareProfileSection.findSelect().should('exist');
+    hardwareProfileSection.findSelect().should('be.disabled');
+
+    // verify no hardware profiles
+    hardwareProfileSection
+      .findSelect()
+      .should(
+        'contain.text',
+        'No enabled or valid hardware profiles are available. Contact your administrator.',
+      );
+  });
+
   it('Create workbench with numbers', () => {
     initIntercepts({
       isEmpty: true,
-      notebookSizes: [
-        {
-          name: 'XSmall',
-          resources: {
-            limits: {
-              cpu: '0.5',
-              memory: '500Mi',
-            },
-            requests: {
-              cpu: '0.1',
-              memory: '100Mi',
-            },
-          },
-        },
-        {
-          name: 'Small',
-          resources: {
-            limits: {
-              cpu: '2',
-              memory: '8Gi',
-            },
-            requests: {
-              cpu: '1',
-              memory: '8Gi',
-            },
-          },
-        },
-      ],
     });
     workbenchPage.visit('test-project');
     workbenchPage.findCreateButton().click();
@@ -594,9 +729,8 @@ describe('Workbench page', () => {
     createSpawnerPage.k8sNameDescription.findDescriptionInput().fill('test-description');
     //to check scrollable dropdown selection
     createSpawnerPage.findNotebookImage('test-9').click();
-    createSpawnerPage.selectContainerSize(
-      'XSmall Limits: 0.5 CPU, 500MiB Memory Requests: 0.1 CPU, 100MiB Memory',
-    );
+    hardwareProfileSection.findSelect().should('exist').click();
+    hardwareProfileSection.selectProfileContaining('Small Profile');
     createSpawnerPage.findSubmitButton().should('be.enabled');
 
     createSpawnerPage.findSubmitButton().click();
@@ -613,6 +747,8 @@ describe('Workbench page', () => {
           annotations: {
             'openshift.io/display-name': '1234',
             'openshift.io/description': 'test-description',
+            'opendatahub.io/hardware-profile-name': 'small-profile',
+            'opendatahub.io/hardware-profile-namespace': 'opendatahub',
           },
           name: 'wb-1234',
           namespace: 'test-project',
@@ -685,31 +821,10 @@ describe('Workbench page', () => {
         metadata: {
           annotations: {
             'openshift.io/display-name': '1234',
+            'opendatahub.io/connections': 'test-project/test1,test-project/test2',
           },
           name: 'wb-1234',
           namespace: 'test-project',
-        },
-        spec: {
-          template: {
-            spec: {
-              containers: [
-                {
-                  envFrom: [
-                    {
-                      secretRef: {
-                        name: 'test1',
-                      },
-                    },
-                    {
-                      secretRef: {
-                        name: 'test2',
-                      },
-                    },
-                  ],
-                },
-              ],
-            },
-          },
         },
       });
     });
@@ -720,31 +835,36 @@ describe('Workbench page', () => {
     initIntercepts({});
     cy.interceptK8sList(
       PVCModel,
-      mockK8sResourceList([mockPVCK8sResource({ name: 'outdated-notebook' })]),
+      mockK8sResourceList([
+        mockPVCK8sResource({ name: 'outdated-notebook', displayName: 'Outdated Notebook' }),
+      ]),
     );
     cy.interceptK8s(RouteModel, mockRouteK8sResource({ notebookName: 'outdated-notebook' }));
+    cy.interceptK8sList(PodModel, mockK8sResourceList([mockPodK8sResource({ isRunning: true })]));
     workbenchPage.visit('test-project');
     workbenchPage.getNotebookRow('Outdated Notebook').findNotebookImageLabel().click();
     notebookImageUpdateModal.findUpdateImageButton().click();
     notebookImageUpdateModal.findSubmitUpdateImageButton().should('be.disabled');
     notebookImageUpdateModal.findLatestVersionOption().click();
-    cy.interceptK8s(
-      'PATCH',
-      NotebookModel,
-      mockNotebookK8sResource({
+
+    cy.interceptK8s('PATCH', NotebookModel, {
+      delay: 500, //TODO: Remove the delay when we add support for loading states
+      body: mockNotebookK8sResource({
         name: 'outdated-notebook',
+        displayName: 'Outdated Notebook (updated)',
       }),
-    ).as('updateNotebookImage');
+    }).as('updateNotebookImage');
+
     cy.interceptK8s(
       'GET',
       NotebookModel,
       mockNotebookK8sResource({
         name: 'outdated-notebook',
+        displayName: 'Outdated Notebook',
       }),
-    ).as('getWorkbench');
-
+    );
     notebookImageUpdateModal.findSubmitUpdateImageButton().click();
-
+    workbenchPage.findUpdatingImageIcon().should('be.visible');
     cy.wait('@updateNotebookImage');
   });
 
@@ -760,117 +880,152 @@ describe('Workbench page', () => {
     cy.contains('Latest image version');
   });
 
-  it('Shows deleted image label for commit mismatch', () => {
+  it('Shows popover with version details', () => {
     initIntercepts({});
     cy.interceptK8sList(
       PVCModel,
-      mockK8sResourceList([mockPVCK8sResource({ name: 'mismatch-commit-notebook' })]),
+      mockK8sResourceList([mockPVCK8sResource({ name: 'latest-notebook' })]),
+    );
+    cy.interceptK8s(RouteModel, mockRouteK8sResource({ notebookName: 'latest-notebook' }));
+    workbenchPage.visit('test-project');
+    const notebookRow = workbenchPage.getNotebookRow('Latest Notebook');
+    notebookRow.findNotebookImageVersionLink().click();
+    const popover = notebookRow.findNotebookImageVersionPopover();
+    popover.findImageVersionName().contains('Version: 2024.2');
+    popover.findImageVersionBuildCommit().contains('Build Commit: 12345');
+    popover.findImageVersionBuildDate().contains('Build Date: 6/30/2023, 3:07:36 PM UTC');
+    popover.findImageVersionSoftware().contains('Software: Python v3.8');
+  });
+
+  it('Shows deprecated image label for commit mismatch', () => {
+    initIntercepts({});
+    cy.interceptK8sList(
+      PVCModel,
+      mockK8sResourceList([
+        mockPVCK8sResource({ name: 'mismatch-commit-notebook' }),
+        mockPVCK8sResource({ name: 'mismatch-commit-byon-notebook' }),
+      ]),
     );
     cy.interceptK8s(RouteModel, mockRouteK8sResource({ notebookName: 'mismatch-commit-notebook' }));
     workbenchPage.visit('test-project');
-    workbenchPage.getNotebookRow('Deleted Notebook').findNotebookImageLabel().click();
-    cy.contains('Notebook image deleted');
+    workbenchPage.getNotebookRow('BYON Notebook').findNotebookImageLabel().should('not.exist');
+    workbenchPage.getNotebookRow('Deprecated Notebook').findNotebookImageLabel().click();
+    cy.contains('Notebook image deprecated');
   });
 
-  it('Display project-scoped label for a notebook in workbenches table', () => {
+  it('Shows deleted image label when last image selection tag is missing', () => {
     initIntercepts({
-      disableProjectScoped: false,
-      notebookSizes: [
-        {
-          name: 'XSmall',
-          resources: {
-            limits: {
-              cpu: '0.5',
-              memory: '500Mi',
-            },
-            requests: {
-              cpu: '0.1',
-              memory: '100Mi',
-            },
-          },
-        },
-        {
-          name: 'Small',
-          resources: {
-            limits: {
-              cpu: '2',
-              memory: '8Gi',
-            },
-            requests: {
-              cpu: '1',
-              memory: '8Gi',
-            },
-          },
-        },
-      ],
       notebooks: [
         mockNotebookK8sResource({
-          imageDisplayName: 'Project-scoped test image',
-          displayName: 'Test project-scoped notebook',
-          lastImageSelection: 'test-10stream:1.2',
-          image: 'image-registry.openshift-image-registry.svc:5000/test-project/test-10stream:1.22',
-          additionalEnvs: [
-            {
-              name: 'JUPYTER_IMAGE',
-              value:
-                'image-registry.openshift-image-registry.svc:5000/test-project/test-10stream:1.22',
-            },
-          ],
+          name: 'deleted-image-popover',
+          displayName: 'Deleted Image Popover',
+          image: 'nonexistent-image:0.0',
+          lastImageSelection: 'nonexistent-image:0.0',
           opts: {
             metadata: {
-              name: 'test-notebook',
               labels: {
                 'opendatahub.io/notebook-image': 'true',
+              },
+              annotations: {
+                'opendatahub.io/image-display-name': 'Deleted image',
               },
             },
           },
         }),
       ],
     });
+    cy.interceptK8sList(
+      PVCModel,
+      mockK8sResourceList([mockPVCK8sResource({ name: 'deleted-image-popover' })]),
+    );
+    cy.interceptK8s(RouteModel, mockRouteK8sResource({ notebookName: 'deleted-image-popover' }));
     workbenchPage.visit('test-project');
-    const notebookRow = workbenchPage.getNotebookRow('Test project-scoped notebook');
-    notebookRow.find().findByText('Project-scoped test image').should('exist');
+    workbenchPage.getNotebookRow('Deleted Image Popover').findNotebookImageLabel().click();
+    cy.contains('Notebook image deleted');
+  });
+
+  it('Display project-scoped label for a notebook in workbenches table', () => {
+    initIntercepts({
+      disableProjectScoped: false,
+      notebooks: [
+        mockNotebookK8sResource({
+          lastImageSelection: 'test-imagestream:1.2',
+          workbenchImageNamespace: 'test-project',
+          opts: {
+            metadata: {
+              name: 'test-notebook',
+              labels: {
+                'opendatahub.io/notebook-image': 'true',
+              },
+              annotations: {
+                'opendatahub.io/image-display-name': 'Test image',
+                'opendatahub.io/hardware-profile-name': 'small-profile',
+                'opendatahub.io/hardware-profile-namespace': 'opendatahub',
+              },
+            },
+          },
+        }),
+      ],
+    });
+
+    cy.interceptK8sList(
+      ImageStreamModel,
+      mockK8sResourceList([
+        mockImageStreamK8sResource({
+          namespace: 'test-project',
+        }),
+      ]),
+    );
+    cy.interceptK8s(
+      {
+        model: HardwareProfileModel,
+        ns: 'opendatahub',
+        name: 'small-profile',
+      },
+      mockGlobalScopedHardwareProfiles[0],
+    );
+    workbenchPage.visit('test-project');
+    const notebookRow = workbenchPage.getNotebookRow('Test Notebook');
+    notebookRow.find().findByText('Test Image').should('exist');
     notebookRow.findProjectScopedLabel().should('exist');
-    notebookRow.shouldHaveContainerSize('Small');
+    notebookRow.shouldHaveHardwareProfile('Small');
     notebookRow.findHaveNotebookStatusText().should('have.text', 'Running');
     notebookRow.findNotebookRouteLink().should('not.have.attr', 'aria-disabled');
   });
 
   it('list workbench and table sorting', () => {
     initIntercepts({
-      notebookSizes: [
-        {
-          name: 'XSmall',
-          resources: {
-            limits: {
-              cpu: '0.5',
-              memory: '500Mi',
-            },
-            requests: {
-              cpu: '0.1',
-              memory: '100Mi',
-            },
-          },
-        },
-        {
-          name: 'Small',
-          resources: {
-            limits: {
-              cpu: '2',
-              memory: '8Gi',
-            },
-            requests: {
-              cpu: '1',
-              memory: '8Gi',
+      notebooks: [
+        mockNotebookK8sResource({
+          lastImageSelection: 'test-imagestream:1.2',
+          opts: {
+            metadata: {
+              name: 'test-notebook',
+              labels: {
+                'opendatahub.io/notebook-image': 'true',
+              },
+              annotations: {
+                'opendatahub.io/image-display-name': 'Test image',
+                'opendatahub.io/hardware-profile-name': 'small-profile',
+                'opendatahub.io/hardware-profile-namespace': 'opendatahub',
+              },
             },
           },
-        },
+        }),
       ],
     });
+    cy.interceptK8s(
+      {
+        model: HardwareProfileModel,
+        ns: 'opendatahub',
+        name: 'small-profile',
+      },
+      mockGlobalScopedHardwareProfiles[0],
+    );
     workbenchPage.visit('test-project');
     const notebookRow = workbenchPage.getNotebookRow('Test Notebook');
     notebookRow.shouldHaveNotebookImageName('Test Image');
-    notebookRow.shouldHaveContainerSize('Small');
+    notebookRow.shouldHaveHardwareProfile('Small');
     notebookRow.findHaveNotebookStatusText().should('have.text', 'Running');
     notebookRow.findNotebookRouteLink().should('not.have.attr', 'aria-disabled');
 
@@ -893,7 +1048,7 @@ describe('Workbench page', () => {
     const notebookRow = workbenchPage.getNotebookRow('Test Notebook');
 
     //stop Workbench
-    notebookRow.findNotebookStop().click();
+    notebookRow.findNotebookStopToggle().click();
     notebookConfirmModal.findStopWorkbenchButton().should('be.enabled');
     cy.interceptK8s(
       NotebookModel,
@@ -943,7 +1098,7 @@ describe('Workbench page', () => {
       }),
     );
 
-    notebookRow.findNotebookStart().click();
+    notebookRow.findNotebookStopToggle().click();
     notebookRow.findHaveNotebookStatusText().should('have.text', 'Starting');
     notebookRow.findHaveNotebookStatusText().click();
 
@@ -985,40 +1140,42 @@ describe('Workbench page', () => {
     const notebookRow = workbenchPage.getNotebookRow('Notebook with deleted image');
     notebookRow.findNotebookImageAvailability().should('have.text', 'Deleted');
     notebookRow.findHaveNotebookStatusText().should('have.text', 'Stopped');
-    notebookRow.findNotebookStart().should('not.be.disabled');
+    notebookRow.findNotebookStopToggle().should('not.be.disabled');
   });
 
   it('Edit workbench', () => {
     initIntercepts({
-      notebookSizes: [
-        {
-          name: 'XSmall',
+      notebooks: [
+        mockNotebookK8sResource({
+          lastImageSelection: 'test-imagestream:1.2',
           resources: {
-            limits: {
-              cpu: '0.5',
-              memory: '500Mi',
-            },
-            requests: {
-              cpu: '0.1',
-              memory: '100Mi',
+            requests: { cpu: '4', memory: '8Gi' },
+            limits: { cpu: '4', memory: '8Gi' },
+          },
+          opts: {
+            metadata: {
+              name: 'test-notebook',
+              labels: {
+                'opendatahub.io/notebook-image': 'true',
+              },
+              annotations: {
+                'opendatahub.io/image-display-name': 'Test image',
+                'opendatahub.io/hardware-profile-name': 'large-profile',
+                'opendatahub.io/hardware-profile-namespace': 'opendatahub',
+              },
             },
           },
-        },
-        {
-          name: 'Small',
-          resources: {
-            limits: {
-              cpu: '2',
-              memory: '8Gi',
-            },
-            requests: {
-              cpu: '1',
-              memory: '8Gi',
-            },
-          },
-        },
+        }),
       ],
     });
+    cy.interceptK8s(
+      {
+        model: HardwareProfileModel,
+        ns: 'opendatahub',
+        name: 'large-profile',
+      },
+      mockGlobalScopedHardwareProfiles[1],
+    );
     cy.interceptK8sList(
       PVCModel,
       mockK8sResourceList([mockPVCK8sResource({ name: 'test-notebook' })]),
@@ -1027,7 +1184,7 @@ describe('Workbench page', () => {
     editSpawnerPage.findAlertMessage().should('not.exist');
     editSpawnerPage.k8sNameDescription.findDisplayNameInput().should('have.value', 'Test Notebook');
     editSpawnerPage.shouldHaveNotebookImageSelectInput('Test Image');
-    editSpawnerPage.shouldHaveContainerSizeInput('Small');
+    hardwareProfileSection.findSelect().should('contain.text', 'Large Profile');
     editSpawnerPage
       .getStorageTable()
       .getRowById(0)
@@ -1035,11 +1192,6 @@ describe('Workbench page', () => {
       .should('have.text', 'Test Storage');
     editSpawnerPage.findSubmitButton().should('be.enabled');
     editSpawnerPage.k8sNameDescription.findDisplayNameInput().fill('Updated Notebook');
-
-    // Add a test for editing accelerator profile
-    editSpawnerPage.findAcceleratorProfileSelect().click();
-    editSpawnerPage.findAcceleratorProfileSelect().findSelectOption('None').click();
-    editSpawnerPage.findAcceleratorProfileSelect().should('contain', 'None');
 
     cy.interceptK8s('PUT', NotebookModel, mockNotebookK8sResource({})).as('editWorkbenchDryRun');
     cy.interceptK8s('PATCH', NotebookModel, mockNotebookK8sResource({})).as('editWorkbench');
@@ -1053,6 +1205,8 @@ describe('Workbench page', () => {
           annotations: {
             'openshift.io/display-name': 'Updated Notebook',
             'opendatahub.io/image-display-name': 'Test Image',
+            'opendatahub.io/hardware-profile-name': 'large-profile',
+            'opendatahub.io/hardware-profile-namespace': 'opendatahub',
           },
           name: 'test-notebook',
           namespace: 'test-project',
@@ -1081,6 +1235,135 @@ describe('Workbench page', () => {
         },
       });
     });
+    // Actual request
+    cy.wait('@editWorkbench').then((interception) => {
+      expect(interception.request.url).not.to.include('?dryRun=All');
+    });
+  });
+
+  it('Edit workbench with project-scoped images', () => {
+    initIntercepts({
+      disableProjectScoped: false,
+      notebooks: [
+        mockNotebookK8sResource({
+          lastImageSelection: 'test-imagestream:1.2',
+          resources: {
+            requests: { cpu: '1', memory: '2Gi' },
+            limits: { cpu: '1', memory: '2Gi' },
+          },
+          opts: {
+            metadata: {
+              name: 'test-notebook',
+              namespace: 'test-project',
+              labels: {
+                'opendatahub.io/notebook-image': 'true',
+              },
+              annotations: {
+                'opendatahub.io/image-display-name': 'Test image',
+                'opendatahub.io/hardware-profile-name': 'small-profile',
+                'opendatahub.io/hardware-profile-namespace': 'test-project',
+              },
+            },
+          },
+        }),
+      ],
+    });
+
+    cy.interceptK8s(
+      {
+        model: HardwareProfileModel,
+        ns: 'test-project',
+        name: 'small-profile',
+      },
+      mockProjectScopedHardwareProfiles[0],
+    );
+
+    cy.interceptK8sList(
+      ImageStreamModel,
+      mockK8sResourceList([
+        mockImageStreamK8sResource({
+          name: 'project scoped test image',
+          displayName: 'Project scoped test image',
+          namespace: 'test-project',
+        }),
+      ]),
+    );
+    cy.interceptK8sList(
+      PVCModel,
+      mockK8sResourceList([mockPVCK8sResource({ name: 'test-notebook' })]),
+    );
+
+    editSpawnerPage.visit('test-notebook');
+    editSpawnerPage.findAlertMessage().should('not.exist');
+    editSpawnerPage.k8sNameDescription.findDisplayNameInput().should('have.value', 'Test Notebook');
+    editSpawnerPage.k8sNameDescription.findDisplayNameInput().fill('Updated Notebook');
+
+    // update notebook image
+    editSpawnerPage
+      .findNotebookImageSearchSelector()
+      .should('have.text', 'Test ImageGlobal-scoped');
+    editSpawnerPage.findNotebookImageSearchSelector().click();
+
+    // Search for a value that exists in Global images but not in Project-scoped images
+    editSpawnerPage.findNotebookImageSearchInput().should('be.visible').type('Project');
+    editSpawnerPage.findNotebookImageSearchInput().clear();
+
+    const projectScopedNotebookImage = editSpawnerPage.getProjectScopedNotebookImages();
+    projectScopedNotebookImage
+      .find()
+      .findByRole('menuitem', { name: 'Project scoped test image', hidden: true })
+      .click();
+
+    cy.findAllByTestId('project-scoped-label').should('have.length', 2);
+
+    hardwareProfileSection
+      .findHardwareProfileSearchSelector()
+      .should('contain.text', 'Small Profile');
+
+    cy.interceptK8s('PUT', NotebookModel, mockNotebookK8sResource({})).as('editWorkbenchDryRun');
+    cy.interceptK8s('PATCH', NotebookModel, mockNotebookK8sResource({})).as('editWorkbench');
+
+    editSpawnerPage.findSubmitButton().click();
+
+    cy.wait('@editWorkbenchDryRun').then((interception) => {
+      expect(interception.request.url).to.include('?dryRun=All');
+      expect(interception.request.body).to.containSubset({
+        metadata: {
+          annotations: {
+            'openshift.io/display-name': 'Updated Notebook',
+            'opendatahub.io/image-display-name': 'Project scoped test image',
+            'opendatahub.io/workbench-image-namespace': 'test-project',
+            'opendatahub.io/hardware-profile-name': 'small-profile',
+            'opendatahub.io/hardware-profile-namespace': 'test-project',
+          },
+          name: 'test-notebook',
+          namespace: 'test-project',
+        },
+        spec: {
+          template: {
+            spec: {
+              containers: [
+                {
+                  envFrom: [
+                    {
+                      secretRef: {
+                        name: 'secret',
+                      },
+                    },
+                  ],
+
+                  name: 'test-notebook',
+                },
+              ],
+              volumes: [
+                { name: 'test-notebook', persistentVolumeClaim: { claimName: 'test-notebook' } },
+              ],
+            },
+          },
+        },
+      });
+    });
+
     // Actual request
     cy.wait('@editWorkbench').then((interception) => {
       expect(interception.request.url).not.to.include('?dryRun=All');
@@ -1238,35 +1521,41 @@ describe('Workbench page', () => {
     });
   });
 
-  it('Handle deleted notebook sizes in workbenches table', () => {
+  it('Handle custom hardware profile resources in workbenches table', () => {
     initIntercepts({
-      notebookSizes: [
-        {
-          name: 'XSmall',
+      notebooks: [
+        mockNotebookK8sResource({
+          lastImageSelection: 'test-imagestream:1.2',
           resources: {
-            limits: {
-              cpu: '0.5',
-              memory: '500Mi',
-            },
-            requests: {
-              cpu: '0.1',
-              memory: '100Mi',
+            requests: { cpu: '3', memory: '6Gi' },
+            limits: { cpu: '3', memory: '6Gi' },
+          },
+          opts: {
+            metadata: {
+              name: 'test-notebook',
+              labels: {
+                'opendatahub.io/notebook-image': 'true',
+              },
+              annotations: {
+                'opendatahub.io/image-display-name': 'Test image',
+              },
             },
           },
-        },
+        }),
       ],
     });
     workbenchPage.visit('test-project');
     const notebookRow = workbenchPage.getNotebookRow('Test Notebook');
     notebookRow.shouldHaveNotebookImageName('Test Image');
-    notebookRow.shouldHaveContainerSize('Custom');
+    notebookRow.shouldHaveHardwareProfile('Custom');
     notebookRow.findKebabAction('Edit workbench').click();
-    editSpawnerPage.shouldHaveContainerSizeInput('Keep custom size');
+
+    hardwareProfileSection.findSelect().should('contain.text', 'Use existing settings');
     cy.go('back');
     workbenchPage.findCreateButton().click();
     verifyRelativeURL('/projects/test-project/spawner');
-    // Custom container size dropdown option should not be present for create workbench
-    createSpawnerPage.findContainerSizeInput('Keep custom size').should('not.exist');
+    hardwareProfileSection.findSelect().click();
+    cy.findByRole('option', { name: /Use existing settings/ }).should('not.exist');
   });
 
   it('Validate that updating invalid workbench will navigate to the new page with an error message', () => {
@@ -1382,5 +1671,122 @@ describe('Workbench page', () => {
     // Verify custom resources were not deleted
     cy.get('@deleteCustomSecret').should('not.have.been.called');
     cy.get('@deleteCustomConfigMap').should('not.have.been.called');
+  });
+
+  describe('Attach existing storage', () => {
+    it('should correctly display grouped PVCs by access mode and update on selection', () => {
+      initIntercepts({
+        isEmpty: true,
+      });
+
+      cy.interceptK8sList(
+        PVCModel,
+        mockK8sResourceList([
+          mockPVCK8sResource({
+            name: 'pvc-rwo',
+            displayName: 'pvc-rwo',
+            accessModes: [AccessMode.RWO],
+            storage: '10Gi',
+          }),
+          mockPVCK8sResource({
+            name: 'pvc-rwx',
+            displayName: 'pvc-rwx',
+            accessModes: [AccessMode.RWX],
+            storage: '5Gi',
+          }),
+          mockPVCK8sResource({
+            name: 'pvc-rox',
+            displayName: 'pvc-rox',
+            accessModes: [AccessMode.ROX],
+            storage: '1Gi',
+          }),
+          mockPVCK8sResource({
+            name: 'pvc-rwop',
+            displayName: 'pvc-rwop',
+            accessModes: [AccessMode.RWOP],
+            storage: '2Gi',
+          }),
+        ]),
+      );
+
+      workbenchPage.visit('test-project');
+      workbenchPage.findCreateButton().click();
+
+      createSpawnerPage.findAttachExistingStorageButton().click();
+      attachExistingStorageModal.findExistingStorageField().findByRole('button').click();
+
+      attachExistingStorageModal.findTypeaheadGroup('readwriteonce-rwo-storage').should('exist');
+      attachExistingStorageModal.findTypeaheadGroup('readwritemany-rwx-storage').should('exist');
+      attachExistingStorageModal.findTypeaheadGroup('readonlymany-rox-storage').should('exist');
+      attachExistingStorageModal
+        .findTypeaheadGroup('readwriteoncepod-rwop-storage')
+        .should('exist');
+
+      attachExistingStorageModal
+        .findTypeaheadOptionUnderGroup('readwriteonce-rwo-storage', 'pvc-rwo')
+        .should('exist');
+      attachExistingStorageModal
+        .findTypeaheadOptionUnderGroup('readwritemany-rwx-storage', 'pvc-rwx')
+        .should('exist');
+      attachExistingStorageModal
+        .findTypeaheadOptionUnderGroup('readonlymany-rox-storage', 'pvc-rox')
+        .should('exist');
+      attachExistingStorageModal
+        .findTypeaheadOptionUnderGroup('readwriteoncepod-rwop-storage', 'pvc-rwop')
+        .should('exist');
+
+      attachExistingStorageModal.selectExistingPersistentStorage('pvc-rwx');
+      attachExistingStorageModal.verifyPSDropdownText('pvc-rwx');
+    });
+
+    it('should not include PVCs that are already attached', () => {
+      initIntercepts({
+        isEmpty: true,
+      });
+
+      const attachedPvcName = 'already-attached-pvc';
+      cy.interceptK8sList(
+        PVCModel,
+        mockK8sResourceList([
+          mockPVCK8sResource({
+            name: attachedPvcName,
+            displayName: attachedPvcName,
+            accessModes: [AccessMode.RWO],
+            storage: '5Gi',
+          }),
+          mockPVCK8sResource({
+            name: 'new-pvc',
+            displayName: 'new-pvc',
+            accessModes: [AccessMode.RWO],
+            storage: '5Gi',
+          }),
+          mockPVCK8sResource({
+            name: 'new-pvc-1',
+            displayName: 'new-pvc-1',
+            accessModes: [AccessMode.RWO],
+            storage: '5Gi',
+          }),
+        ]),
+      );
+
+      workbenchPage.visit('test-project');
+      workbenchPage.findCreateButton().click();
+      createSpawnerPage.findAttachExistingStorageButton().click();
+
+      attachExistingStorageModal.selectExistingPersistentStorage('already-attached-pvc');
+      attachExistingStorageModal.findStandardPathInput().clear().type('mnt/different-path');
+      attachExistingStorageModal.findAttachButton().click();
+
+      createSpawnerPage.findAttachExistingStorageButton().click();
+      attachExistingStorageModal
+        .findExistingStorageField()
+        .findByRole('button')
+        .should('not.be.disabled')
+        .click();
+
+      cy.findAllByRole('option').should('not.contain.text', attachedPvcName);
+      cy.findAllByRole('option').should('contain.text', 'new-pvc');
+      cy.findAllByRole('option').should('contain.text', 'new-pvc-1');
+    });
   });
 });

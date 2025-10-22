@@ -1,21 +1,19 @@
-import type { DataScienceProjectData, DashboardConfig } from '~/__tests__/cypress/cypress/types';
+import type { DataScienceProjectData, DashboardConfig } from '#~/__tests__/cypress/cypress/types';
 // eslint-disable-next-line no-restricted-syntax
-import { DEFAULT_PVC_SIZE } from '~/pages/clusterSettings/const';
-import { projectDetails, projectListPage } from '~/__tests__/cypress/cypress/pages/projects';
-import { HTPASSWD_CLUSTER_ADMIN_USER } from '~/__tests__/cypress/cypress/utils/e2eUsers';
-import { loadDSPFixture } from '~/__tests__/cypress/cypress/utils/dataLoader';
-import { createCleanProject } from '~/__tests__/cypress/cypress/utils/projectChecker';
-import { deleteOpenShiftProject } from '~/__tests__/cypress/cypress/utils/oc_commands/project';
+import { DEFAULT_PVC_SIZE } from '#~/pages/clusterSettings/const';
+import { projectDetails, projectListPage } from '#~/__tests__/cypress/cypress/pages/projects';
+import { HTPASSWD_CLUSTER_ADMIN_USER } from '#~/__tests__/cypress/cypress/utils/e2eUsers';
+import { loadDSPFixture } from '#~/__tests__/cypress/cypress/utils/dataLoader';
+import { createCleanProject } from '#~/__tests__/cypress/cypress/utils/projectChecker';
+import { deleteOpenShiftProject } from '#~/__tests__/cypress/cypress/utils/oc_commands/project';
 import {
   clusterStorage,
   addClusterStorageModal,
   updateClusterStorageModal,
-} from '~/__tests__/cypress/cypress/pages/clusterStorage';
-import { deleteModal } from '~/__tests__/cypress/cypress/pages/components/DeleteModal';
-import {
-  retryableBefore,
-  wasSetupPerformed,
-} from '~/__tests__/cypress/cypress/utils/retryableHooks';
+} from '#~/__tests__/cypress/cypress/pages/clusterStorage';
+import { deleteModal } from '#~/__tests__/cypress/cypress/pages/components/DeleteModal';
+import { retryableBefore } from '#~/__tests__/cypress/cypress/utils/retryableHooks';
+import { generateTestUUID } from '#~/__tests__/cypress/cypress/utils/uuidGenerator';
 
 describe('Verify Cluster Storage - Creating, Editing and Deleting', () => {
   let testData: DataScienceProjectData;
@@ -24,6 +22,7 @@ describe('Verify Cluster Storage - Creating, Editing and Deleting', () => {
   let pvStorageName: string;
   let pvStorageDescription: string;
   let pvStorageNameEdited: string;
+  const uuid = generateTestUUID();
 
   // Setup: Load test data and ensure clean state
   retryableBefore(() => {
@@ -47,7 +46,7 @@ describe('Verify Cluster Storage - Creating, Editing and Deleting', () => {
     return loadDSPFixture('e2e/dataScienceProjects/testClusterStorageCreation.yaml')
       .then((fixtureData: DataScienceProjectData) => {
         testData = fixtureData;
-        projectName = testData.projectPVStorageResourceName;
+        projectName = `${testData.projectPVStorageResourceName}-${uuid}`;
         pvStorageName = testData.pvStorageName;
         pvStorageDescription = testData.pvStorageDescription;
         pvStorageNameEdited = testData.pvStorageNameEdited;
@@ -62,13 +61,10 @@ describe('Verify Cluster Storage - Creating, Editing and Deleting', () => {
       });
   });
   after(() => {
-    //Check if the Before Method was executed to perform the setup
-    if (!wasSetupPerformed()) return;
-
     // Delete provisioned Project
     if (projectName) {
       cy.log(`Deleting Project ${projectName} after the test has finished.`);
-      deleteOpenShiftProject(projectName);
+      deleteOpenShiftProject(projectName, { wait: false, ignoreNotFound: true });
     }
   });
 
@@ -81,12 +77,10 @@ describe('Verify Cluster Storage - Creating, Editing and Deleting', () => {
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
 
       // Project navigation and navigate to the Cluster Storage tab
-      cy.step(
-        `Navigate to the Project list tab and search for ${testData.projectPVStorageResourceName}`,
-      );
+      cy.step(`Navigate to the Project list tab and search for ${projectName}`);
       projectListPage.navigate();
-      projectListPage.filterProjectByName(testData.projectPVStorageResourceName);
-      projectListPage.findProjectLink(testData.projectPVStorageResourceName).click();
+      projectListPage.filterProjectByName(projectName);
+      projectListPage.findProjectLink(projectName).click();
 
       //Navigate to Cluster Storage and click to Add Storage
       cy.step('Navigate to Cluster Storage and click to create Cluster Storage');

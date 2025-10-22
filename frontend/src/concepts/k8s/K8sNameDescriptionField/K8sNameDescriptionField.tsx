@@ -12,10 +12,10 @@ import {
   K8sNameDescriptionFieldUpdateFunction,
   UseK8sNameDescriptionDataConfiguration,
   UseK8sNameDescriptionFieldData,
-} from '~/concepts/k8s/K8sNameDescriptionField/types';
-import ResourceNameDefinitionTooltip from '~/concepts/k8s/ResourceNameDefinitionTooltip';
-import { handleUpdateLogic, setupDefaults } from '~/concepts/k8s/K8sNameDescriptionField/utils';
-import ResourceNameField from '~/concepts/k8s/K8sNameDescriptionField/ResourceNameField';
+} from '#~/concepts/k8s/K8sNameDescriptionField/types';
+import ResourceNameDefinitionTooltip from '#~/concepts/k8s/ResourceNameDefinitionTooltip';
+import { handleUpdateLogic, setupDefaults } from '#~/concepts/k8s/K8sNameDescriptionField/utils';
+import ResourceNameField from '#~/concepts/k8s/K8sNameDescriptionField/ResourceNameField';
 
 /** Companion data hook */
 export const useK8sNameDescriptionFieldData = (
@@ -38,9 +38,12 @@ type K8sNameDescriptionFieldProps = {
   dataTestId: string;
   descriptionLabel?: string;
   nameLabel?: string;
+  nameHelperTextAbove?: React.ReactNode;
   nameHelperText?: React.ReactNode;
   onDataChange?: UseK8sNameDescriptionFieldData['onDataChange'];
   hideDescription?: boolean;
+  maxLength?: number;
+  maxLengthDesc?: number;
 };
 
 /**
@@ -54,16 +57,27 @@ const K8sNameDescriptionField: React.FC<K8sNameDescriptionFieldProps> = ({
   descriptionLabel = 'Description',
   onDataChange,
   nameLabel = 'Name',
+  nameHelperTextAbove,
   nameHelperText,
   hideDescription,
+  maxLength,
+  maxLengthDesc,
 }) => {
   const [showK8sField, setShowK8sField] = React.useState(false);
 
   const { name, description, k8sName } = data;
 
+  const showNameWarning = maxLength && name.length > maxLength - 10;
+  const showDescWarning = maxLengthDesc && description.length > maxLengthDesc - 250;
+
   return (
     <>
       <FormGroup label={nameLabel} isRequired fieldId={`${dataTestId}-name`}>
+        {nameHelperTextAbove && (
+          <HelperText>
+            <HelperTextItem>{nameHelperTextAbove}</HelperTextItem>
+          </HelperText>
+        )}
         <TextInput
           aria-readonly={!onDataChange}
           data-testid={`${dataTestId}-name`}
@@ -73,7 +87,15 @@ const K8sNameDescriptionField: React.FC<K8sNameDescriptionFieldProps> = ({
           isRequired
           value={name}
           onChange={(event, value) => onDataChange?.('name', value)}
+          maxLength={maxLength}
         />
+        {showNameWarning && (
+          <HelperText>
+            <HelperTextItem>
+              Cannot exceed {maxLength} characters ({maxLength - name.length} remaining)
+            </HelperTextItem>
+          </HelperText>
+        )}
         {nameHelperText || (!showK8sField && !k8sName.state.immutable) ? (
           <HelperText>
             {nameHelperText && <HelperTextItem>{nameHelperText}</HelperTextItem>}
@@ -116,7 +138,16 @@ const K8sNameDescriptionField: React.FC<K8sNameDescriptionFieldProps> = ({
             value={description}
             onChange={(event, value) => onDataChange?.('description', value)}
             resizeOrientation="vertical"
+            maxLength={maxLengthDesc}
           />
+          {showDescWarning && (
+            <HelperText>
+              <HelperTextItem>
+                Cannot exceed {maxLengthDesc} characters ({maxLengthDesc - description.length}{' '}
+                remaining)
+              </HelperTextItem>
+            </HelperText>
+          )}
         </FormGroup>
       ) : null}
     </>

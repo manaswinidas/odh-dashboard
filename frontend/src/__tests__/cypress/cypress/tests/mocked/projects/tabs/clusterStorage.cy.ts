@@ -1,33 +1,37 @@
 import {
   buildMockStorageClass,
   mockDashboardConfig,
+  mockInferenceServiceK8sResource,
   mockK8sResourceList,
   mockNotebookK8sResource,
   mockProjectK8sResource,
   mockStorageClasses,
   mockStorageClassList,
-} from '~/__mocks__';
+} from '#~/__mocks__';
 
-import { mockClusterSettings } from '~/__mocks__/mockClusterSettings';
-import { mockPVCK8sResource } from '~/__mocks__/mockPVCK8sResource';
-import { mockPodK8sResource } from '~/__mocks__/mockPodK8sResource';
+import { mockClusterSettings } from '#~/__mocks__/mockClusterSettings';
+import { mockPVCK8sResource } from '#~/__mocks__/mockPVCK8sResource';
+import { mockPodK8sResource } from '#~/__mocks__/mockPodK8sResource';
 import {
   clusterStorage,
   addClusterStorageModal,
   updateClusterStorageModal,
-} from '~/__tests__/cypress/cypress/pages/clusterStorage';
-import { deleteModal } from '~/__tests__/cypress/cypress/pages/components/DeleteModal';
-import { be } from '~/__tests__/cypress/cypress/utils/should';
+} from '#~/__tests__/cypress/cypress/pages/clusterStorage';
+import { deleteModal } from '#~/__tests__/cypress/cypress/pages/components/DeleteModal';
+import { be } from '#~/__tests__/cypress/cypress/utils/should';
 import {
   NotebookModel,
   PVCModel,
   PodModel,
   ProjectModel,
   StorageClassModel,
-} from '~/__tests__/cypress/cypress/utils/models';
-import { mock200Status } from '~/__mocks__/mockK8sStatus';
-import { mockPrometheusQueryResponse } from '~/__mocks__/mockPrometheusQueryResponse';
-import { storageClassesPage } from '~/__tests__/cypress/cypress/pages/storageClasses';
+  InferenceServiceModel,
+} from '#~/__tests__/cypress/cypress/utils/models';
+import { mock200Status } from '#~/__mocks__/mockK8sStatus';
+import { mockPrometheusQueryResponse } from '#~/__mocks__/mockPrometheusQueryResponse';
+import { storageClassesPage } from '#~/__tests__/cypress/cypress/pages/storageClasses';
+import { AccessMode } from '#~/__tests__/cypress/cypress/types';
+import { PvcModelAnnotation } from '#~/pages/projects/screens/spawner/storage/types';
 
 type HandlersProps = {
   isEmpty?: boolean;
@@ -76,6 +80,16 @@ const initInterceptors = ({ isEmpty = false, storageClassName }: HandlersProps) 
                       'Waiting for user to (re-)start a pod to finish file system resize of volume on node.',
                   },
                 ],
+              },
+            }),
+            mockPVCK8sResource({
+              displayName: 'Model Storage',
+              name: 'model-storage',
+              storageClassName,
+              storage: '5Gi',
+              annotations: {
+                [PvcModelAnnotation.MODEL_NAME]: 'name',
+                [PvcModelAnnotation.MODEL_PATH]: 'path/example',
               },
             }),
           ],
@@ -192,8 +206,15 @@ describe('ClusterStorage', () => {
     // default selected
     addClusterStorageModal.find().findByText('openshift-default-sc').should('exist');
 
+    const storageClassSelect = addClusterStorageModal.findStorageClassSelect();
+
+    // confirm radio not enabled when only one storage access mode
+    addClusterStorageModal.findRWOAccessMode().should('be.checked').should('be.disabled');
+
     // select storage class
-    addClusterStorageModal.selectStorageClassSelectOption(/Test SC 1/);
+    storageClassSelect.find().click();
+    storageClassSelect.findSelectStorageClassLabel(/Test SC 1/, AccessMode.RWX).should('exist');
+    storageClassSelect.selectStorageClassSelectOption(/Test SC 1/);
     addClusterStorageModal.findSubmitButton().should('be.enabled');
     addClusterStorageModal.findDescriptionInput().fill('description');
     addClusterStorageModal.findPVSizeMinusButton().click();
@@ -201,6 +222,10 @@ describe('ClusterStorage', () => {
     addClusterStorageModal.findPVSizePlusButton().click();
     addClusterStorageModal.findPVSizeInput().should('have.value', '20');
     addClusterStorageModal.selectPVSize('MiB');
+
+    // select access mode
+    addClusterStorageModal.findRWOAccessMode().should('be.checked');
+    addClusterStorageModal.findRWXAccessMode().click();
 
     //connect workbench
     addClusterStorageModal.findAddWorkbenchButton().click();
@@ -332,6 +357,80 @@ describe('ClusterStorage', () => {
     });
   });
 
+  it('Add cluster storage with model storage', () => {
+    initInterceptors({ isEmpty: true });
+    storageClassesPage.mockGetStorageClasses([
+      openshiftDefaultStorageClass,
+      buildMockStorageClass(otherStorageClass, { isEnabled: true }),
+    ]);
+    cy.interceptK8s('POST', { model: PVCModel, ns: 'test-project' }, mockPVCK8sResource({})).as(
+      'addClusterStorage',
+    );
+    clusterStorage.visit('test-project');
+    clusterStorage.findCreateButton().click();
+    addClusterStorageModal.findNameInput().fill('test-storage');
+    addClusterStorageModal.findModelStorageRadio().click();
+    addClusterStorageModal.findModelNameInput().fill('name');
+    addClusterStorageModal.findModelPathInput().fill('path/example');
+    addClusterStorageModal.findSubmitButton().click();
+
+    cy.wait('@addClusterStorage').then((interception) => {
+      expect(interception.request.url).to.include('?dryRun=All');
+      expect(interception.request.body).to.containSubset({
+        metadata: {
+          annotations: {
+            [PvcModelAnnotation.MODEL_NAME]: 'name',
+            [PvcModelAnnotation.MODEL_PATH]: 'path/example',
+          },
+        },
+      });
+    });
+
+    cy.wait('@addClusterStorage').then((interception) => {
+      expect(interception.request.url).not.to.include('?dryRun=All');
+    });
+
+    cy.get('@addClusterStorage.all').then((interceptions) => {
+      expect(interceptions).to.have.length(2);
+    });
+  });
+
+  it('Should list correct storage type', () => {
+    cy.interceptK8sList(
+      { model: InferenceServiceModel, ns: 'test-project' },
+      mockK8sResourceList([
+        mockInferenceServiceK8sResource({
+          storageUri: 'pvc://model-storage/path',
+        }),
+      ]),
+    );
+    initInterceptors({});
+    storageClassesPage.mockGetStorageClasses([
+      openshiftDefaultStorageClass,
+      buildMockStorageClass(otherStorageClass, { isEnabled: true }),
+    ]);
+    clusterStorage.visit('test-project');
+    const modelStorageRow = clusterStorage.getClusterStorageRow('Model Storage');
+    modelStorageRow.findStorageTypeColumn().should('contain.text', 'Model storage');
+    modelStorageRow.findConnectedResources().should('have.text', 'Test Inference Service');
+    const genericStorageRow = clusterStorage.getClusterStorageRow('Test Storage');
+    genericStorageRow.findStorageTypeColumn().should('contain.text', 'General purpose');
+  });
+
+  it('Should prefill model storage pvc with name and path on edit', () => {
+    initInterceptors({});
+    storageClassesPage.mockGetStorageClasses([
+      openshiftDefaultStorageClass,
+      buildMockStorageClass(otherStorageClass, { isEnabled: true }),
+    ]);
+    clusterStorage.visit('test-project');
+    const modelStorageRow = clusterStorage.getClusterStorageRow('Model Storage');
+    modelStorageRow.findKebabAction('Edit storage').click();
+    updateClusterStorageModal.findModelStorageRadio().should('be.checked');
+    updateClusterStorageModal.findModelNameInput().should('have.value', 'name');
+    updateClusterStorageModal.findModelPathInput().should('have.value', 'path/example');
+  });
+
   it('list cluster storage and Table sorting', () => {
     cy.interceptOdh(
       'GET /api/config',
@@ -343,8 +442,8 @@ describe('ClusterStorage', () => {
     clusterStorage.visit('test-project');
     const clusterStorageRow = clusterStorage.getClusterStorageRow('Test Storage');
     clusterStorageRow.findStorageClassColumn().should('not.exist');
-    clusterStorageRow.shouldHaveStorageTypeValue('Persistent storage');
-    clusterStorageRow.findConnectedWorkbenches().should('have.text', 'No connections');
+    clusterStorageRow.shouldHaveStorageTypeValue('General purpose');
+    clusterStorageRow.findConnectedResources().should('have.text', '');
     clusterStorageRow.findSizeColumn().contains('5GiB');
 
     //sort by Name
@@ -378,6 +477,7 @@ describe('ClusterStorage', () => {
 
     cy.interceptK8s('PUT', PVCModel, mockPVCK8sResource({})).as('editClusterStorage');
 
+    updateClusterStorageModal.findExistingAccessMode().should('have.text', 'ReadWriteOnce (RWO)');
     updateClusterStorageModal.findSubmitButton().click();
     cy.wait('@editClusterStorage').then((interception) => {
       expect(interception.request.url).to.include('?dryRun=All');

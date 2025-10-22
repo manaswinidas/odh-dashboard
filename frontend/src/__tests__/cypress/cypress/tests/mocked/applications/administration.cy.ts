@@ -1,18 +1,23 @@
-import { mockRoleBindingK8sResource } from '~/__mocks__/mockRoleBindingK8sResource';
-import { mockK8sResourceList, mockNotebookK8sResource } from '~/__mocks__';
-import type { RoleBindingSubject } from '~/k8sTypes';
-import { mockAllowedUsers } from '~/__mocks__/mockAllowedUsers';
-import { mockNotebookImageInfo } from '~/__mocks__/mockNotebookImageInfo';
+import { mockHardwareProfile } from '@odh-dashboard/internal/__mocks__/mockHardwareProfile';
+import { mockRoleBindingK8sResource } from '#~/__mocks__/mockRoleBindingK8sResource';
+import { mockK8sResourceList, mockNotebookK8sResource } from '#~/__mocks__';
+import type { RoleBindingSubject } from '#~/k8sTypes';
+import { mockAllowedUsers } from '#~/__mocks__/mockAllowedUsers';
 import {
   administration,
   notebookController,
   stopNotebookModal,
-} from '~/__tests__/cypress/cypress/pages/administration';
-import { be } from '~/__tests__/cypress/cypress/utils/should';
-import { asProductAdminUser, asProjectEditUser } from '~/__tests__/cypress/cypress/utils/mockUsers';
-import type { AllowedUser } from '~/pages/notebookController/screens/admin/types';
-import { testPagination } from '~/__tests__/cypress/cypress/utils/pagination';
-import { mockStartNotebookData } from '~/__mocks__/mockStartNotebookData';
+} from '#~/__tests__/cypress/cypress/pages/administration';
+import { be } from '#~/__tests__/cypress/cypress/utils/should';
+import {
+  asProductAdminUser,
+  asProjectEditUser,
+} from '#~/__tests__/cypress/cypress/utils/mockUsers';
+import type { AllowedUser } from '#~/pages/notebookController/screens/admin/types';
+import { testPagination } from '#~/__tests__/cypress/cypress/utils/pagination';
+import { mockStartNotebookData } from '#~/__mocks__/mockStartNotebookData';
+import { ImageStreamModel, HardwareProfileModel } from '#~/__tests__/cypress/cypress/utils/models';
+import { mockImageStreamK8sResourceList } from '#~/__mocks__/mockImageStreamK8sResource';
 
 const groupSubjects: RoleBindingSubject[] = [
   {
@@ -40,7 +45,15 @@ const initIntercepts = ({
       }),
     ]),
   );
-  cy.interceptOdh('GET /api/images/:type', { path: { type: 'jupyter' } }, mockNotebookImageInfo());
+  cy.interceptK8sList(
+    { model: ImageStreamModel, ns: 'opendatahub' },
+    mockK8sResourceList(mockImageStreamK8sResourceList()),
+  );
+
+  cy.interceptK8sList(
+    { model: HardwareProfileModel, ns: 'opendatahub' },
+    mockK8sResourceList([mockHardwareProfile({})]),
+  );
 };
 
 it('Administration tab should not be accessible for non-project admins', () => {
@@ -49,7 +62,7 @@ it('Administration tab should not be accessible for non-project admins', () => {
   notebookController.visit();
   notebookController.findAdministrationTab().should('not.exist');
   notebookController.findSpawnerTab().should('not.exist');
-  notebookController.findAppTitle().should('contain', 'Start a notebook server');
+  notebookController.findAppTitle().should('contain', 'Start a basic workbench');
 });
 
 describe('Administration Tab', () => {
@@ -65,7 +78,7 @@ describe('Administration Tab', () => {
     administration.findStopAllServersButton().should('be.disabled');
     const userRow = administration.getRow('test-user');
     userRow.shouldHavePrivilege('User');
-    userRow.findServerStatusButton().should('have.text', 'Start your server');
+    userRow.findServerStatusButton().should('have.text', 'Start your workbench');
     userRow.findServerStatusButton().should('be.enabled');
   });
 
@@ -92,10 +105,10 @@ describe('Administration Tab', () => {
     administration.findTableHeaderButton('Last activity').should(be.sortDescending);
 
     // By server status
-    administration.findTableHeaderButton('Server status').click();
-    administration.findTableHeaderButton('Server status').should(be.sortAscending);
-    administration.findTableHeaderButton('Server status').click();
-    administration.findTableHeaderButton('Server status').should(be.sortDescending);
+    administration.findTableHeaderButton('Workbench status').click();
+    administration.findTableHeaderButton('Workbench status').should(be.sortAscending);
+    administration.findTableHeaderButton('Workbench status').click();
+    administration.findTableHeaderButton('Workbench status').should(be.sortDescending);
   });
 
   it('Validate pagination', () => {
@@ -115,7 +128,7 @@ describe('Administration Tab', () => {
     testPagination({ totalItems, firstElement: 'Test user-0', paginationVariant: 'bottom' });
   });
 
-  it('Validate that last activity will be "Just now" and user can stop server from the table, when notebook lacks the last-activity annotation', () => {
+  it('Validate that last activity will be "Just now" and user can stop workbench from the table, when notebook lacks the last-activity annotation', () => {
     const allowedUsers = [
       mockAllowedUsers({}),
       mockAllowedUsers({ username: 'regularuser1', lastActivity: 'Now' }),
@@ -136,10 +149,13 @@ describe('Administration Tab', () => {
     const userRow = administration.getRow('regularuser1');
     userRow.shouldHavePrivilege('User');
     userRow.shouldHaveLastActivity('Just now');
-    userRow.findServerStatusButton().should('have.text', 'View server');
-    userRow.findKebabAction('Stop server').click();
+    userRow.findServerStatusButton().should('have.text', 'View workbench');
+    userRow.findKebabAction('Stop workbench').click();
 
     stopNotebookModal.findStopNotebookServerButton().should('be.enabled');
+    stopNotebookModal
+      .findNotebookRouteLink()
+      .should('have.attr', 'href', '/notebook/test-project/test-notebook');
     stopNotebookModal.findStopNotebookServerButton().click();
 
     cy.wait('@stopNotebookServer').then((interception) => {
@@ -147,7 +163,7 @@ describe('Administration Tab', () => {
     });
   });
 
-  it('Validate that clicking on "Start server" button will open a form in administartion tab and "Start your server" button will navigate to notebook server tab', () => {
+  it('Validate that clicking on "Start workbench" button will open a form in administartion tab and "Start workbench" button will navigate to notebook server tab', () => {
     initIntercepts({});
     notebookController.visit();
     notebookController.findAdministrationTab().click();
@@ -164,7 +180,61 @@ describe('Administration Tab', () => {
     // Navigate to notebook server tab
     userRow = administration.getRow('test-user');
     userRow.findServerStatusButton().click();
-    notebookController.findAppTitle().should('contain', 'Start a notebook server');
+    notebookController.findAppTitle().should('contain', 'Start a basic workbench');
     notebookController.findAppTitle().should('not.contain', 'Administration');
+  });
+
+  it('Validate that clicking on "Stop all workbenches" button will show dialog for stopping multiple workbenches', () => {
+    const allowedUsers = [
+      mockAllowedUsers({ username: 'regularuser2', lastActivity: 'Now' }),
+      mockAllowedUsers({ username: 'regularuser1', lastActivity: 'Now' }),
+    ];
+    initIntercepts({ allowedUsers });
+    administration.mockGetNotebookStatus('jupyter-nb-regularuser1');
+    administration.mockGetNotebookStatus('jupyter-nb-regularuser2');
+    cy.interceptOdh('PATCH /api/notebooks', mockStartNotebookData({})).as('stopNotebookServer');
+    notebookController.visit();
+    notebookController.findAdministrationTab().click();
+    notebookController.visit();
+    notebookController.findAdministrationTab().click();
+    administration.findStopAllServersButton().should('be.enabled');
+    administration.findStopAllServersButton().click();
+
+    stopNotebookModal.findStopNotebookServerButton().should('be.enabled');
+    stopNotebookModal.findStopNotebookTitle().should('have.text', 'Stop all workbenches?');
+    stopNotebookModal.findStopNotebookServerButton().click();
+
+    cy.wait('@stopNotebookServer');
+  });
+
+  it('Validate that clicking on "Stop all workbenches" button will display a link if there is only one workbench to stop', () => {
+    const allowedUsers = [mockAllowedUsers({ username: 'regularuser1', lastActivity: 'Now' })];
+
+    initIntercepts({ allowedUsers });
+    cy.interceptOdh('PATCH /api/notebooks', mockStartNotebookData({})).as('stopNotebookServer');
+    administration.mockGetNotebookStatus('jupyter-nb-regularuser1');
+
+    notebookController.visit();
+    notebookController.findAdministrationTab().click();
+    notebookController.visit();
+    notebookController.findAdministrationTab().click();
+    administration.findStopAllServersButton().should('be.enabled');
+    administration.findStopAllServersButton().click();
+
+    stopNotebookModal.findStopNotebookServerButton().should('be.enabled');
+    stopNotebookModal.findStopNotebookTitle().should('have.text', 'Stop workbench?');
+    stopNotebookModal
+      .findNotebookRouteLink()
+      .should('have.attr', 'href', '/notebook/test-project/test-notebook');
+    stopNotebookModal.findStopNotebookServerButton().click();
+
+    cy.wait('@stopNotebookServer');
+  });
+
+  it('redirect from v2 to v3 route', () => {
+    initIntercepts({});
+    cy.visitWithLogin('/notebookController/spawner');
+    cy.findByTestId('app-page-title').should('have.text', 'Start a basic workbench');
+    cy.url().should('include', '/notebook-controller/spawner');
   });
 });

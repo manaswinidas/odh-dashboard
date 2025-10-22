@@ -1,35 +1,41 @@
-import { Contextual } from '~/__tests__/cypress/cypress/pages/components/Contextual';
-import { DashboardCodeEditor } from '~/__tests__/cypress/cypress/pages/components/DashboardCodeEditor';
+import { Contextual } from '#~/__tests__/cypress/cypress/pages/components/Contextual';
+import { DashboardCodeEditor } from '#~/__tests__/cypress/cypress/pages/components/DashboardCodeEditor';
 import type {
   PipelineKF,
   PipelineRecurringRunKF,
   PipelineVersionKF,
-} from '~/concepts/pipelines/kfTypes';
-import { SearchSelector } from '~/__tests__/cypress/cypress/pages/components/subComponents/SearchSelector';
+} from '#~/concepts/pipelines/kfTypes';
+import { SearchSelector } from '#~/__tests__/cypress/cypress/pages/components/subComponents/SearchSelector';
 
 class TaskDrawer extends Contextual<HTMLElement> {
+  private findTaskDrawer() {
+    return this.find().findByTestId('task-drawer');
+  }
+
   findInputArtifacts() {
-    return this.find().findByTestId('Input-artifacts');
+    return this.findTaskDrawer().findByTestId('Input-artifacts');
   }
 
   findCommandCodeBlock() {
-    return this.find().findByTestId('command-task-detail-code-block').findByRole('code');
+    return this.findTaskDrawer().findByTestId('command-task-detail-code-block').findByRole('code');
   }
 
   findTaskImage() {
-    return this.find().findByTestId('task-detail-image');
+    return this.findTaskDrawer().findByTestId('task-detail-image');
   }
 
   findArgumentCodeBlock() {
-    return this.find().findByTestId('arguments-task-detail-code-block').findByRole('code');
+    return this.findTaskDrawer()
+      .findByTestId('arguments-task-detail-code-block')
+      .findByRole('code');
   }
 
   findOutputArtifacts() {
-    return this.find().findByTestId('Output-artifacts');
+    return this.findTaskDrawer().findByTestId('Output-artifacts');
   }
 
   findOutputParameters() {
-    return this.find().findByTestId('Output-parameters');
+    return this.findTaskDrawer().findByTestId('Output-parameters');
   }
 
   findCloseDrawerButton() {
@@ -43,7 +49,9 @@ class TaskDrawer extends Contextual<HTMLElement> {
 
 class PipelinesTopology {
   visit(namespace: string, pipelineId: string, pipelineVersionId: string) {
-    cy.visitWithLogin(`/pipelines/${namespace}/${pipelineId}/${pipelineVersionId}/view`);
+    cy.visitWithLogin(
+      `/develop-train/pipelines/definitions/${namespace}/${pipelineId}/${pipelineVersionId}/view`,
+    );
     this.wait();
   }
 
@@ -163,7 +171,9 @@ class PipelineDetails extends PipelinesTopology {
   pipelineVersionSelector = new SearchSelector('pipeline-version-selector');
 
   visit(namespace: string, pipelineId: string, pipelineVersionId: string) {
-    cy.visitWithLogin(`/pipelines/${namespace}/${pipelineId}/${pipelineVersionId}/view`);
+    cy.visitWithLogin(
+      `/develop-train/pipelines/definitions/${namespace}/${pipelineId}/${pipelineVersionId}/view`,
+    );
     this.wait();
   }
 
@@ -176,6 +186,10 @@ class PipelineDetails extends PipelinesTopology {
       .find('td')
       .contains(name)
       .click();
+  }
+
+  findProjectNavigatorLink() {
+    return cy.findByTestId('project-navigator-link-in-breadcrumb');
   }
 
   findYamlTab() {
@@ -191,7 +205,7 @@ class PipelineDetails extends PipelinesTopology {
   }
 
   getTaskDrawer() {
-    return new TaskDrawer(() => cy.findByTestId('task-drawer'));
+    return new TaskDrawer(() => cy.findByTestId('pipeline-topology-drawer'));
   }
 
   private findActionsDropdown() {
@@ -257,8 +271,12 @@ class PipelineDetails extends PipelinesTopology {
 
 class PipelineRecurringRunDetails extends RunDetails {
   visit(namespace: string, recurringRunId = '') {
-    cy.visitWithLogin(`/pipelineRuns/${namespace}/schedules/${recurringRunId}`);
+    cy.visitWithLogin(`/develop-train/pipelines/runs/${namespace}/schedules/${recurringRunId}`);
     this.wait();
+  }
+
+  findProjectNavigatorLink() {
+    return cy.findByTestId('project-navigator-link-in-breadcrumb');
   }
 
   findActionsDropdown() {
@@ -303,8 +321,12 @@ class PipelineRecurringRunDetails extends RunDetails {
 
 class PipelineRunDetails extends RunDetails {
   visit(namespace: string, runId = '') {
-    cy.visitWithLogin(`/pipelineRuns/${namespace}/runs/${runId}`);
+    cy.visitWithLogin(`/develop-train/pipelines/runs/${namespace}/runs/${runId}`);
     this.wait();
+  }
+
+  findProjectNavigatorLink() {
+    return cy.findByTestId('project-navigator-link-in-breadcrumb');
   }
 
   findActionsDropdown() {

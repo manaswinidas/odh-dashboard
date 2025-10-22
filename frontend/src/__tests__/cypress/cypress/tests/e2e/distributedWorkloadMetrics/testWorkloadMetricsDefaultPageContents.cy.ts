@@ -1,32 +1,34 @@
 import yaml from 'js-yaml';
-import { HTPASSWD_CLUSTER_ADMIN_USER } from '~/__tests__/cypress/cypress/utils/e2eUsers';
-import { deleteOpenShiftProject } from '~/__tests__/cypress/cypress/utils/oc_commands/project';
-import { createCleanProject } from '~/__tests__/cypress/cypress/utils/projectChecker';
+import { HTPASSWD_CLUSTER_ADMIN_USER } from '#~/__tests__/cypress/cypress/utils/e2eUsers';
+import { deleteOpenShiftProject } from '#~/__tests__/cypress/cypress/utils/oc_commands/project';
+import { createCleanProject } from '#~/__tests__/cypress/cypress/utils/projectChecker';
 import {
   globalDistributedWorkloads,
   projectMetricsTab,
   distributedWorkloadStatusTab,
-} from '~/__tests__/cypress/cypress/pages/distributedWorkloads';
+} from '#~/__tests__/cypress/cypress/pages/distributedWorkloads';
 import {
   createKueueResources,
   deleteKueueResources,
-} from '~/__tests__/cypress/cypress/utils/oc_commands/distributedWorkloads';
-import type { WorkloadMetricsTestData } from '~/__tests__/cypress/cypress/types';
-import { retryableBefore } from '~/__tests__/cypress/cypress/utils/retryableHooks';
+} from '#~/__tests__/cypress/cypress/utils/oc_commands/distributedWorkloads';
+import type { WorkloadMetricsTestData } from '#~/__tests__/cypress/cypress/types';
+import { retryableBefore } from '#~/__tests__/cypress/cypress/utils/retryableHooks';
 import {
   findRefreshIntervalList,
   verifyRequestedResources,
-} from '~/__tests__/cypress/cypress/utils/workloadMetricsUtils';
+} from '#~/__tests__/cypress/cypress/utils/workloadMetricsUtils';
+import { generateTestUUID } from '#~/__tests__/cypress/cypress/utils/uuidGenerator';
 
-describe('Verify Workload Metrics Default page Contents', () => {
+describe('[Product Bug: RHOAIENG-35936] Verify Workload Metrics Default page Contents', () => {
   let testData: WorkloadMetricsTestData;
   let projectName: string;
+  const uuid = generateTestUUID();
 
   retryableBefore(() => {
     cy.fixture('e2e/workloadMetricsResources/testWorkloadMetricsResources.yaml', 'utf8')
       .then((yamlContent: string) => {
         testData = yaml.load(yamlContent) as WorkloadMetricsTestData;
-        projectName = testData.projectName;
+        projectName = `${testData.projectName}-${uuid}`;
       })
       .then(() => {
         cy.log('Creating Namespace ${projectName}');
@@ -37,7 +39,7 @@ describe('Verify Workload Metrics Default page Contents', () => {
           testData.resourceFlavour,
           testData.clusterQueue,
           testData.localQueue,
-          testData.projectName,
+          projectName,
           testData.cpuQuota,
           testData.memoryQuota,
         );
@@ -50,15 +52,16 @@ describe('Verify Workload Metrics Default page Contents', () => {
       testData.localQueue,
       testData.clusterQueue,
       testData.resourceFlavour,
-      testData.projectName,
+      projectName,
+      { wait: false, ignoreNotFound: true },
     );
     cy.log('Deleting Namespace ${projectName}');
-    deleteOpenShiftProject(testData.projectName);
+    deleteOpenShiftProject(projectName, { wait: false, ignoreNotFound: true });
   });
 
   it(
     'Verify Workload Metrics Home page Contents',
-    { tags: ['@Sanity', '@WorkloadMetrics'] },
+    { tags: ['@Sanity', '@SanitySet3', '@WorkloadMetrics', '@Bug'] },
     () => {
       cy.step('Login to the Application');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
@@ -77,7 +80,7 @@ describe('Verify Workload Metrics Default page Contents', () => {
 
   it(
     'Verify Project Metrics Default Page contents',
-    { tags: ['@Sanity', '@WorkloadMetrics'] },
+    { tags: ['@Sanity', '@SanitySet3', '@WorkloadMetrics', '@Bug'] },
     () => {
       cy.step('Login to the Application');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
@@ -98,27 +101,27 @@ describe('Verify Workload Metrics Default page Contents', () => {
         .should('equal', `Total shared quota: ${testData.memoryQuota} GiB`);
       cy.findByTestId('dw-top-consuming-workloads')
         .should('be.visible')
-        .and('contain', 'Top 5 resource-consuming distributed workloads')
-        .and('contain', 'No distributed workloads')
+        .and('contain', 'Top 5 resource-consuming workload metrics')
+        .and('contain', 'No workload metrics')
         .and(
           'contain',
-          'No distributed workloads in the selected project are currently consuming resources.',
+          'No workload metrics in the selected project are currently consuming resources.',
         );
 
       cy.findByTestId('dw-workload-resource-metrics')
         .should('be.visible')
         .and('contain', 'Distributed workload resource metrics')
-        .and('contain', 'No distributed workloads')
+        .and('contain', 'No workload metrics')
         .and(
           'contain',
-          'No distributed workloads in the selected project are currently consuming resources.',
+          'No workload metrics in the selected project are currently consuming resources.',
         );
     },
   );
 
   it(
     'Verify Distributed Workload status Default Page contents',
-    { tags: ['@Sanity', '@WorkloadMetrics'] },
+    { tags: ['@Sanity', '@SanitySet3', '@WorkloadMetrics', '@Bug'] },
     () => {
       cy.step('Login to the Application');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
@@ -134,7 +137,7 @@ describe('Verify Workload Metrics Default page Contents', () => {
       cy.findByTestId('dw-status-overview-card')
         .should('be.visible')
         .and('contain', 'Status overview')
-        .and('contain', 'No distributed workloads')
+        .and('contain', 'No workload metrics')
         .and(
           'contain',
           'Select another project or create a distributed workload in the selected project.',
@@ -142,8 +145,8 @@ describe('Verify Workload Metrics Default page Contents', () => {
 
       cy.findByTestId('dw-workloads-table-card')
         .should('be.visible')
-        .and('contain', 'Distributed Workloads')
-        .and('contain', 'No distributed workloads')
+        .and('contain', 'Workload metrics')
+        .and('contain', 'No workload metrics')
         .and(
           'contain',
           'Select another project or create a distributed workload in the selected project.',

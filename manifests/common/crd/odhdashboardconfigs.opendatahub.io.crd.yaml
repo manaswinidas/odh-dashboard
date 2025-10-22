@@ -22,7 +22,9 @@ spec:
             spec:
               type: object
               properties:
+                # TODO: for v1 we should fix the "disabled" prefix
                 dashboardConfig:
+                  description: 'Feature flag configurations; intended to just contain overrides'
                   type: object
                   properties:
                     enablement:
@@ -71,8 +73,10 @@ spec:
                       type: boolean
                     disableAcceleratorProfiles:
                       type: boolean
+                      description: 'DEPRECATED: Accelerator Profiles are replaced by Hardware Profiles. This field will be removed in a future version.'
                     disableHardwareProfiles:
                       type: boolean
+                      description: "DEPRECATED: Hardware Profiles are GA and cannot be disabled via this field. This field will be removed in a future version."
                     disableDistributedWorkloads:
                       type: boolean
                     disableModelCatalog:
@@ -89,9 +93,20 @@ spec:
                       type: boolean
                     disableAdminConnectionTypes:
                       type: boolean
-                    disableFineTuning:
+                    disableKueue:
                       type: boolean
+                    disableLMEval:
+                      type: boolean
+                    disableFeatureStore:
+                      type: boolean
+                  x-kubernetes-validations:
+                    - rule: '!has(self.disableAcceleratorProfiles) || self.disableAcceleratorProfiles == oldSelf.disableAcceleratorProfiles'
+                      message: 'DEPRECATED: spec.dashboardConfig.disableAcceleratorProfiles must be removed or left unchanged.'
+                    - rule: '!has(self.disableHardwareProfiles) || self.disableHardwareProfiles == oldSelf.disableHardwareProfiles'
+                      message: 'DEPRECATED: spec.dashboardConfig.disableHardwareProfiles must be removed or left unchanged.'
+                # TODO: Remove before going to v1
                 groupsConfig:
+                  description: 'Ignored -- See "Auth" Resource'
                   type: object
                   required:
                     - adminGroups
@@ -104,7 +119,9 @@ spec:
                   x-kubernetes-validations:
                     - rule: self == oldSelf
                       message: Can no longer modify group configurations here, see the Auth resource instead
+                # Remove notebookSizes in a future version
                 notebookSizes:
+                  description: 'DEPRECATED: Please use Hardware Profiles instead. This field will be removed in a future version.'
                   type: array
                   items:
                     type: object
@@ -131,7 +148,12 @@ spec:
                                 type: string
                               memory:
                                 type: string
+                  x-kubernetes-validations:
+                    - rule: self == oldSelf
+                      message: 'This field is DEPRECATED and must either be removed or left unchanged. Please use Hardware Profiles instead.'
+                # Remove modelServerSizes in a future version
                 modelServerSizes:
+                  description: 'DEPRECATED: Please use Hardware Profiles instead. This field will be removed in a future version.'
                   type: array
                   items:
                     type: object
@@ -158,31 +180,51 @@ spec:
                                 type: string
                               memory:
                                 type: string
+                  x-kubernetes-validations:
+                    - rule: self == oldSelf
+                      message: 'This field is DEPRECATED and must either be removed or left unchanged. Please use Hardware Profiles instead.'
+                # May get impacted by Notebooks 2.0
                 notebookController:
+                  description: 'Jupyter tile configurations'
                   type: object
                   required:
                     - enabled
                   properties:
                     enabled:
                       type: boolean
+                    # TODO: Remove before going to v1
                     notebookNamespace:
                       type: string
+                      x-kubernetes-validations:
+                        - rule: self == oldSelf
+                          message: Can no longer modify notebookNamespace here
                     pvcSize:
                       type: string
                     notebookTolerationSettings:
+                      description: 'DEPRECATED: Please use Hardware Profiles to set tolerations instead. This field will be removed in a future version.'
                       type: object
                       properties:
                         enabled:
                           type: boolean
                         key:
                           type: string
+                      x-kubernetes-validations:
+                        - rule: self == oldSelf
+                          message: 'This field is DEPRECATED and must either be removed or left unchanged. Please use Hardware Profiles to set tolerations instead.'
                     storageClassName:
                       type: string
+                # Likely needs a better spot to exist -- hard to do granular permissions
                 templateOrder:
                   type: array
                   items:
                     type: string
+                # Likely needs a better spot to exist -- hard to do granular permissions
                 templateDisablement:
+                  type: array
+                  items:
+                    type: string
+                # Likely needs a better spot to exist -- hard to do granular permissions
+                hardwareProfileOrder:
                   type: array
                   items:
                     type: string

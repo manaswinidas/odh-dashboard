@@ -5,7 +5,7 @@ import {
   isCpuLimitLarger,
   isMemoryResourceEqual,
   isMemoryLimitLarger,
-} from '~/utilities/valueUnits';
+} from '#~/utilities/valueUnits';
 import {
   assembleSecretSA,
   createRoleBinding,
@@ -21,7 +21,7 @@ import {
   getServiceAccount,
   getRole,
   createRole,
-} from '~/api';
+} from '#~/api';
 import {
   SecretKind,
   K8sAPIOptions,
@@ -32,17 +32,20 @@ import {
   RoleKind,
   ServingContainer,
   DeploymentMode,
-} from '~/k8sTypes';
-import { ContainerResources } from '~/types';
-import { getDisplayNameFromK8sResource, translateDisplayNameForK8s } from '~/concepts/k8s/utils';
+  PersistentVolumeClaimKind,
+} from '#~/k8sTypes';
+import { ContainerResources } from '#~/types';
+import { getDisplayNameFromK8sResource, translateDisplayNameForK8s } from '#~/concepts/k8s/utils';
 import {
   CreatingInferenceServiceObject,
   CreatingServingRuntimeObject,
   ServingRuntimeEditInfo,
   ModelServingSize,
   ServingRuntimeToken,
-} from '~/pages/modelServing/screens/types';
-import { ModelServingPodSpecOptionsState } from '~/concepts/hardwareProfiles/useModelServingPodSpecOptionsState';
+  ModelServingState,
+} from '#~/pages/modelServing/screens/types';
+import { ModelServingPodSpecOptionsState } from '#~/concepts/hardwareProfiles/useModelServingPodSpecOptionsState';
+import { ServingRuntimeVersionStatusLabel } from './screens/const';
 
 type TokenNames = {
   serviceAccountName: string;
@@ -53,8 +56,7 @@ type TokenNames = {
 export const getModelServingRuntimeName = (namespace: string): string =>
   `model-server-${namespace}`;
 
-export const getModelServiceAccountName = (name: string): string =>
-  `${translateDisplayNameForK8s(name)}-sa`;
+export const getModelServiceAccountName = (name: string): string => `${name}-sa`;
 
 export const getModelRole = (name: string): string => `${name}-view-role`;
 export const getModelRoleBinding = (name: string): string => `${name}-view`;
@@ -82,15 +84,8 @@ export const setUpTokenAuth = async (
   existingSecrets?: SecretKind[],
   opts?: K8sAPIOptions,
 ): Promise<void> => {
-  let servingRuntimeName = deployedModelName;
-
-  if (!servingRuntimeName) {
-    // If we do not have a servingRuntimeName, derive it from the model
-    servingRuntimeName = fillData.name;
-  }
-
   const { serviceAccountName, roleName, roleBindingName } = getTokenNames(
-    servingRuntimeName,
+    deployedModelName,
     namespace,
   );
 
@@ -186,35 +181,27 @@ export const createSecrets = async (
   existingSecrets?: SecretKind[],
   opts?: K8sAPIOptions,
 ): Promise<void> => {
-  const serviceAccountName =
-    existingSecrets?.[0]?.metadata.annotations?.['kubernetes.io/service-account.name'] ||
-    getModelServiceAccountName(fillData.name);
-
+  const { serviceAccountName } = getTokenNames(deployedModelName, namespace);
   const deletedSecrets =
     existingSecrets
       ?.map((secret) => secret.metadata.name)
       .filter((token) => !fillData.tokens.some((tokenEdit) => tokenEdit.editName === token)) || [];
 
   return Promise.all<K8sStatus | SecretKind>([
-    ...fillData.tokens.map((token) => {
-      const secretToken = assembleSecretSA(
-        token.name,
-        serviceAccountName,
-        namespace,
-        token.editName,
-      );
-
-      // Preserve existing annotations
-      const existingSecret = existingSecrets?.find((s) => s.metadata.name === token.editName);
-      if (existingSecret) {
-        secretToken.metadata.annotations = { ...existingSecret.metadata.annotations };
-      }
-
-      if (token.editName) {
-        return replaceSecret(secretToken, opts);
-      }
-      return createSecret(secretToken, opts);
-    }),
+    ...fillData.tokens
+      .filter((token) => translateDisplayNameForK8s(token.name) !== token.editName)
+      .map((token) => {
+        const secretToken = assembleSecretSA(
+          token.name,
+          serviceAccountName,
+          namespace,
+          token.editName,
+        );
+        if (token.editName) {
+          return replaceSecret(secretToken, opts);
+        }
+        return createSecret(secretToken, opts);
+      }),
     ...deletedSecrets.map((secret) => deleteSecret(namespace, secret, opts)),
   ])
     .then(() => Promise.resolve())
@@ -223,9 +210,7 @@ export const createSecrets = async (
 
 export const getTokenNames = (servingRuntimeName: string, namespace: string): TokenNames => {
   const name =
-    servingRuntimeName !== ''
-      ? translateDisplayNameForK8s(servingRuntimeName)
-      : getModelServingRuntimeName(namespace);
+    servingRuntimeName !== '' ? servingRuntimeName : getModelServingRuntimeName(namespace);
 
   const serviceAccountName = getModelServiceAccountName(name);
   const roleName = getModelRole(name);
@@ -382,3 +367,40 @@ export const isModelServerEditInfoChanged = (
 export const isModelMesh = (inferenceService: InferenceServiceKind): boolean =>
   inferenceService.metadata.annotations?.['serving.kserve.io/deploymentMode'] ===
   DeploymentMode.ModelMesh;
+
+export const isModelServingStopped = (inferenceService?: InferenceServiceKind): boolean =>
+  inferenceService?.metadata.annotations?.['serving.kserve.io/stop'] === 'true';
+
+export const isOciModelUri = (modelUri?: string): boolean => !!modelUri?.includes('oci://');
+
+export const getInferenceServiceStoppedStatus = (
+  inferenceService: InferenceServiceKind,
+): ModelServingState => {
+  const status = isModelServingStopped(inferenceService);
+  return {
+    inferenceService,
+    isStopped: status,
+    isRunning: !status,
+  };
+};
+
+export const getServingRuntimeVersionStatus = (
+  servingRuntimeVersion: string | undefined,
+  templateVersion: string | undefined,
+): string | undefined => {
+  if (!servingRuntimeVersion || !templateVersion) {
+    return undefined;
+  }
+  return servingRuntimeVersion === templateVersion
+    ? ServingRuntimeVersionStatusLabel.LATEST
+    : ServingRuntimeVersionStatusLabel.OUTDATED;
+};
+
+export const getModelServingPVCAnnotations = (
+  pvc: PersistentVolumeClaimKind,
+): { modelName: string | null; modelPath: string | null } => {
+  const modelName = pvc.metadata.annotations?.['dashboard.opendatahub.io/model-name'] || null;
+  const modelPath = pvc.metadata.annotations?.['dashboard.opendatahub.io/model-path'] || null;
+
+  return { modelName, modelPath };
+};

@@ -1,24 +1,25 @@
-import { mockDashboardConfig } from '~/__mocks__/mockDashboardConfig';
-import { mockDscStatus } from '~/__mocks__/mockDscStatus';
-import { mockComponents } from '~/__mocks__/mockComponents';
-import { globalDistributedWorkloads } from '~/__tests__/cypress/cypress/pages/distributedWorkloads';
-import { mockK8sResourceList } from '~/__mocks__/mockK8sResourceList';
-import { mockProjectK8sResource } from '~/__mocks__/mockProjectK8sResource';
-import { mockDWUsageByOwnerPrometheusResponse } from '~/__mocks__/mockDWUsageByOwnerPrometheusResponse';
-import { mockWorkloadK8sResource } from '~/__mocks__/mockWorkloadK8sResource';
-import type { ClusterQueueKind, LocalQueueKind, WorkloadKind, WorkloadPodSet } from '~/k8sTypes';
-import { WorkloadOwnerType } from '~/k8sTypes';
-import type { PodContainer } from '~/types';
-import { WorkloadStatusType } from '~/concepts/distributedWorkloads/utils';
-import { mockClusterQueueK8sResource } from '~/__mocks__/mockClusterQueueK8sResource';
-import { mockLocalQueueK8sResource } from '~/__mocks__/mockLocalQueueK8sResource';
+import { mockDashboardConfig } from '#~/__mocks__/mockDashboardConfig';
+import { mockDscStatus } from '#~/__mocks__/mockDscStatus';
+import { mockComponents } from '#~/__mocks__/mockComponents';
+import { globalDistributedWorkloads } from '#~/__tests__/cypress/cypress/pages/distributedWorkloads';
+import { mockK8sResourceList } from '#~/__mocks__/mockK8sResourceList';
+import { mockProjectK8sResource } from '#~/__mocks__/mockProjectK8sResource';
+import { mockDWUsageByOwnerPrometheusResponse } from '#~/__mocks__/mockDWUsageByOwnerPrometheusResponse';
+import { mockWorkloadK8sResource } from '#~/__mocks__/mockWorkloadK8sResource';
+import type { ClusterQueueKind, LocalQueueKind, WorkloadKind, WorkloadPodSet } from '#~/k8sTypes';
+import { WorkloadOwnerType } from '#~/k8sTypes';
+import type { PodContainer } from '#~/types';
+import { WorkloadStatusType } from '#~/concepts/distributedWorkloads/utils';
+import { mockClusterQueueK8sResource } from '#~/__mocks__/mockClusterQueueK8sResource';
+import { mockLocalQueueK8sResource } from '#~/__mocks__/mockLocalQueueK8sResource';
 import {
   ClusterQueueModel,
   LocalQueueModel,
   ProjectModel,
   WorkloadModel,
-} from '~/__tests__/cypress/cypress/utils/models';
-import { RefreshIntervalTitle } from '~/concepts/metrics/types';
+} from '#~/__tests__/cypress/cypress/utils/models';
+import { RefreshIntervalTitle } from '#~/concepts/metrics/types';
+import { DataScienceStackComponent } from '#~/concepts/areas/types';
 
 const mockContainer: PodContainer = {
   env: [],
@@ -102,7 +103,11 @@ const initIntercepts = ({
   cy.interceptOdh(
     'GET /api/dsc/status',
     mockDscStatus({
-      installedComponents: { kueue: isKueueInstalled },
+      components: {
+        [DataScienceStackComponent.KUEUE]: {
+          managementState: isKueueInstalled ? 'Managed' : 'Removed',
+        },
+      },
     }),
   );
   cy.interceptOdh(
@@ -208,7 +213,7 @@ describe('Distributed Workload Metrics root page', () => {
     initIntercepts({});
     globalDistributedWorkloads.visit();
 
-    cy.url().should('include', '/workloadStatus/test-project');
+    cy.url().should('include', '/workload-status/test-project');
     globalDistributedWorkloads.findStatusOverviewCard().should('exist');
   });
 
@@ -217,30 +222,30 @@ describe('Distributed Workload Metrics root page', () => {
     globalDistributedWorkloads.visit();
 
     cy.findByLabelText('Project metrics tab').click();
-    cy.url().should('include', '/projectMetrics/test-project');
-    cy.findByText('Top 5 resource-consuming distributed workloads').should('exist');
+    cy.url().should('include', '/project-metrics/test-project');
+    cy.findByText('Top 5 resource-consuming workload metrics').should('exist');
 
     cy.findByLabelText('Distributed workload status tab').click();
-    cy.url().should('include', '/workloadStatus/test-project');
+    cy.url().should('include', '/workload-status/test-project');
     globalDistributedWorkloads.findStatusOverviewCard().should('exist');
   });
 
   it('Changing the project and navigating between tabs or to the root of the page retains the new project', () => {
     initIntercepts({});
     globalDistributedWorkloads.visit();
-    cy.url().should('include', '/workloadStatus/test-project');
+    cy.url().should('include', '/workload-status/test-project');
 
     globalDistributedWorkloads.projectDropdown.openAndSelectItem('Test Project 2', true);
-    cy.url().should('include', '/workloadStatus/test-project-2');
+    cy.url().should('include', '/workload-status/test-project-2');
 
     cy.findByLabelText('Project metrics tab').click();
-    cy.url().should('include', '/projectMetrics/test-project-2');
+    cy.url().should('include', '/project-metrics/test-project-2');
 
     cy.findByLabelText('Distributed workload status tab').click();
-    cy.url().should('include', '/workloadStatus/test-project-2');
+    cy.url().should('include', '/workload-status/test-project-2');
 
     globalDistributedWorkloads.navigate();
-    cy.url().should('include', '/workloadStatus/test-project-2');
+    cy.url().should('include', '/workload-status/test-project-2');
   });
 
   it('Changing the refresh interval and reloading the page should retain the selection', () => {
@@ -260,7 +265,7 @@ describe('Distributed Workload Metrics root page', () => {
     initIntercepts({ hasProjects: false });
     globalDistributedWorkloads.visit();
 
-    cy.findByText('No data science projects').should('exist');
+    cy.findByText('No projects').should('exist');
   });
 
   it('Should render with no quota state when there is no clusterqueue', () => {
@@ -296,10 +301,10 @@ describe('Project Metrics tab', () => {
     cy.findByText('Requested resources').should('exist');
 
     cy.findByTestId('dw-top-consuming-workloads').within(() => {
-      cy.findByText('No distributed workloads').should('exist');
+      cy.findByText('No workload metrics').should('exist');
     });
     cy.findByTestId('dw-workload-resource-metrics').within(() => {
-      cy.findByText('No distributed workloads').should('exist');
+      cy.findByText('No workload metrics').should('exist');
     });
     cy.findByTestId('dw-requested-resources').within(() => {
       // Requested resources shows chart even if empty workload
@@ -423,7 +428,14 @@ describe('Workload Status tab', () => {
 
     cy.findByLabelText('Distributed workload status tab').click();
     cy.findByTestId('dw-workloads-table-card').within(() => {
-      cy.findByText('No distributed workloads').should('exist');
+      cy.findByText('No workload metrics').should('exist');
     });
+  });
+
+  it('redirect from v2 to v3 route', () => {
+    initIntercepts({});
+    cy.visitWithLogin('/distributedWorkloads');
+    globalDistributedWorkloads.shouldHavePageTitle();
+    cy.url().should('include', '/observe-monitor/workload-metrics/workload-status/test-project');
   });
 });

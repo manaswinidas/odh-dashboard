@@ -1,5 +1,5 @@
-import { TableRow } from '~/__tests__/cypress/cypress/pages/components/table';
-import { Modal } from '~/__tests__/cypress/cypress/pages/components/Modal';
+import { TableRow } from '#~/__tests__/cypress/cypress/pages/components/table';
+import { Modal } from '#~/__tests__/cypress/cypress/pages/components/Modal';
 
 class ArchiveModelTableRow extends TableRow {
   findName() {
@@ -56,31 +56,33 @@ class ModelArchive {
 
   visit() {
     const preferredModelRegistry = 'modelregistry-sample';
-    cy.visit(`/modelRegistry/${preferredModelRegistry}/registeredModels/archive`);
+    cy.visit(`/ai-hub/registry/${preferredModelRegistry}/registered-models/archive`);
     this.wait();
   }
 
   visitArchiveModelDetail() {
     const rmId = '2';
     const preferredModelRegistry = 'modelregistry-sample';
-    cy.visit(`/modelRegistry/${preferredModelRegistry}/registeredModels/archive/${rmId}`);
+    cy.visit(`/ai-hub/registry/${preferredModelRegistry}/registered-models/archive/${rmId}`);
   }
 
   visitArchiveModelVersionList() {
     const rmId = '2';
     const preferredModelRegistry = 'modelregistry-sample';
-    cy.visit(`/modelRegistry/${preferredModelRegistry}/registeredModels/archive/${rmId}/versions`);
+    cy.visit(
+      `/ai-hub/registry/${preferredModelRegistry}/registered-models/archive/${rmId}/versions`,
+    );
   }
 
   visitModelList() {
-    cy.visit('/modelRegistry/modelregistry-sample');
+    cy.visit('/ai-hub/registry/modelregistry-sample');
     this.wait();
   }
 
   visitModelDetails() {
     const rmId = '2';
     const preferredModelRegistry = 'modelregistry-sample';
-    cy.visit(`/modelRegistry/${preferredModelRegistry}/registeredModels/${rmId}`);
+    cy.visit(`/ai-hub/registry/${preferredModelRegistry}/registered-models/${rmId}`);
     this.wait();
   }
 
@@ -98,6 +100,14 @@ class ModelArchive {
 
   findRegisteredModelsArchiveTableHeaderButton(name: string) {
     return this.findArchiveModelTable().find('thead').findByRole('button', { name });
+  }
+
+  findTableSearch() {
+    return cy.findByTestId('filter-toolbar-text-field');
+  }
+
+  findFilterDropdownItem(name: string) {
+    return cy.findByTestId(`filter-toolbar-dropdown`).findDropdownItem(name);
   }
 
   findArchiveModelTable() {

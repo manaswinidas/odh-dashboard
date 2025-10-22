@@ -1,7 +1,7 @@
-import { appChrome } from '~/__tests__/cypress/cypress/pages/appChrome';
-import { Modal } from '~/__tests__/cypress/cypress/pages/components/Modal';
-import { TableRow } from '~/__tests__/cypress/cypress/pages/components/table';
-import { K8sNameDescriptionField } from '~/__tests__/cypress/cypress/pages/components/subComponents/K8sNameDescriptionField';
+import { appChrome } from '#~/__tests__/cypress/cypress/pages/appChrome';
+import { Modal } from '#~/__tests__/cypress/cypress/pages/components/Modal';
+import { TableRow } from '#~/__tests__/cypress/cypress/pages/components/table';
+import { K8sNameDescriptionField } from '#~/__tests__/cypress/cypress/pages/components/subComponents/K8sNameDescriptionField';
 import { DeleteModal } from './components/DeleteModal';
 import { Contextual } from './components/Contextual';
 
@@ -26,7 +26,7 @@ class NotebookImageSettingsTableToolbar extends Contextual<HTMLElement> {
 
 class NotebookImageSettings {
   visit(wait = true) {
-    cy.visitWithLogin('/workbenchImages');
+    cy.visitWithLogin('/settings/environment-setup/workbench-images');
     if (wait) {
       this.wait();
     }
@@ -43,7 +43,11 @@ class NotebookImageSettings {
   }
 
   findNavItem() {
-    return appChrome.findNavItem('Workbench images', 'Settings');
+    return appChrome.findNavItem({
+      name: 'Workbench images',
+      rootSection: 'Settings',
+      subSection: 'Environment setup',
+    });
   }
 
   findErrorIcon() {
@@ -128,7 +132,7 @@ class ImportUpdateNotebookImageModal extends Modal {
   findHardwareProfileSelectOptionValues() {
     return cy
       .findAllByRole('option')
-      .then((options) => [...options].map((option) => option.textContent?.trim()));
+      .then((options) => [...options].map((option) => option.textContent.trim()));
   }
 
   findHardwareProfileSelectOption(option: string) {

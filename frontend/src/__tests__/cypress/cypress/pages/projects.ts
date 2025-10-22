@@ -1,10 +1,10 @@
-import { Modal } from '~/__tests__/cypress/cypress/pages/components/Modal';
-import { appChrome } from '~/__tests__/cypress/cypress/pages/appChrome';
-import { DeleteModal } from '~/__tests__/cypress/cypress/pages/components/DeleteModal';
-import { Contextual } from '~/__tests__/cypress/cypress/pages/components/Contextual';
-import { K8sNameDescriptionField } from '~/__tests__/cypress/cypress/pages/components/subComponents/K8sNameDescriptionField';
-import { TrustyAICRState } from '~/__tests__/cypress/cypress/pages/components/TrustyAICRState';
-import { TableRow } from './components/table';
+import { Modal } from '#~/__tests__/cypress/cypress/pages/components/Modal';
+import { appChrome } from '#~/__tests__/cypress/cypress/pages/appChrome';
+import { DeleteModal } from '#~/__tests__/cypress/cypress/pages/components/DeleteModal';
+import { Contextual } from '#~/__tests__/cypress/cypress/pages/components/Contextual';
+import { K8sNameDescriptionField } from '#~/__tests__/cypress/cypress/pages/components/subComponents/K8sNameDescriptionField';
+import { TrustyAICRState } from '#~/__tests__/cypress/cypress/pages/components/TrustyAICRState';
+import { TableRow } from '#~/__tests__/cypress/cypress/pages/components/table';
 
 class ProjectListToolbar extends Contextual<HTMLElement> {
   findToggleButton(id: string) {
@@ -43,16 +43,16 @@ class ProjectNotebookRow extends TableRow {
     return this.find().findByTestId('notebook-route-link');
   }
 
+  findDisabledNotebookLink() {
+    return this.find().findByTestId('notebook-route-link');
+  }
+
   findNotebookStatusText() {
     return this.find().findByTestId('notebook-status-text');
   }
 
-  findNotebookStart() {
-    return this.find().findByTestId('notebook-start-action');
-  }
-
   findNotebookStop() {
-    return this.find().findByTestId('notebook-stop-action');
+    return this.find().findByTestId('state-action-toggle');
   }
 }
 
@@ -70,7 +70,8 @@ class ProjectRow extends TableRow {
   }
 
   findNotebookTable() {
-    return this.find().parents('tbody').findByTestId('project-notebooks-table');
+    // Navigate from the project row to the expanded row's notebook table
+    return this.find().parents('tbody').find('[data-testid="project-notebooks-table"]');
   }
 
   getNotebookRows() {
@@ -78,7 +79,10 @@ class ProjectRow extends TableRow {
   }
 
   getNotebookRow(notebookName: string) {
-    return new ProjectNotebookRow(() => this.findNotebookLink(notebookName).parents('tr'));
+    // Find the notebook row by looking for the notebook name in the Name column (data-label="Name")
+    return new ProjectNotebookRow(() =>
+      this.findNotebookTable().find('[data-label="Name"]').contains(notebookName).parents('tr'),
+    );
   }
 
   findNotebookLink(notebookName: string) {
@@ -93,7 +97,7 @@ class ProjectListPage {
   }
 
   navigate() {
-    appChrome.findNavItem('Data science projects').click();
+    appChrome.findNavItem({ name: 'Projects' }).click();
     this.wait();
   }
 
@@ -113,12 +117,12 @@ class ProjectListPage {
   }
 
   shouldBeEmpty() {
-    cy.findByTestId('no-data-science-project').should('exist');
+    cy.findByTestId('no-project').should('exist');
     return this;
   }
 
   findCreateProjectButton() {
-    return cy.findByTestId('create-data-science-project');
+    return cy.findByTestId('create-project');
   }
 
   findLaunchStandaloneWorkbenchButton() {
@@ -154,7 +158,7 @@ class ProjectListPage {
   }
 
   /**
-   * Filter Project by name using the Project filter from the Data Science Projects view
+   * Filter Project by name using the Project filter from the Projects view
    * @param projectName Project Name
    */
   filterProjectByName = (projectName: string) => {
@@ -185,9 +189,13 @@ class CreateEditProjectModal extends Modal {
 }
 
 class ProjectDetails {
-  visit(project: string) {
+  visit(project: string, opts: { wait?: boolean } = { wait: true }) {
     cy.visitWithLogin(`/projects/${project}`);
-    this.wait();
+    if (opts.wait) {
+      this.wait();
+    } else {
+      cy.testA11y();
+    }
   }
 
   visitSection(project: string, section: string, extraUrlParams = '') {
@@ -205,7 +213,7 @@ class ProjectDetails {
   }
 
   findModelServingPlatform(name: string) {
-    return this.findComponent('model-server').findByTestId(`${name}-serving-platform-card`);
+    return this.findComponent('model-server').findByTestId(`${name}-platform-card`);
   }
 
   showProjectResourceDetails() {
@@ -241,7 +249,7 @@ class ProjectDetails {
   }
 
   findSelectPlatformButton(platform: string) {
-    return cy.findByTestId(`${platform}-serving-select-button`);
+    return cy.findByTestId(`${platform}-select-button`);
   }
 
   findResetPlatformButton() {
@@ -269,7 +277,7 @@ class ProjectDetails {
   }
 
   findDeployModelTooltip() {
-    return cy.findByTestId('model-serving-action-tooltip');
+    return cy.findByTestId('deploy-model-tooltip');
   }
 
   shouldHaveNoPlatformSelectedText() {
@@ -343,6 +351,10 @@ class ProjectDetails {
     return cy.findByTestId('delete-project-action').find('button');
   }
 
+  find403Page() {
+    return cy.findByTestId('unauthorized-error');
+  }
+
   getKserveTableRow(name: string) {
     return new KserveTableRow(() =>
       this.findKserveModelsTable()
@@ -381,6 +393,10 @@ class ProjectDetailsOverviewTab extends ProjectDetails {
   findModelServingPlatform(name: string) {
     return cy.findByTestId(`${name}-platform-card`);
   }
+
+  findSelectPlatformButton(name: string) {
+    return cy.findByTestId(`${name}-select-button`);
+  }
 }
 
 class KserveTableRow extends TableRow {
@@ -389,7 +405,7 @@ class KserveTableRow extends TableRow {
   }
 
   findServiceRuntime() {
-    return this.find().find(`[data-label="Serving Runtime"]`);
+    return this.find().find(`[data-label="Serving runtime"]`);
   }
 
   findDetailsTriggerButton() {

@@ -1,15 +1,10 @@
 import React from 'react';
-import { useIsAreaAvailable, SupportedArea } from '~/concepts/areas';
-import { ContainerResources, NodeSelector, Toleration } from '~/types';
-import {
-  AcceleratorProfileKind,
-  HardwareProfileFeatureVisibility,
-  HardwareProfileKind,
-} from '~/k8sTypes';
-import useAcceleratorProfileFormState from '~/utilities/useAcceleratorProfileFormState';
-import { useHardwareProfileConfig } from '~/concepts/hardwareProfiles/useHardwareProfileConfig';
-import { PipelineVersionKF } from '~/concepts/pipelines/kfTypes';
-import { HardwareFormData } from '~/concepts/pipelines/content/modelCustomizationForm/modelCustomizationFormSchema/validationUtils';
+import { ContainerResources, NodeSelector, Toleration } from '#~/types';
+import { AcceleratorProfileKind, HardwareProfileKind } from '#~/k8sTypes';
+import useAcceleratorProfileFormState from '#~/utilities/useAcceleratorProfileFormState';
+import { useHardwareProfileConfig } from '#~/concepts/hardwareProfiles/useHardwareProfileConfig';
+import { PipelineVersionKF } from '#~/concepts/pipelines/kfTypes';
+import { HardwareFormData } from '#~/concepts/pipelines/content/modelCustomizationForm/modelCustomizationFormSchema/validationUtils';
 import { CONTAINER_RESOURCE_DEFAULT, KnownFineTuningPipelineParameters } from './const';
 import { getParamsValueFromPipelineInput } from './utils';
 
@@ -63,39 +58,19 @@ export const useIlabPodSpecOptionsState = (
   }, [ilabPipelineVersion]);
 
   const acceleratorProfile = useAcceleratorProfileFormState();
-  const hardwareProfile = useHardwareProfileConfig(undefined, undefined, undefined, undefined, [
-    HardwareProfileFeatureVisibility.PIPELINES,
-  ]);
+  const hardwareProfile = useHardwareProfileConfig();
 
-  const isHardwareProfilesAvailable = useIsAreaAvailable(SupportedArea.HARDWARE_PROFILES).status;
+  const isHardwareProfilesAvailable = true;
 
   React.useEffect(() => {
-    let podSpecOptions: IlabPodSpecOptions = {
-      resources: {},
-      tolerations: undefined,
-      nodeSelector: undefined,
+    const podSpecOptions: IlabPodSpecOptions = {
+      resources: hardwareProfile.formData.resources ?? {},
+      tolerations:
+        hardwareProfile.formData.selectedProfile?.spec.scheduling?.node?.tolerations || undefined,
+      nodeSelector:
+        hardwareProfile.formData.selectedProfile?.spec.scheduling?.node?.nodeSelector || undefined,
     };
 
-    if (isHardwareProfilesAvailable) {
-      podSpecOptions = {
-        resources: hardwareProfile.formData.resources ?? {},
-        tolerations: hardwareProfile.formData.selectedProfile?.spec.tolerations,
-        nodeSelector: hardwareProfile.formData.selectedProfile?.spec.nodeSelector,
-      };
-    } else if (acceleratorProfile.formData.profile?.spec.identifier) {
-      const resources: ContainerResources = {
-        requests: {
-          cpu: size.requests?.cpu,
-          memory: size.requests?.memory,
-          [acceleratorProfile.formData.profile.spec.identifier]: acceleratorProfile.formData.count,
-        },
-      };
-      podSpecOptions = {
-        resources,
-        tolerations: acceleratorProfile.formData.profile.spec.tolerations,
-        nodeSelector: {},
-      };
-    }
     const otherHardwareIdentifier =
       hardwareProfile.formData.selectedProfile?.spec.identifiers?.find(
         (i) => i.identifier !== 'cpu' && i.identifier !== 'memory',

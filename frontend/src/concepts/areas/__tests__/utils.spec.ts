@@ -1,9 +1,15 @@
-import { mockDscStatus } from '~/__mocks__/mockDscStatus';
-import { mockDashboardConfig } from '~/__mocks__/mockDashboardConfig';
-import { StackCapability, StackComponent, SupportedArea } from '~/concepts/areas/types';
-import { SupportedAreasStateMap } from '~/concepts/areas/const';
-import { mockDsciStatus } from '~/__mocks__/mockDsciStatus';
-import { isAreaAvailable } from '~/concepts/areas/utils';
+import { mockDscStatus } from '#~/__mocks__/mockDscStatus';
+import { mockDashboardConfig } from '#~/__mocks__/mockDashboardConfig';
+import {
+  StackCapability,
+  DataScienceStackComponent,
+  SupportedArea,
+  SupportedComponentFlagValue,
+} from '#~/concepts/areas/types';
+import { SupportedAreasStateMap } from '#~/concepts/areas/const';
+import { mockDsciStatus } from '#~/__mocks__/mockDsciStatus';
+import { isAreaAvailable } from '#~/concepts/areas/utils';
+import { mockIsAreaAvailableOptions } from '#~/__mocks__/mockSupportedAreasData.ts';
 
 describe('isAreaAvailable', () => {
   describe('v1 Operator (deprecated)', () => {
@@ -56,84 +62,116 @@ describe('isAreaAvailable', () => {
         const isAvailable = isAreaAvailable(
           SupportedArea.DS_PIPELINES,
           mockDashboardConfig({ disablePipelines: false }).spec,
-          mockDscStatus({ installedComponents: { [StackComponent.DS_PIPELINES]: true } }),
+          mockDscStatus({
+            components: {
+              [DataScienceStackComponent.DS_PIPELINES]: { managementState: 'Managed' },
+            },
+          }),
           mockDsciStatus({}),
         );
 
         expect(isAvailable.status).toBe(true);
         expect(isAvailable.featureFlags).toEqual({ disablePipelines: 'on' });
         expect(isAvailable.reliantAreas).toBe(null);
-        expect(isAvailable.requiredComponents).toEqual({ [StackComponent.DS_PIPELINES]: true });
+        expect(isAvailable.requiredComponents).toEqual({
+          [DataScienceStackComponent.DS_PIPELINES]: true,
+        });
       });
 
       it('should disable area (flag true, cluster false)', () => {
         const isAvailable = isAreaAvailable(
           SupportedArea.DS_PIPELINES,
           mockDashboardConfig({ disablePipelines: false }).spec,
-          mockDscStatus({ installedComponents: { [StackComponent.DS_PIPELINES]: false } }),
+          mockDscStatus({
+            components: {
+              [DataScienceStackComponent.DS_PIPELINES]: { managementState: 'Removed' },
+            },
+          }),
           mockDsciStatus({}),
         );
 
         expect(isAvailable.status).not.toBe(true);
         expect(isAvailable.featureFlags).toEqual({ disablePipelines: 'on' });
         expect(isAvailable.reliantAreas).toBe(null);
-        expect(isAvailable.requiredComponents).toEqual({ [StackComponent.DS_PIPELINES]: false });
+        expect(isAvailable.requiredComponents).toEqual({
+          [DataScienceStackComponent.DS_PIPELINES]: false,
+        });
       });
 
       it('should disable area (flag false, cluster true)', () => {
         const isAvailable = isAreaAvailable(
           SupportedArea.DS_PIPELINES,
           mockDashboardConfig({ disablePipelines: true }).spec,
-          mockDscStatus({ installedComponents: { [StackComponent.DS_PIPELINES]: true } }),
+          mockDscStatus({
+            components: {
+              [DataScienceStackComponent.DS_PIPELINES]: { managementState: 'Managed' },
+            },
+          }),
           mockDsciStatus({}),
         );
 
         expect(isAvailable.status).not.toBe(true);
         expect(isAvailable.featureFlags).toEqual({ disablePipelines: 'off' });
         expect(isAvailable.reliantAreas).toBe(null);
-        expect(isAvailable.requiredComponents).toEqual({ [StackComponent.DS_PIPELINES]: true });
+        expect(isAvailable.requiredComponents).toEqual({
+          [DataScienceStackComponent.DS_PIPELINES]: true,
+        });
       });
 
       it('should disable area (flag false, cluster false)', () => {
         const isAvailable = isAreaAvailable(
           SupportedArea.DS_PIPELINES,
           mockDashboardConfig({ disablePipelines: true }).spec,
-          mockDscStatus({ installedComponents: { [StackComponent.DS_PIPELINES]: false } }),
+          mockDscStatus({
+            components: {
+              [DataScienceStackComponent.DS_PIPELINES]: { managementState: 'Removed' },
+            },
+          }),
           mockDsciStatus({}),
         );
 
         expect(isAvailable.status).not.toBe(true);
         expect(isAvailable.featureFlags).toEqual({ disablePipelines: 'off' });
         expect(isAvailable.reliantAreas).toBe(null);
-        expect(isAvailable.requiredComponents).toEqual({ [StackComponent.DS_PIPELINES]: false });
+        expect(isAvailable.requiredComponents).toEqual({
+          [DataScienceStackComponent.DS_PIPELINES]: false,
+        });
       });
 
       it('should enable area (no flag, cluster true)', () => {
         const isAvailable = isAreaAvailable(
           SupportedArea.WORKBENCHES,
           mockDashboardConfig({}).spec,
-          mockDscStatus({ installedComponents: { [StackComponent.WORKBENCHES]: true } }),
+          mockDscStatus({
+            components: { [DataScienceStackComponent.WORKBENCHES]: { managementState: 'Managed' } },
+          }),
           mockDsciStatus({}),
         );
 
         expect(isAvailable.status).toBe(true);
         expect(isAvailable.featureFlags).toBe(null);
         expect(isAvailable.reliantAreas).toEqual({ [SupportedArea.DS_PROJECTS_VIEW]: true });
-        expect(isAvailable.requiredComponents).toEqual({ [StackComponent.WORKBENCHES]: true });
+        expect(isAvailable.requiredComponents).toEqual({
+          [DataScienceStackComponent.WORKBENCHES]: true,
+        });
       });
 
       it('should disable area (no flag, cluster false)', () => {
         const isAvailable = isAreaAvailable(
           SupportedArea.WORKBENCHES,
           mockDashboardConfig({}).spec,
-          mockDscStatus({ installedComponents: { [StackComponent.WORKBENCHES]: false } }),
+          mockDscStatus({
+            components: { [DataScienceStackComponent.WORKBENCHES]: { managementState: 'Removed' } },
+          }),
           mockDsciStatus({}),
         );
 
         expect(isAvailable.status).not.toBe(true);
         expect(isAvailable.featureFlags).toBe(null);
         expect(isAvailable.reliantAreas).toEqual({ [SupportedArea.DS_PROJECTS_VIEW]: true });
-        expect(isAvailable.requiredComponents).toEqual({ [StackComponent.WORKBENCHES]: false });
+        expect(isAvailable.requiredComponents).toEqual({
+          [DataScienceStackComponent.WORKBENCHES]: false,
+        });
       });
     });
 
@@ -189,6 +227,11 @@ describe('isAreaAvailable', () => {
       });
     });
 
+    const MOCK_KSERVE_CONFIG: SupportedComponentFlagValue = {
+      featureFlags: ['disableKServe'],
+      reliantAreas: [SupportedArea.MODEL_SERVING],
+    };
+
     describe('requiredCapabilities', () => {
       it('should enable area if both capabilities are enabled', () => {
         // Make sure this test is valid
@@ -202,8 +245,8 @@ describe('isAreaAvailable', () => {
           SupportedArea.K_SERVE_AUTH,
           mockDashboardConfig({ disableKServeAuth: false }).spec,
           mockDscStatus({
-            installedComponents: {
-              [StackComponent.K_SERVE]: true,
+            components: {
+              [DataScienceStackComponent.K_SERVE]: { managementState: 'Managed' },
             },
           }),
           mockDsciStatus({
@@ -211,6 +254,9 @@ describe('isAreaAvailable', () => {
               StackCapability.SERVICE_MESH,
               StackCapability.SERVICE_MESH_AUTHZ,
             ],
+          }),
+          mockIsAreaAvailableOptions({
+            stateMapOverrides: { [SupportedArea.K_SERVE]: MOCK_KSERVE_CONFIG },
           }),
         );
 
@@ -236,12 +282,15 @@ describe('isAreaAvailable', () => {
           SupportedArea.K_SERVE_AUTH,
           mockDashboardConfig({ disableKServeAuth: false }).spec,
           mockDscStatus({
-            installedComponents: {
-              [StackComponent.K_SERVE]: true,
+            components: {
+              [DataScienceStackComponent.K_SERVE]: { managementState: 'Managed' },
             },
           }),
           mockDsciStatus({
             requiredCapabilities: [StackCapability.SERVICE_MESH],
+          }),
+          mockIsAreaAvailableOptions({
+            stateMapOverrides: { [SupportedArea.K_SERVE]: MOCK_KSERVE_CONFIG },
           }),
         );
 
@@ -253,6 +302,28 @@ describe('isAreaAvailable', () => {
           [StackCapability.SERVICE_MESH]: true,
           [StackCapability.SERVICE_MESH_AUTHZ]: false,
         });
+      });
+    });
+
+    describe('devFlags', () => {
+      it('should enable area if dev flag is true', () => {
+        const testDevArea = 'TestDevArea';
+        const testDevFlag = 'disableTestDevArea';
+
+        const mockAreasStateMap = {
+          [testDevArea]: {
+            devFlags: [testDevFlag],
+          },
+        };
+
+        const isAvailable = isAreaAvailable(testDevArea, mockDashboardConfig({}).spec, null, null, {
+          internalStateMap: mockAreasStateMap,
+          // set to false since the flag is inverted because it starts with 'disable'
+          flagState: { [testDevFlag]: false },
+        });
+
+        expect(isAvailable.status).toBe(true);
+        expect(isAvailable.devFlags).toEqual({ [testDevFlag]: 'on' });
       });
     });
   });

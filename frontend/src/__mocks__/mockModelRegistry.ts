@@ -1,4 +1,4 @@
-import { K8sCondition, ModelRegistryKind } from '~/k8sTypes';
+import { K8sCondition, ModelRegistryKind } from '#~/k8sTypes';
 
 type MockModelRegistryType = {
   name?: string;
@@ -41,12 +41,7 @@ export const mockModelRegistry = ({
     spec: {
       grpc: {},
       rest: {},
-      istio: {
-        gateway: {
-          grpc: { tls: {} },
-          rest: { tls: {} },
-        },
-      },
+      kubeRBACProxy: {},
       mysql: {
         database: 'model-registry',
         host: 'model-registry-db',

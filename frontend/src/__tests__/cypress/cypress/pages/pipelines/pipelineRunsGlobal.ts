@@ -1,10 +1,10 @@
-import { DeleteModal } from '~/__tests__/cypress/cypress/pages/components/DeleteModal';
-import { appChrome } from '~/__tests__/cypress/cypress/pages/appChrome';
+import { DeleteModal } from '#~/__tests__/cypress/cypress/pages/components/DeleteModal';
+import { appChrome } from '#~/__tests__/cypress/cypress/pages/appChrome';
 
 class PipelineRunsGlobal {
   visit(projectName: string, runType?: 'active' | 'archived' | 'scheduled') {
     cy.visitWithLogin(
-      `/pipelineRuns/${projectName}${
+      `/develop-train/pipelines/runs/${projectName}${
         runType === 'scheduled' ? '/schedules' : `/runs${runType ? `/${runType}` : ''}`
       }`,
     );
@@ -12,13 +12,19 @@ class PipelineRunsGlobal {
   }
 
   navigate() {
-    appChrome.findNavItem('Runs', 'Data Science Pipelines').click();
+    appChrome
+      .findNavItem({ name: 'Runs', rootSection: 'Develop & train', subSection: 'Pipelines' })
+      .click();
     this.wait();
   }
 
   private wait() {
     cy.findByTestId('app-page-title').contains('Runs');
     cy.testA11y();
+  }
+
+  findProjectNavigatorLink() {
+    return cy.findByTestId('project-navigator-link');
   }
 
   isApiAvailable() {
@@ -47,6 +53,10 @@ class PipelineRunsGlobal {
 
   findScheduleRunButton() {
     return cy.findByTestId('schedule-run-button');
+  }
+
+  findAppPageTitle() {
+    return cy.findByTestId('app-page-title');
   }
 
   findRestoreRunButton() {
@@ -81,7 +91,7 @@ class SchedulesDeleteModal extends DeleteModal {
   }
 
   find() {
-    return cy.findByTestId('delete-schedule-modal').parents('div[role="dialog"]');
+    return cy.findByTestId('delete-schedule-modal');
   }
 }
 
@@ -91,7 +101,7 @@ class RunsDeleteModal extends DeleteModal {
   }
 
   find() {
-    return cy.findByTestId('delete-run-modal').parents('div[role="dialog"]');
+    return cy.findByTestId('delete-run-modal');
   }
 }
 

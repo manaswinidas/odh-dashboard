@@ -1,36 +1,37 @@
 /* eslint-disable camelcase */
-import { mockDataSciencePipelineApplicationK8sResource } from '~/__mocks__/mockDataSciencePipelinesApplicationK8sResource';
-import { mockDscStatus } from '~/__mocks__/mockDscStatus';
-import { mockK8sResourceList } from '~/__mocks__/mockK8sResourceList';
+import { mockDataSciencePipelineApplicationK8sResource } from '#~/__mocks__/mockDataSciencePipelinesApplicationK8sResource';
+import { mockDscStatus } from '#~/__mocks__/mockDscStatus';
+import { mockK8sResourceList } from '#~/__mocks__/mockK8sResourceList';
 import {
   buildMockPipelineVersion,
   buildMockPipelineVersions,
-} from '~/__mocks__/mockPipelineVersionsProxy';
-import { mockProjectK8sResource } from '~/__mocks__/mockProjectK8sResource';
-import { mockRouteK8sResource } from '~/__mocks__/mockRouteK8sResource';
-import { mockSecretK8sResource } from '~/__mocks__/mockSecretK8sResource';
-import { buildMockRecurringRunKF } from '~/__mocks__/mockRecurringRunKF';
-import { mockPodLogs } from '~/__mocks__/mockPodLogs';
+} from '#~/__mocks__/mockPipelineVersionsProxy';
+import { mockProjectK8sResource } from '#~/__mocks__/mockProjectK8sResource';
+import { mockRouteK8sResource } from '#~/__mocks__/mockRouteK8sResource';
+import { mockSecretK8sResource } from '#~/__mocks__/mockSecretK8sResource';
+import { buildMockRecurringRunKF } from '#~/__mocks__/mockRecurringRunKF';
+import { mockPodLogs } from '#~/__mocks__/mockPodLogs';
 import {
   pipelineDetails,
   pipelineRecurringRunDetails,
   pipelineRunDetails,
   pipelineVersionImportModal,
-} from '~/__tests__/cypress/cypress/pages/pipelines';
-import { buildMockRunKF } from '~/__mocks__/mockRunKF';
-import { mockPipelinePodK8sResource } from '~/__mocks__/mockPipelinePodK8sResource';
-import { buildMockExperimentKF, buildMockPipeline } from '~/__mocks__';
-import { verifyRelativeURL } from '~/__tests__/cypress/cypress/utils/url';
+} from '#~/__tests__/cypress/cypress/pages/pipelines';
+import { buildMockRunKF } from '#~/__mocks__/mockRunKF';
+import { mockPipelinePodK8sResource } from '#~/__mocks__/mockPipelinePodK8sResource';
+import { buildMockExperimentKF, buildMockPipeline } from '#~/__mocks__';
+import { verifyRelativeURL } from '#~/__tests__/cypress/cypress/utils/url';
 import {
   DataSciencePipelineApplicationModel,
   PodModel,
   ProjectModel,
   RouteModel,
   SecretModel,
-} from '~/__tests__/cypress/cypress/utils/models';
-import { deleteModal } from '~/__tests__/cypress/cypress/pages/components/DeleteModal';
-import { RecurringRunStatus } from '~/concepts/pipelines/kfTypes';
-import { initMlmdIntercepts } from '~/__tests__/cypress/cypress/tests/mocked/pipelines/mlmdUtils';
+} from '#~/__tests__/cypress/cypress/utils/models';
+import { deleteModal } from '#~/__tests__/cypress/cypress/pages/components/DeleteModal';
+import { RecurringRunStatus } from '#~/concepts/pipelines/kfTypes';
+import { initMlmdIntercepts } from '#~/__tests__/cypress/cypress/tests/mocked/pipelines/mlmdUtils';
+import { DataScienceStackComponent } from '#~/concepts/areas/types';
 
 const projectId = 'test-project';
 const mockPipeline = buildMockPipeline({
@@ -76,7 +77,9 @@ const initIntercepts = () => {
   cy.interceptOdh(
     'GET /api/dsc/status',
     mockDscStatus({
-      installedComponents: { 'data-science-pipelines-operator': true },
+      components: {
+        [DataScienceStackComponent.DS_PIPELINES]: { managementState: 'Managed' },
+      },
     }),
   );
   cy.interceptK8sList(
@@ -202,27 +205,31 @@ describe('Pipeline topology', () => {
       pipelineDetails.visit(projectId, mockVersion.pipeline_id, mockVersion.pipeline_version_id);
     });
     describe('Navigation', () => {
+      it('renders the project navigator link', () => {
+        pipelineDetails.findProjectNavigatorLink().should('exist');
+      });
+
       it('Test pipeline details create run navigation', () => {
         pipelineDetails.selectActionDropdownItem('Create run');
-        verifyRelativeURL(`/pipelineRuns/${projectId}/runs/create`);
+        verifyRelativeURL(`/develop-train/pipelines/runs/${projectId}/runs/create`);
       });
 
       it('navigates to "Schedule run" page on "Schedule run" click', () => {
         pipelineDetails.selectActionDropdownItem('Create schedule');
-        verifyRelativeURL(`/pipelineRuns/${projectId}/schedules/create`);
+        verifyRelativeURL(`/develop-train/pipelines/runs/${projectId}/schedules/create`);
       });
 
       it('Test pipeline details view runs navigation', () => {
         pipelineDetails.selectActionDropdownItem('View runs');
         verifyRelativeURL(
-          `/pipelineRuns/${projectId}/runs/active?pipeline_version=${mockVersion.pipeline_version_id}`,
+          `/develop-train/pipelines/runs/${projectId}/runs/active?pipeline_version=${mockVersion.pipeline_version_id}`,
         );
       });
 
       it('navigates to "Schedules" on "View schedules" click', () => {
         pipelineDetails.selectActionDropdownItem('View schedules');
         verifyRelativeURL(
-          `/pipelineRuns/${projectId}/schedules?pipeline_version=${mockVersion.pipeline_version_id}`,
+          `/develop-train/pipelines/runs/${projectId}/schedules?pipeline_version=${mockVersion.pipeline_version_id}`,
         );
       });
     });
@@ -278,7 +285,7 @@ describe('Pipeline topology', () => {
       pipelineDetails.selectPipelineVersionByName(mockVersion2.display_name);
       pipelineDetails.findPageTitle().should('have.text', 'test-version-2');
       verifyRelativeURL(
-        `/pipelines/${projectId}/${mockPipeline.pipeline_id}/${mockVersion2.pipeline_version_id}/view`,
+        `/develop-train/pipelines/definitions/${projectId}/${mockPipeline.pipeline_id}/${mockVersion2.pipeline_version_id}/view`,
       );
     });
 
@@ -309,7 +316,7 @@ describe('Pipeline topology', () => {
 
       pipelineVersionImportModal.submit();
       verifyRelativeURL(
-        `/pipelines/${projectId}/${mockPipeline.pipeline_id}/${mockVersion2.pipeline_version_id}/view`,
+        `/develop-train/pipelines/definitions/${projectId}/${mockPipeline.pipeline_id}/${mockVersion2.pipeline_version_id}/view`,
       );
       cy.wait('@uploadNewPipelineVersion').then((interception) => {
         expect(interception.request.body).to.containSubset({
@@ -334,17 +341,24 @@ describe('Pipeline topology', () => {
         initIntercepts();
       });
 
+      it('renders the project navigator link', () => {
+        pipelineRunDetails.visit(projectId, mockRun.run_id);
+        pipelineRunDetails.findProjectNavigatorLink().should('exist');
+      });
+
       it('Test pipeline run duplicate navigation', () => {
         pipelineRunDetails.visit(projectId, mockRun.run_id);
         pipelineRunDetails.selectActionDropdownItem('Duplicate');
-        verifyRelativeURL(`/pipelineRuns/${projectId}/runs/duplicate/${mockRun.run_id}`);
+        verifyRelativeURL(
+          `/develop-train/pipelines/runs/${projectId}/runs/duplicate/${mockRun.run_id}`,
+        );
       });
 
       it('Test pipeline recurring run duplicate navigation', () => {
         pipelineRecurringRunDetails.visit(projectId, mockRecurringRun.recurring_run_id);
         pipelineRecurringRunDetails.selectActionDropdownItem('Duplicate');
         verifyRelativeURL(
-          `/pipelineRuns/${projectId}/schedules/duplicate/${mockRecurringRun.recurring_run_id}`,
+          `/develop-train/pipelines/runs/${projectId}/schedules/duplicate/${mockRecurringRun.recurring_run_id}`,
         );
       });
 
@@ -388,7 +402,9 @@ describe('Pipeline topology', () => {
           .find('a')
           .click();
         verifyRelativeURL(
-          `/pipelines/${projectId}/${mockRecurringRun.pipeline_version_reference.pipeline_id}/${mockRecurringRun.pipeline_version_reference.pipeline_version_id}/view`,
+          `/develop-train/pipelines/definitions/${projectId}/${
+            mockRecurringRun.pipeline_version_reference.pipeline_id
+          }/${mockRecurringRun.pipeline_version_reference.pipeline_version_id ?? ''}/view`,
         );
       });
     });
@@ -510,6 +526,11 @@ describe('Pipeline topology', () => {
 
     beforeEach(() => {
       initIntercepts();
+    });
+
+    it('renders the project navigator link', () => {
+      pipelineRecurringRunDetails.visit(projectId, mockRecurringRun.recurring_run_id);
+      pipelineRecurringRunDetails.findProjectNavigatorLink().should('exist');
     });
 
     it('disables recurring run from action dropdown', () => {

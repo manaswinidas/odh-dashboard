@@ -6,7 +6,7 @@ import type {
   StaticResponse,
   WaitOptions,
 } from 'cypress/types/net-stubbing';
-import type { InterceptSnapshot, InterceptTrigger } from '~/__tests__/cypress/cypress/types';
+import type { InterceptSnapshot, InterceptTrigger } from '#~/__tests__/cypress/cypress/types';
 
 const INTERCEPT_SNAPSHOT_DIR = '__intercept__';
 
@@ -103,15 +103,15 @@ const controlledIntercept = (
   const trigger: InterceptTrigger = () => triggerResolve();
 
   return cy
-    .intercept(requestMatcher, (request) => {
-      return controller.then(() => {
+    .intercept(requestMatcher, (request) =>
+      controller.then(() => {
         if (response) {
           request.reply(response);
         } else {
           request.continue();
         }
-      });
-    })
+      }),
+    )
     .as(alias)
     .wrap(trigger);
 };

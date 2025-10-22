@@ -14,6 +14,8 @@ export const DEV_OAUTH_PREFIX = process.env.DEV_OAUTH_PREFIX || 'oauth-openshift
 export const APP_ENV = process.env.APP_ENV;
 
 export const USER_ACCESS_TOKEN = 'x-forwarded-access-token';
+export const KUBE_RBAC_USER_HEADER = 'x-auth-request-user';
+export const KUBE_RBAC_GROUPS_HEADER = 'x-auth-request-groups';
 
 export const yamlRegExp = /\.ya?ml$/;
 export const mdRegExp = /\.md$/;
@@ -29,6 +31,11 @@ export const IMAGE_ANNOTATIONS = {
   RECOMMENDED: 'opendatahub.io/workbench-image-recommended',
   OUTDATED: 'opendatahub.io/image-tag-outdated',
 };
+
+/**
+ * Our defaults for our app. Foundation for anything defined in the OdhDashboardConfig yaml on cluster.
+ * @see odhdashboardconfig.yaml
+ */
 export const blankDashboardCR: DashboardConfig = {
   apiVersion: 'opendatahub.io/v1alpha',
   kind: 'OdhDashboardConfig',
@@ -40,6 +47,7 @@ export const blankDashboardCR: DashboardConfig = {
   },
   spec: {
     dashboardConfig: {
+      // Defaults, do not need to be redeclared in any OdhDashboardConfig.yaml files
       enablement: true,
       disableInfo: false,
       disableSupport: false,
@@ -63,10 +71,8 @@ export const blankDashboardCR: DashboardConfig = {
       disableKServeMetrics: false,
       disableKServeRaw: false,
       disableModelMesh: false,
-      disableAcceleratorProfiles: false,
-      disableHardwareProfiles: true,
       disableDistributedWorkloads: false,
-      disableModelCatalog: true,
+      disableModelCatalog: false,
       disableModelRegistry: false,
       disableModelRegistrySecureDB: false,
       disableServingRuntimeParams: false,
@@ -74,14 +80,13 @@ export const blankDashboardCR: DashboardConfig = {
       disableStorageClasses: false,
       disableNIMModelServing: false,
       disableAdminConnectionTypes: false,
+      disableFeatureStore: false,
       disableFineTuning: true,
+      disableKueue: true,
+      disableLMEval: true,
     },
     notebookController: {
       enabled: true,
-    },
-    groupsConfig: {
-      adminGroups: 'odh-admins',
-      allowedGroups: 'system:authenticated',
     },
     templateOrder: [],
     // templateDisablement: [], Don't create this field, will be used in migration

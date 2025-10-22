@@ -1,11 +1,14 @@
 import React from 'react';
 
-import { StorageClassConfig, StorageClassKind } from '~/k8sTypes';
-import { FetchStateRefreshPromise } from '~/utilities/useFetchState';
-import { ResponseStatus } from '~/types';
-import { updateStorageClassConfig } from '~/services/StorageClassService';
-import { allSettledPromises } from '~/utilities/allSettledPromises';
-import { getStorageClassConfig, isOpenshiftDefaultStorageClass } from './utils';
+import { MetadataAnnotation, StorageClassConfig, StorageClassKind } from '#~/k8sTypes';
+import { FetchStateRefreshPromise } from '#~/utilities/useFetchState';
+import { allSettledPromises } from '#~/utilities/allSettledPromises';
+import { updateStorageClassConfig } from '#~/api';
+import {
+  getStorageClassConfig,
+  isOpenshiftDefaultStorageClass,
+  getStorageClassDefaultAccessModeSettings,
+} from './utils';
 
 export interface StorageClassContextProps {
   storageClasses: StorageClassKind[];
@@ -68,10 +71,26 @@ export const StorageClassContextProvider: React.FC<StorageClassContextProviderPr
   const updateConfigs = React.useCallback(async () => {
     let hasDefaultConfig = false;
 
-    const updateRequests = Object.entries(storageClassConfigs).reduce(
-      (acc: Promise<ResponseStatus>[], [name, config], index) => {
+    const updateRequests = storageClasses.reduce(
+      (acc: Promise<StorageClassConfig>[], storageClass, index) => {
+        const { name } = storageClass.metadata;
+        let config;
+        if (storageClass.metadata.annotations?.[MetadataAnnotation.OdhStorageClassConfig]) {
+          try {
+            config = JSON.parse(
+              storageClass.metadata.annotations[MetadataAnnotation.OdhStorageClassConfig],
+            );
+          } catch (e) {
+            return acc;
+          }
+        } else {
+          config = undefined;
+        }
+
         const isFirstConfig = index === 0;
         const isOpenshiftDefault = openshiftDefaultScName === name;
+
+        const accessModeSettings = getStorageClassDefaultAccessModeSettings();
 
         // Add a default config annotation when one doesn't exist
         if (!config) {
@@ -88,6 +107,7 @@ export const StorageClassContextProvider: React.FC<StorageClassContextProviderPr
               isDefault,
               isEnabled,
               displayName: name,
+              accessModeSettings,
             }),
           );
         }
@@ -124,6 +144,14 @@ export const StorageClassContextProvider: React.FC<StorageClassContextProviderPr
               }),
             );
           }
+
+          if (!config.accessModeSettings) {
+            acc.push(
+              updateStorageClassConfig(name, {
+                accessModeSettings,
+              }),
+            );
+          }
         }
 
         return acc;
@@ -146,7 +174,14 @@ export const StorageClassContextProvider: React.FC<StorageClassContextProviderPr
         setIsUpdatingConfigs(false);
       }
     }
-  }, [storageClassConfigs, loaded, openshiftDefaultScName, defaultStorageClassName, refresh]);
+  }, [
+    storageClasses,
+    loaded,
+    openshiftDefaultScName,
+    defaultStorageClassName,
+    storageClassConfigs,
+    refresh,
+  ]);
 
   // Initialize storage class configs
   React.useEffect(() => {

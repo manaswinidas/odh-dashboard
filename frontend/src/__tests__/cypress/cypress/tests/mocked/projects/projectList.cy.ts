@@ -1,31 +1,31 @@
-import { mockProjectK8sResource, mockProjectsK8sList } from '~/__mocks__/mockProjectK8sResource';
-import { mockK8sResourceList } from '~/__mocks__/mockK8sResourceList';
-import { createProjectModal, projectListPage } from '~/__tests__/cypress/cypress/pages/projects';
-import { deleteModal } from '~/__tests__/cypress/cypress/pages/components/DeleteModal';
-import type { ProjectKind } from '~/k8sTypes';
-import { incrementResourceVersion } from '~/__mocks__/mockUtils';
+import { mockProjectK8sResource, mockProjectsK8sList } from '#~/__mocks__/mockProjectK8sResource';
+import { mockK8sResourceList } from '#~/__mocks__/mockK8sResourceList';
+import { createProjectModal, projectListPage } from '#~/__tests__/cypress/cypress/pages/projects';
+import { deleteModal } from '#~/__tests__/cypress/cypress/pages/components/DeleteModal';
+import type { ProjectKind } from '#~/k8sTypes';
+import { incrementResourceVersion } from '#~/__mocks__/mockUtils';
 import {
   NotebookModel,
   PodModel,
   ProjectModel,
   ProjectRequestModel,
-  RouteModel,
   SelfSubjectAccessReviewModel,
-} from '~/__tests__/cypress/cypress/utils/models';
-import { mock200Status } from '~/__mocks__/mockK8sStatus';
-import { mockDscStatus, mockNotebookK8sResource, mockRouteK8sResource } from '~/__mocks__';
-import { mockPodK8sResource } from '~/__mocks__/mockPodK8sResource';
-import { mockSelfSubjectAccessReview } from '~/__mocks__/mockSelfSubjectAccessReview';
-import { asProjectAdminUser } from '~/__tests__/cypress/cypress/utils/mockUsers';
-import { notebookConfirmModal } from '~/__tests__/cypress/cypress/pages/workbench';
-import { testPagination } from '~/__tests__/cypress/cypress/utils/pagination';
+} from '#~/__tests__/cypress/cypress/utils/models';
+import { mock200Status } from '#~/__mocks__/mockK8sStatus';
+import { mockDscStatus, mockNotebookK8sResource } from '#~/__mocks__';
+import { mockPodK8sResource } from '#~/__mocks__/mockPodK8sResource';
+import { mockSelfSubjectAccessReview } from '#~/__mocks__/mockSelfSubjectAccessReview';
+import { asProjectAdminUser } from '#~/__tests__/cypress/cypress/utils/mockUsers';
+import { notebookConfirmModal } from '#~/__tests__/cypress/cypress/pages/workbench';
+import { testPagination } from '#~/__tests__/cypress/cypress/utils/pagination';
+import { DataScienceStackComponent } from '#~/concepts/areas/types';
 
 const mockProject = mockProjectK8sResource({ description: 'Mock description' });
 const initIntercepts = () => {
   cy.interceptK8sList(ProjectModel, mockK8sResourceList([mockProject]));
 };
 
-describe('Data science projects details', () => {
+describe('Projects details', () => {
   it('should not have option to create new project', () => {
     asProjectAdminUser({ isSelfProvisioner: false });
     projectListPage.visit();
@@ -236,9 +236,6 @@ describe('Data science projects details', () => {
 
   it('should show list of workbenches when the column is expanded', () => {
     cy.interceptK8sList(ProjectModel, mockK8sResourceList([mockProjectK8sResource({})]));
-    cy.interceptK8s(RouteModel, mockRouteK8sResource({ notebookName: 'test-notebook' })).as(
-      'getWorkbench',
-    );
     cy.interceptK8sList(
       { model: NotebookModel },
       mockK8sResourceList([
@@ -281,9 +278,6 @@ describe('Data science projects details', () => {
     cy.interceptK8sList(ProjectModel, mockK8sResourceList([mockProjectK8sResource({})]));
     cy.interceptK8s('PATCH', NotebookModel, mockNotebookK8sResource({})).as('stopWorkbench');
     cy.interceptK8sList(PodModel, mockK8sResourceList([mockPodK8sResource({})]));
-    cy.interceptK8s(RouteModel, mockRouteK8sResource({ notebookName: 'test-notebook' })).as(
-      'getWorkbench',
-    );
     cy.interceptK8sList(
       NotebookModel,
       mockK8sResourceList([
@@ -308,6 +302,7 @@ describe('Data science projects details', () => {
                 'opendatahub.io/notebook-image': 'true',
               },
               annotations: {
+                'openshift.io/display-name': 'Test Notebook',
                 'opendatahub.io/image-display-name': 'Test image',
               },
             },
@@ -338,6 +333,7 @@ describe('Data science projects details', () => {
             },
             annotations: {
               'kubeflow-resource-stopped': '2023-02-14T21:45:14Z',
+              'openshift.io/display-name': 'Test Notebook',
               'opendatahub.io/image-display-name': 'Test image',
             },
           },
@@ -364,12 +360,12 @@ describe('Data science projects details', () => {
       cy.interceptOdh(
         'GET /api/dsc/status',
         mockDscStatus({
-          installedComponents: {
-            workbenches: false,
-            'data-science-pipelines-operator': true,
-            kserve: true,
-            'model-mesh': true,
-            'model-registry-operator': true,
+          components: {
+            [DataScienceStackComponent.WORKBENCHES]: { managementState: 'Removed' },
+            [DataScienceStackComponent.DS_PIPELINES]: { managementState: 'Managed' },
+            [DataScienceStackComponent.K_SERVE]: { managementState: 'Managed' },
+            [DataScienceStackComponent.MODEL_MESH_SERVING]: { managementState: 'Managed' },
+            [DataScienceStackComponent.MODEL_REGISTRY]: { managementState: 'Managed' },
           },
         }),
       );

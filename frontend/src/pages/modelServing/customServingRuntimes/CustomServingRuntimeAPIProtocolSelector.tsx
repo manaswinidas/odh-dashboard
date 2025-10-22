@@ -1,35 +1,26 @@
 import * as React from 'react';
 import { FormGroup } from '@patternfly/react-core';
-import { ServingRuntimeAPIProtocol, ServingRuntimePlatform } from '~/types';
-import SimpleSelect from '~/components/SimpleSelect';
-import { asEnumMember } from '~/utilities/utils';
+import { ServingRuntimeAPIProtocol } from '#~/types';
+import SimpleSelect, { SimpleSelectOption } from '#~/components/SimpleSelect';
+import { asEnumMember } from '#~/utilities/utils';
 
 type CustomServingRuntimeAPIProtocolSelectorProps = {
   selectedAPIProtocol: ServingRuntimeAPIProtocol | undefined;
   setSelectedAPIProtocol: (apiProtocol: ServingRuntimeAPIProtocol) => void;
-  selectedPlatforms: ServingRuntimePlatform[];
 };
 
 const CustomServingRuntimeAPIProtocolSelector: React.FC<
   CustomServingRuntimeAPIProtocolSelectorProps
-> = ({ selectedAPIProtocol, setSelectedAPIProtocol, selectedPlatforms }) => {
-  const isOnlyModelMesh =
-    selectedPlatforms.includes(ServingRuntimePlatform.MULTI) &&
-    !selectedPlatforms.includes(ServingRuntimePlatform.SINGLE);
-
-  const options = [
+> = ({ selectedAPIProtocol, setSelectedAPIProtocol }) => {
+  const options: SimpleSelectOption[] = [
     {
       key: ServingRuntimeAPIProtocol.REST,
       label: ServingRuntimeAPIProtocol.REST,
     },
-    ...(isOnlyModelMesh
-      ? []
-      : [
-          {
-            key: ServingRuntimeAPIProtocol.GRPC,
-            label: ServingRuntimeAPIProtocol.GRPC,
-          },
-        ]),
+    {
+      key: ServingRuntimeAPIProtocol.GRPC,
+      label: ServingRuntimeAPIProtocol.GRPC,
+    },
   ];
 
   return (
@@ -43,7 +34,7 @@ const CustomServingRuntimeAPIProtocolSelector: React.FC<
         aria-label="Select a model serving api protocol"
         placeholder="Select a value"
         options={options}
-        value={selectedAPIProtocol || ''}
+        value={selectedAPIProtocol}
         onChange={(key) => {
           const enumValue = asEnumMember(key, ServingRuntimeAPIProtocol);
           if (enumValue !== null) {

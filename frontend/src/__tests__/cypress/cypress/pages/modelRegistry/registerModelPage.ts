@@ -1,4 +1,4 @@
-import { SearchSelector } from '~/__tests__/cypress/cypress/pages/components/subComponents/SearchSelector';
+import { SearchSelector } from '#~/__tests__/cypress/cypress/pages/components/subComponents/SearchSelector';
 
 export enum FormFieldSelector {
   MODEL_NAME = '#model-name',
@@ -21,8 +21,13 @@ class RegisterModelPage {
 
   visit() {
     const preferredModelRegistry = 'modelregistry-sample';
-    cy.visitWithLogin(`/modelRegistry/${preferredModelRegistry}/registerModel`);
+    cy.visitWithLogin(`/ai-hub/registry/${preferredModelRegistry}/register/model`);
     this.wait();
+  }
+
+  visitWithRegistry(registryName: string) {
+    cy.visitWithLogin(`/ai-hub/registry/${registryName}/register/model`);
+    this.waitWithRegistry(registryName);
   }
 
   private wait() {
@@ -30,6 +35,13 @@ class RegisterModelPage {
     cy.findByTestId('app-page-title').should('exist');
     cy.findByTestId('app-page-title').contains('Register model');
     cy.findByText(`Model registry - ${preferredModelRegistry}`).should('exist');
+    cy.testA11y();
+  }
+
+  private waitWithRegistry(registryName: string) {
+    cy.findByTestId('app-page-title').should('exist');
+    cy.findByTestId('app-page-title').contains('Register model');
+    cy.findByText(`Model registry - ${registryName}`).should('exist');
     cy.testA11y();
   }
 

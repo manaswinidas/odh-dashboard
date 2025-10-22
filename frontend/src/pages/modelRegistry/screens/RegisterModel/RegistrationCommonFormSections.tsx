@@ -15,11 +15,11 @@ import {
 } from '@patternfly/react-core';
 import { OptimizeIcon } from '@patternfly/react-icons';
 import spacing from '@patternfly/react-styles/css/utilities/Spacing/spacing';
-import { UpdateObjectAtPropAndValue } from '~/pages/projects/types';
-import FormSection from '~/components/pf-overrides/FormSection';
-import { ModelVersion } from '~/concepts/modelRegistry/types';
-import { convertObjectStorageSecretData } from '~/concepts/connectionTypes/utils';
-import { Connection } from '~/concepts/connectionTypes/types';
+import { UpdateObjectAtPropAndValue } from '#~/pages/projects/types';
+import FormSection from '#~/components/pf-overrides/FormSection';
+import { ModelVersion } from '#~/concepts/modelRegistry/types';
+import { convertObjectStorageSecretData } from '#~/concepts/connectionTypes/utils';
+import { Connection } from '#~/concepts/connectionTypes/types';
 import { ModelLocationType, RegistrationCommonFormData } from './useRegisterModelData';
 import { ConnectionModal } from './ConnectionModal';
 import { MR_CHARACTER_LIMIT } from './const';
@@ -59,11 +59,15 @@ const RegistrationCommonFormSections = <D extends RegistrationCommonFormData>({
     convertObjectStorageSecretData(connection).forEach((dataItem) => {
       setData(connectionDataMap[dataItem.key], dataItem.value);
     });
+    // Store the connection name
+    setData('storageKey', connection.metadata.name);
   };
 
   const fillURIByConnection = (connection: Connection) => {
     if (connection.data?.URI) {
       setData('modelLocationURI', window.atob(connection.data.URI));
+      // Store the connection name
+      setData('storageKey', connection.metadata.name);
     }
   };
 

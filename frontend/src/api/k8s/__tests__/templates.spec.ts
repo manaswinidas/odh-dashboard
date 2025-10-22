@@ -1,42 +1,45 @@
 import { K8sStatus, k8sDeleteResource } from '@openshift/dynamic-plugin-sdk-utils';
-import { mock200Status, mock404Error } from '~/__mocks__/mockK8sStatus';
-
-import { mockServingRuntimeTemplateK8sResource } from '~/__mocks__/mockServingRuntimeTemplateK8sResource';
-import { testHook } from '~/__tests__/unit/testUtils/hooks';
+import { testHook } from '@odh-dashboard/jest-config/hooks';
+import { mock200Status, mock404Error } from '#~/__mocks__/mockK8sStatus';
+import { mockServingRuntimeTemplateK8sResource } from '#~/__mocks__/mockServingRuntimeTemplateK8sResource';
 import {
   assembleServingRuntimeTemplate,
   deleteTemplate,
   groupVersionKind,
   useTemplates,
-} from '~/api';
-import { TemplateModel } from '~/api/models';
-import { K8sDSGResource, TemplateKind } from '~/k8sTypes';
-import useCustomServingRuntimesEnabled from '~/pages/modelServing/customServingRuntimes/useCustomServingRuntimesEnabled';
-import useModelServingEnabled from '~/pages/modelServing/useModelServingEnabled';
-import { ServingRuntimeAPIProtocol, ServingRuntimePlatform } from '~/types';
-import { genRandomChars } from '~/utilities/string';
-import useK8sWatchResourceList from '~/utilities/useK8sWatchResourceList';
+} from '#~/api';
+import { TemplateModel } from '#~/api/models';
+import { K8sDSGResource, TemplateKind } from '#~/k8sTypes';
+import useCustomServingRuntimesEnabled from '#~/pages/modelServing/customServingRuntimes/useCustomServingRuntimesEnabled';
+import useModelServingEnabled from '#~/pages/modelServing/useModelServingEnabled';
+import {
+  ServingRuntimeAPIProtocol,
+  ServingRuntimePlatform,
+  ServingRuntimeModelType,
+} from '#~/types';
+import { genRandomChars } from '#~/utilities/string';
+import useK8sWatchResourceList from '#~/utilities/useK8sWatchResourceList';
 
 jest.mock('@openshift/dynamic-plugin-sdk-utils', () => ({
   k8sListResource: jest.fn(),
   k8sDeleteResource: jest.fn(),
 }));
 
-jest.mock('~/utilities/string', () => ({
+jest.mock('#~/utilities/string', () => ({
   genRandomChars: jest.fn(),
 }));
 
-jest.mock('~/utilities/useK8sWatchResourceList', () => ({
+jest.mock('#~/utilities/useK8sWatchResourceList', () => ({
   __esModule: true,
   default: jest.fn(),
 }));
 
-jest.mock('~/pages/modelServing/useModelServingEnabled', () => ({
+jest.mock('#~/pages/modelServing/useModelServingEnabled', () => ({
   __esModule: true,
   default: jest.fn(),
 }));
 
-jest.mock('~/pages/modelServing/customServingRuntimes/useCustomServingRuntimesEnabled', () => ({
+jest.mock('#~/pages/modelServing/customServingRuntimes/useCustomServingRuntimesEnabled', () => ({
   __esModule: true,
   default: jest.fn(),
 }));
@@ -60,30 +63,31 @@ describe('assembleServingRuntimeTemplate', () => {
   it('should assemble serving runtime template with templateName', () => {
     const servingRuntimeMock = JSON.stringify(createServingRuntime('template-1'));
     const servingRuntimeTemplatesMock = mockServingRuntimeTemplateK8sResource({
-      platforms: [ServingRuntimePlatform.MULTI],
+      platforms: [ServingRuntimePlatform.SINGLE],
     });
     const result = assembleServingRuntimeTemplate(
       servingRuntimeMock,
       namespace,
-      [ServingRuntimePlatform.MULTI],
       ServingRuntimeAPIProtocol.REST,
+      [ServingRuntimeModelType.PREDICTIVE, ServingRuntimeModelType.GENERATIVE],
       'template-1',
     );
     expect(result).toStrictEqual(servingRuntimeTemplatesMock);
   });
+
   it('should assemble serving runtime template without templateName', () => {
     genRandomCharsMock.mockReturnValue('123');
     const servingRuntimeMock = JSON.stringify(createServingRuntime('template-123'));
     const servingRuntimeTemplatesMock = mockServingRuntimeTemplateK8sResource({
       name: 'template-123',
-      platforms: [ServingRuntimePlatform.MULTI],
+      platforms: [ServingRuntimePlatform.SINGLE],
     });
 
     const result = assembleServingRuntimeTemplate(
       servingRuntimeMock,
       namespace,
-      [ServingRuntimePlatform.MULTI],
       ServingRuntimeAPIProtocol.REST,
+      [ServingRuntimeModelType.PREDICTIVE, ServingRuntimeModelType.GENERATIVE],
     );
     expect(result).toStrictEqual(servingRuntimeTemplatesMock);
   });
@@ -94,8 +98,8 @@ describe('assembleServingRuntimeTemplate', () => {
       assembleServingRuntimeTemplate(
         servingRuntimeMock,
         namespace,
-        [ServingRuntimePlatform.MULTI],
         ServingRuntimeAPIProtocol.REST,
+        [ServingRuntimeModelType.PREDICTIVE],
       );
     }).toThrow('Serving runtime name is required');
   });

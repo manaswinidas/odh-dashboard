@@ -1,17 +1,20 @@
-import { mockDscStatus, mockK8sResourceList, mockProjectK8sResource } from '~/__mocks__';
-import { mock200Status } from '~/__mocks__/mockK8sStatus';
-import { mockRoleBindingK8sResource } from '~/__mocks__/mockRoleBindingK8sResource';
-import { be } from '~/__tests__/cypress/cypress/utils/should';
+import { mockDscStatus, mockK8sResourceList, mockProjectK8sResource } from '#~/__mocks__';
+import { mock200Status } from '#~/__mocks__/mockK8sStatus';
+import { mockRoleBindingK8sResource } from '#~/__mocks__/mockRoleBindingK8sResource';
+import { be } from '#~/__tests__/cypress/cypress/utils/should';
 import {
   GroupModel,
   ModelRegistryModel,
   ProjectModel,
-} from '~/__tests__/cypress/cypress/utils/models';
-import type { RoleBindingSubject } from '~/k8sTypes';
-import { asProductAdminUser, asProjectEditUser } from '~/__tests__/cypress/cypress/utils/mockUsers';
-import { mockModelRegistry } from '~/__mocks__/mockModelRegistry';
-import { mockGroup } from '~/__mocks__/mockGroup';
-import { modelRegistryPermissions } from '~/__tests__/cypress/cypress/pages/modelRegistryPermissions';
+} from '#~/__tests__/cypress/cypress/utils/models';
+import type { RoleBindingSubject } from '#~/k8sTypes';
+import {
+  asProductAdminUser,
+  asProjectEditUser,
+} from '#~/__tests__/cypress/cypress/utils/mockUsers';
+import { mockModelRegistry } from '#~/__mocks__/mockModelRegistry';
+import { mockGroup } from '#~/__mocks__/mockGroup';
+import { modelRegistryPermissions } from '#~/__tests__/cypress/cypress/pages/modelRegistryPermissions';
 
 const MODEL_REGISTRY_DEFAULT_NAMESPACE = 'odh-model-registries';
 
@@ -130,7 +133,7 @@ describe('MR Permissions', () => {
   it('redirect if no modelregistry', () => {
     initIntercepts({ isEmpty: true });
     modelRegistryPermissions.visit('example-mr');
-    cy.url().should('include', `/modelRegistrySettings`);
+    cy.url().should('include', `/settings/model-resources-operations/model-registry`);
   });
 
   describe('Users table', () => {
@@ -524,5 +527,15 @@ describe('MR Permissions', () => {
       projectTable.getTableRow('Test Project').findKebabAction('Delete').click();
       cy.wait('@deleteProject');
     });
+  });
+
+  it('redirect from v2 to v3 route', () => {
+    initIntercepts({ isEmpty: false });
+    cy.visitWithLogin('/modelRegistrySettings/permissions/example-mr');
+    cy.findByTestId('app-page-title').contains('Manage example-mr permissions');
+    cy.url().should(
+      'include',
+      '/settings/model-resources-operations/model-registry/permissions/example-mr',
+    );
   });
 });

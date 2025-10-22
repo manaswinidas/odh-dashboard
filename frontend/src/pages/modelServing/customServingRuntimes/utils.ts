@@ -1,9 +1,13 @@
 import { K8sResourceCommon } from '@openshift/dynamic-plugin-sdk-utils';
-import { ServingRuntimeKind, TemplateKind } from '~/k8sTypes';
-import { getDisplayNameFromK8sResource } from '~/concepts/k8s/utils';
-import { ServingRuntimeAPIProtocol, ServingRuntimePlatform } from '~/types';
-import { asEnumMember } from '~/utilities/utils';
-import { CreatingServingRuntimeObject } from '~/pages/modelServing/screens/types';
+import { K8sDSGResource, ServingRuntimeKind, TemplateKind } from '#~/k8sTypes';
+import { getDisplayNameFromK8sResource } from '#~/concepts/k8s/utils';
+import {
+  ServingRuntimeAPIProtocol,
+  ServingRuntimePlatform,
+  ServingRuntimeModelType,
+} from '#~/types';
+import { asEnumMember } from '#~/utilities/utils';
+import { CreatingServingRuntimeObject } from '#~/pages/modelServing/screens/types';
 
 type DataKeys = keyof CreatingServingRuntimeObject;
 
@@ -66,7 +70,9 @@ const createServingRuntimeCustomError = (name: string, message: string): Error =
   return error;
 };
 
-export const isServingRuntimeKind = (obj: K8sResourceCommon): obj is ServingRuntimeKind => {
+export const isServingRuntimeKind = (
+  obj: K8sResourceCommon | K8sDSGResource,
+): obj is ServingRuntimeKind => {
   if (obj.kind !== 'ServingRuntime') {
     throw createServingRuntimeCustomError('Invalid parameter', 'kind: must be ServingRuntime.');
   }
@@ -126,12 +132,39 @@ export const getDisplayNameFromServingRuntimeTemplate = (resource: ServingRuntim
   return templateName || legacyTemplateName || 'Unknown Serving Runtime';
 };
 
+export const getServingRuntimeVersion = (
+  resource: ServingRuntimeKind | TemplateKind | undefined,
+): string | undefined => {
+  if (!resource) {
+    return undefined;
+  }
+  if (isTemplateKind(resource)) {
+    return (
+      resource.objects[0].metadata.annotations?.['opendatahub.io/runtime-version'] || undefined
+    );
+  }
+  return resource.metadata.annotations?.['opendatahub.io/runtime-version'] || undefined;
+};
+
+export const getTemplateNameFromServingRuntime = (
+  resource: ServingRuntimeKind,
+): string | undefined => resource.metadata.annotations?.['opendatahub.io/template-name'];
+
+export const findTemplateByName = (
+  templates: TemplateKind[],
+  templateName: string,
+): TemplateKind | undefined =>
+  templates.find((t) => getServingRuntimeNameFromTemplate(t) === templateName);
+
+export const isTemplateKind = (
+  resource: ServingRuntimeKind | TemplateKind,
+): resource is TemplateKind => resource.kind === 'Template';
+
 export const getEnabledPlatformsFromTemplate = (
   template: TemplateKind,
 ): ServingRuntimePlatform[] => {
   if (!template.metadata.annotations?.['opendatahub.io/modelServingSupport']) {
-    // By default, old Custom Serving Runtimes with no annotation will only be supported in modelmesh
-    return [ServingRuntimePlatform.MULTI];
+    return [ServingRuntimePlatform.SINGLE];
   }
 
   try {
@@ -139,11 +172,11 @@ export const getEnabledPlatformsFromTemplate = (
       template.metadata.annotations['opendatahub.io/modelServingSupport'],
     );
     if (platforms.length === 0) {
-      return [ServingRuntimePlatform.MULTI];
+      return [ServingRuntimePlatform.SINGLE];
     }
     return platforms;
   } catch (e) {
-    return [ServingRuntimePlatform.MULTI];
+    return [ServingRuntimePlatform.SINGLE];
   }
 };
 
@@ -159,6 +192,31 @@ export const getAPIProtocolFromTemplate = (
       ServingRuntimeAPIProtocol,
     ) ?? undefined
   );
+};
+
+export const getModelTypesFromTemplate = (template: TemplateKind): ServingRuntimeModelType[] => {
+  if (!template.metadata.annotations?.['opendatahub.io/model-type']) {
+    return [];
+  }
+
+  try {
+    const modelTypes = JSON.parse(template.metadata.annotations['opendatahub.io/model-type']);
+    if (!Array.isArray(modelTypes)) {
+      return [];
+    }
+    const validTypes: ServingRuntimeModelType[] = [];
+    for (const type of modelTypes) {
+      if (
+        type === ServingRuntimeModelType.PREDICTIVE ||
+        type === ServingRuntimeModelType.GENERATIVE
+      ) {
+        validTypes.push(type);
+      }
+    }
+    return validTypes;
+  } catch (e) {
+    return [];
+  }
 };
 
 export const getAPIProtocolFromServingRuntime = (

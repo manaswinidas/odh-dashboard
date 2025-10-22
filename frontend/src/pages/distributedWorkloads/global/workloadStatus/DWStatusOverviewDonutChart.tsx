@@ -1,14 +1,14 @@
 import * as React from 'react';
 import { ChartDonut, ChartLegend, ChartContainer } from '@patternfly/react-charts/victory';
-import EmptyStateErrorMessage from '~/components/EmptyStateErrorMessage';
-import { DistributedWorkloadsContext } from '~/concepts/distributedWorkloads/DistributedWorkloadsContext';
+import EmptyStateErrorMessage from '#~/components/EmptyStateErrorMessage';
+import { DistributedWorkloadsContext } from '#~/concepts/distributedWorkloads/DistributedWorkloadsContext';
 import {
   WorkloadStatusColorAndIcon,
   WorkloadStatusType,
   getStatusCounts,
-} from '~/concepts/distributedWorkloads/utils';
-import { LoadingState } from '~/pages/distributedWorkloads/components/LoadingState';
-import { NoWorkloadState } from '~/pages/distributedWorkloads/components/NoWorkloadState';
+} from '#~/concepts/distributedWorkloads/utils';
+import { LoadingState } from '#~/pages/distributedWorkloads/components/LoadingState';
+import { NoWorkloadState } from '#~/pages/distributedWorkloads/components/NoWorkloadState';
 
 export const DWStatusOverviewDonutChart: React.FC = () => {
   const { workloads } = React.useContext(DistributedWorkloadsContext);
@@ -18,7 +18,7 @@ export const DWStatusOverviewDonutChart: React.FC = () => {
   if (workloads.error) {
     return (
       <EmptyStateErrorMessage
-        title="Error loading distributed workloads"
+        title="Error loading workload metrics"
         bodyText={workloads.error.message}
       />
     );
@@ -76,7 +76,7 @@ export const DWStatusOverviewDonutChart: React.FC = () => {
           right: 280, // Adjusted to accommodate legend
           top: 0,
         }}
-        subTitle="Distributed Workloads"
+        subTitle="Workload metrics"
         title={String(workloads.data.length)}
         width={530}
         height={200}

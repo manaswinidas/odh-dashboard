@@ -5,8 +5,10 @@ export const ProjectSectionTitles: ProjectSectionTitlesType = {
   [ProjectSectionID.WORKBENCHES]: 'Workbenches',
   [ProjectSectionID.CLUSTER_STORAGES]: 'Cluster storage',
   [ProjectSectionID.CONNECTIONS]: 'Connections',
-  [ProjectSectionID.MODEL_SERVER]: 'Models and model servers',
+  [ProjectSectionID.MODEL_SERVER]: 'Deployments',
   [ProjectSectionID.PIPELINES]: 'Pipelines',
   [ProjectSectionID.PERMISSIONS]: 'Permissions',
   [ProjectSectionID.SETTINGS]: 'Settings',
+  [ProjectSectionID.CHATBOT]: 'Chatbot',
+  [ProjectSectionID.FEATURE_STORE]: 'Feature Store',
 };

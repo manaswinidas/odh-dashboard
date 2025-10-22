@@ -1,7 +1,7 @@
 import { ValidatedOptions } from '@patternfly/react-core';
 import { useState } from 'react';
 import { ZodIssue, ZodType } from 'zod';
-import { useValidation } from '~/utilities/useValidation';
+import { useValidation } from '#~/utilities/useValidation';
 
 export type FieldValidationProps = {
   validated: ValidatedOptions.error | ValidatedOptions.default;
@@ -29,9 +29,15 @@ export type FieldValidationProps = {
 export function useZodFormValidation<T>(
   data: T,
   schema: ZodType<T>,
+  options?: {
+    ignoreTouchedFields?: boolean;
+  },
 ): {
   markFieldTouched: (fieldPath?: (string | number)[]) => void;
-  getFieldValidation: (fieldPath?: (string | number)[]) => ZodIssue[];
+  getFieldValidation: (
+    fieldPath?: (string | number)[],
+    ignoreTouchedFields?: boolean,
+  ) => ZodIssue[];
   getFieldValidationProps: (fieldPath?: (string | number)[]) => FieldValidationProps;
 } {
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
@@ -42,10 +48,13 @@ export function useZodFormValidation<T>(
     setTouchedFields((prev) => ({ ...prev, [key]: true }));
   };
 
-  const getFieldValidation = (fieldPath?: (string | number)[]): ZodIssue[] => {
+  const getFieldValidation = (
+    fieldPath?: (string | number)[],
+    ignoreTouchedFields?: boolean,
+  ): ZodIssue[] => {
     const key = fieldPath ? fieldPath.join('.') : '/';
     const issues = getAllValidationIssues(fieldPath);
-    if (touchedFields[key]) {
+    if (touchedFields[key] || options?.ignoreTouchedFields || ignoreTouchedFields) {
       return issues;
     }
     return [];

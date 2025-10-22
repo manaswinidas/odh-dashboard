@@ -10,9 +10,10 @@ import {
 } from '@patternfly/react-core';
 import { PlusIcon } from '@patternfly/react-icons';
 import { Link } from 'react-router-dom';
-import { BYONImage } from '~/types';
-import { filterHardwareProfilesByRecommendedIdentifiers } from '~/pages/BYONImages/utils';
-import { useHardwareProfilesByFeatureVisibility } from '~/pages/hardwareProfiles/migration/useHardwareProfilesByFeatureVisibility';
+import { BYONImage } from '#~/types';
+import { filterHardwareProfilesByRecommendedIdentifiers } from '#~/pages/BYONImages/utils';
+import { useHardwareProfilesByFeatureVisibility } from '#~/pages/hardwareProfiles/useHardwareProfilesByFeatureVisibility';
+import { getHardwareProfileDisplayName } from '#~/pages/hardwareProfiles/utils';
 
 type BYONImageHardwareProfilesProps = {
   image: BYONImage;
@@ -51,7 +52,7 @@ const BYONImageHardwareProfiles: React.FC<BYONImageHardwareProfilesProps> = ({
                 isCompact
                 textMaxWidth="16ch"
               >
-                {cr.spec.displayName}
+                {getHardwareProfileDisplayName(cr)}
               </Label>
             ))}
           </LabelGroup>
@@ -69,9 +70,11 @@ const BYONImageHardwareProfiles: React.FC<BYONImageHardwareProfilesProps> = ({
               variant="outline"
               render={({ className, content }) => (
                 <Link
-                  to={`/workbenchImages/hardwareProfile/create?${new URLSearchParams({
-                    identifiers: image.recommendedAcceleratorIdentifiers.join(','),
-                  }).toString()}`}
+                  to={`/settings/environment-setup/workbench-images/hardware-profile/create?${new URLSearchParams(
+                    {
+                      identifiers: image.recommendedAcceleratorIdentifiers.join(','),
+                    },
+                  ).toString()}`}
                   className={className}
                 >
                   {content}

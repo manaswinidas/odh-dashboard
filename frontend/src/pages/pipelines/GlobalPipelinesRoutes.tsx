@@ -1,15 +1,17 @@
 import * as React from 'react';
 import { Navigate, Route } from 'react-router-dom';
-import ProjectsRoutes from '~/concepts/projects/ProjectsRoutes';
-import GlobalPipelineCoreLoader from '~/pages/pipelines/global/GlobalPipelineCoreLoader';
+import ProjectsRoutes from '#~/concepts/projects/ProjectsRoutes';
+import TitleWithIcon from '#~/concepts/design/TitleWithIcon';
+import { ProjectObjectType } from '#~/concepts/design/utils';
+import GlobalPipelineCoreLoader from '#~/pages/pipelines/global/GlobalPipelineCoreLoader';
 import {
   pipelinesPageDescription,
   pipelinesPageTitle,
-} from '~/pages/pipelines/global/pipelines/const';
-import { PipelineVersionCoreDetails } from '~/pages/pipelines/global/GlobalPipelineCoreDetails';
-import PipelineDetails from '~/concepts/pipelines/content/pipelinesDetails/pipeline/PipelineDetails';
-import { globNamespaceAll, pipelinesBaseRoute } from '~/routes';
-import PipelineAvailabilityLoader from '~/pages/pipelines/global/pipelines/PipelineAvailabilityLoader';
+} from '#~/pages/pipelines/global/pipelines/const';
+import { PipelineVersionCoreDetails } from '#~/pages/pipelines/global/GlobalPipelineCoreDetails';
+import PipelineDetails from '#~/concepts/pipelines/content/pipelinesDetails/pipeline/PipelineDetails';
+import { globNamespaceAll, pipelinesBaseRoute } from '#~/routes/pipelines/global';
+import PipelineAvailabilityLoader from '#~/pages/pipelines/global/pipelines/PipelineAvailabilityLoader';
 import GlobalPipelines from './global/pipelines/GlobalPipelines';
 
 const GlobalPipelinesRoutes: React.FC = () => (
@@ -18,7 +20,9 @@ const GlobalPipelinesRoutes: React.FC = () => (
       path={globNamespaceAll}
       element={
         <GlobalPipelineCoreLoader
-          title={pipelinesPageTitle}
+          title={
+            <TitleWithIcon title={pipelinesPageTitle} objectType={ProjectObjectType.pipeline} />
+          }
           description={pipelinesPageDescription}
           getInvalidRedirectPath={pipelinesBaseRoute}
         />

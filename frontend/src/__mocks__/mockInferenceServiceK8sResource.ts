@@ -1,12 +1,13 @@
 import { K8sStatus } from '@openshift/dynamic-plugin-sdk-utils';
-import { DeploymentMode, InferenceServiceKind, KnownLabels } from '~/k8sTypes';
-import { genUID } from '~/__mocks__/mockUtils';
-import { ContainerResources, NodeSelector, Toleration } from '~/types';
+import { DeploymentMode, InferenceServiceKind, KnownLabels } from '#~/k8sTypes';
+import { genUID } from '#~/__mocks__/mockUtils';
+import { ContainerResources, NodeSelector, ServingRuntimeModelType, Toleration } from '#~/types';
 
 type MockResourceConfigType = {
   name?: string;
   namespace?: string;
   displayName?: string;
+  description?: string;
   modelName?: string;
   secretName?: string;
   deleted?: boolean;
@@ -21,16 +22,30 @@ type MockResourceConfigType = {
   maxReplicas?: number;
   imagePullSecrets?: Array<{ name: string }>;
   lastFailureInfoMessage?: string;
+  lastFailureInfoReason?: string;
   resources?: ContainerResources;
   kserveInternalUrl?: string;
   statusPredictor?: Record<string, string>;
-  kserveInternalLabel?: boolean;
   additionalLabels?: Record<string, string>;
   args?: string[];
-  env?: Array<{ name: string; value: string }>;
-  isKserveRaw?: boolean;
+  env?: Array<{
+    name: string;
+    value?: string;
+    valueFrom?: { secretKeyRef: { name: string; key: string } };
+  }>;
   tolerations?: Toleration[];
   nodeSelector?: NodeSelector;
+  isNonDashboardItem?: boolean;
+  hardwareProfileName?: string;
+  hardwareProfileNamespace?: string;
+  hardwareProfileResourceVersion?: string;
+  creationTimestamp?: string;
+  lastTransitionTime?: string;
+  isReady?: boolean;
+  predictorAnnotations?: Record<string, string>;
+  storageUri?: string;
+  modelType?: ServingRuntimeModelType;
+  hasExternalRoute?: boolean;
 };
 
 type InferenceServicek8sError = K8sStatus & {
@@ -74,13 +89,14 @@ export const mockInferenceServiceK8sResource = ({
   name = 'test-inference-service',
   namespace = 'test-project',
   displayName = 'Test Inference Service',
+  description = undefined,
   modelName = 'test-model',
-  secretName = 'test-secret',
+  secretName,
   deleted = false,
   isModelMesh = false,
   missingStatus = false,
-  activeModelState = 'Pending',
-  targetModelState = '',
+  activeModelState = 'Loaded',
+  targetModelState = 'Loaded',
   url = '',
   acceleratorIdentifier = '',
   path = 'path/to/model',
@@ -88,42 +104,56 @@ export const mockInferenceServiceK8sResource = ({
   maxReplicas = 1,
   imagePullSecrets = undefined,
   lastFailureInfoMessage = 'Waiting for runtime Pod to become available',
+  lastFailureInfoReason,
   resources,
   statusPredictor = undefined,
   kserveInternalUrl = '',
-  kserveInternalLabel = false,
   additionalLabels = {},
   args = [],
   env = [],
-  isKserveRaw = false,
   tolerations,
   nodeSelector,
+  isNonDashboardItem = false,
+  hardwareProfileName = '',
+  hardwareProfileNamespace = undefined,
+  hardwareProfileResourceVersion = undefined,
+  creationTimestamp = '2023-03-17T16:12:41Z',
+  lastTransitionTime = '2023-03-17T16:12:41Z',
+  isReady = false,
+  predictorAnnotations = undefined,
+  storageUri = undefined,
+  modelType,
+  hasExternalRoute = false,
 }: MockResourceConfigType): InferenceServiceKind => ({
   apiVersion: 'serving.kserve.io/v1beta1',
   kind: 'InferenceService',
   metadata: {
     annotations: {
       'openshift.io/display-name': displayName,
+      ...(description && { 'openshift.io/description': description }),
       'serving.kserve.io/deploymentMode': isModelMesh
         ? DeploymentMode.ModelMesh
-        : isKserveRaw
-        ? DeploymentMode.RawDeployment
-        : DeploymentMode.Serverless,
-      ...(!isModelMesh &&
-        !isKserveRaw && {
-          'serving.knative.openshift.io/enablePassthrough': 'true',
-          'sidecar.istio.io/inject': 'true',
-          'sidecar.istio.io/rewriteAppHTTPProbers': 'true',
-        }),
+        : DeploymentMode.RawDeployment,
+      ...(hardwareProfileName && {
+        [`opendatahub.io/hardware-profile-name`]: hardwareProfileName,
+      }),
+      ...(hardwareProfileNamespace && {
+        'opendatahub.io/hardware-profile-namespace': hardwareProfileNamespace,
+      }),
+      ...(hardwareProfileResourceVersion && {
+        'opendatahub.io/hardware-profile-resource-version': hardwareProfileResourceVersion,
+      }),
+      ...(modelType && { 'opendatahub.io/model-type': modelType }),
+      ...(secretName && { 'opendatahub.io/connections': secretName }),
     },
-    creationTimestamp: '2023-03-17T16:12:41Z',
+    creationTimestamp,
     ...(deleted ? { deletionTimestamp: new Date().toUTCString() } : {}),
     generation: 1,
     labels: {
       name,
       ...additionalLabels,
-      [KnownLabels.DASHBOARD_RESOURCE]: 'true',
-      ...(kserveInternalLabel && { 'networking.knative.dev/visibility': 'cluster-local' }),
+      ...(isNonDashboardItem ? {} : { [KnownLabels.DASHBOARD_RESOURCE]: 'true' }),
+      ...(hasExternalRoute ? { 'networking.kserve.io/visibility': 'exposed' } : {}),
     },
     name,
     namespace,
@@ -132,6 +162,7 @@ export const mockInferenceServiceK8sResource = ({
   },
   spec: {
     predictor: {
+      ...(predictorAnnotations && { annotations: predictorAnnotations }),
       minReplicas,
       maxReplicas,
       imagePullSecrets,
@@ -156,10 +187,14 @@ export const mockInferenceServiceK8sResource = ({
           : {}),
         ...(resources && { resources }),
         runtime: modelName,
-        storage: {
-          key: secretName,
-          path,
-        },
+        ...(storageUri
+          ? { storageUri }
+          : {
+              storage: {
+                key: secretName,
+                path,
+              },
+            }),
         args,
         env,
       },
@@ -174,13 +209,13 @@ export const mockInferenceServiceK8sResource = ({
         url,
         conditions: [
           {
-            lastTransitionTime: '2023-03-17T16:12:41Z',
+            lastTransitionTime,
             status: 'False',
             type: 'PredictorReady',
           },
           {
-            lastTransitionTime: '2023-03-17T16:12:41Z',
-            status: 'False',
+            lastTransitionTime,
+            status: isReady ? 'True' : 'False',
             type: 'Ready',
           },
         ],
@@ -192,7 +227,7 @@ export const mockInferenceServiceK8sResource = ({
           lastFailureInfo: {
             message: lastFailureInfoMessage,
             modelRevisionName: 'model-size__isvc-59ce37c85b',
-            reason: 'RuntimeUnhealthy',
+            reason: lastFailureInfoReason,
             location: '',
             time: '',
           },

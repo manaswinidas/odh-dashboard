@@ -1,8 +1,15 @@
 import { AlertVariant } from '@patternfly/react-core';
-import { Connection } from '~/concepts/connectionTypes/types';
-import { ImagePullSecret, SecretKind, ServingContainer, ServingRuntimeKind } from '~/k8sTypes';
-import { EnvVariableDataEntry } from '~/pages/projects/types';
-import { ContainerResources } from '~/types';
+import { Connection } from '#~/concepts/connectionTypes/types';
+import {
+  ImagePullSecret,
+  InferenceServiceKind,
+  SecretKind,
+  ServingContainer,
+  ServingRuntimeKind,
+} from '#~/k8sTypes';
+import { EnvVariableDataEntry } from '#~/pages/projects/types';
+import { ContainerResources } from '#~/types';
+import { ToggleState } from '#~/components/StateActionToggle';
 
 export enum PerformanceMetricType {
   SERVER = 'server',
@@ -21,7 +28,7 @@ export enum ServingRuntimeTableTabs {
   TOKENS = 3,
 }
 
-export enum InferenceServiceModelState {
+export enum ModelDeploymentState {
   PENDING = 'Pending',
   STANDBY = 'Standby',
   FAILED_TO_LOAD = 'FailedToLoad',
@@ -30,8 +37,13 @@ export enum InferenceServiceModelState {
   UNKNOWN = 'Unknown',
 }
 
+export type ModelServingState = ToggleState & {
+  inferenceService: InferenceServiceKind;
+};
+
 export type ModelStatus = {
   failedToSchedule: boolean;
+  failureMessage?: string | null;
 };
 
 export type SupportedModelFormatsInfo = {
@@ -71,8 +83,8 @@ export type CreatingInferenceServiceObject = CreatingModelServingObjectCommon & 
   labels?: Record<string, string>;
   servingRuntimeArgs?: ServingContainer['args'];
   servingRuntimeEnvVars?: ServingContainer['env'];
-  isKServeRawDeployment?: boolean;
   imagePullSecrets?: ImagePullSecret[];
+  dashboardNamespace?: string;
 };
 
 export type CreatingModelServingObjectCommon = {
@@ -87,6 +99,7 @@ export enum InferenceServiceStorageType {
   NEW_STORAGE = 'new-storage',
   EXISTING_STORAGE = 'existing-storage',
   EXISTING_URI = 'existing-uri',
+  PVC_STORAGE = 'pvc-storage',
 }
 
 export type InferenceServiceStorage = {
@@ -95,6 +108,7 @@ export type InferenceServiceStorage = {
   dataConnection: string;
   uri?: string;
   awsData: EnvVariableDataEntry[];
+  pvcConnection?: string;
   alert?: {
     type: AlertVariant;
     title: string;
@@ -119,6 +133,7 @@ type PlatformStatus = {
 export type ServingPlatformStatuses = {
   kServe: PlatformStatus;
   kServeNIM: PlatformStatus;
+  /** @deprecated -- remove Model Mesh */
   modelMesh: PlatformStatus;
   platformEnabledCount: number;
   refreshNIMAvailability: () => Promise<boolean | undefined>;

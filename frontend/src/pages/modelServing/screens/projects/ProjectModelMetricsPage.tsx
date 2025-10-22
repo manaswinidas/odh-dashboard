@@ -1,8 +1,8 @@
 import * as React from 'react';
 import { useOutletContext } from 'react-router-dom';
-import MetricsPage from '~/pages/modelServing/screens/metrics/MetricsPage';
-import { PerformanceMetricType } from '~/pages/modelServing/screens/types';
-import { getDisplayNameFromK8sResource } from '~/concepts/k8s/utils';
+import MetricsPage from '#~/pages/modelServing/screens/metrics/MetricsPage';
+import { PerformanceMetricType } from '#~/pages/modelServing/screens/types';
+import { getDisplayNameFromK8sResource } from '#~/concepts/k8s/utils';
 import { ProjectModelMetricsOutletContextProps } from './ProjectModelMetricsWrapper';
 
 const ProjectModelMetricsPage: React.FC = () => {
@@ -14,13 +14,13 @@ const ProjectModelMetricsPage: React.FC = () => {
     <MetricsPage
       title={`${modelDisplayName} metrics`}
       breadcrumbItems={[
-        { label: 'Data science projects', link: '/projects' },
+        { label: 'Projects', link: '/projects' },
         {
           label: projectDisplayName,
           link: `/projects/${currentProject.metadata.name}`,
         },
         {
-          label: 'Models',
+          label: 'Deployments',
           link: `/projects/${currentProject.metadata.name}/?section=model-server`,
         },
         {

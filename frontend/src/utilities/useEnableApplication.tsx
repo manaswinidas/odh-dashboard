@@ -1,13 +1,13 @@
 import * as React from 'react';
 import { AlertVariant } from '@patternfly/react-core';
-import { getValidationStatus, postValidateIsv } from '~/services/validateIsvService';
+import { getValidationStatus, postValidateIsv } from '#~/services/validateIsvService';
 import {
   enableIntegrationApp,
   getIntegrationAppEnablementStatus,
-} from '~/services/integrationAppService';
-import { addNotification, forceComponentsUpdate } from '~/redux/actions/actions';
-import { useAppDispatch } from '~/redux/hooks';
-import { IntegrationAppStatus, VariablesValidationStatus } from '~/types';
+} from '#~/services/integrationAppService';
+import { addNotification, forceComponentsUpdate } from '#~/redux/actions/actions';
+import { useAppDispatch } from '#~/redux/hooks';
+import { IntegrationAppStatus } from '#~/types';
 import { isInternalRouteIntegrationsApp } from './utils';
 
 export enum EnableApplicationStatus {
@@ -84,20 +84,12 @@ export const useEnableApplication = (
                 return;
               }
               setEnableStatus({
-                status:
-                  response.variablesValidationStatus === VariablesValidationStatus.SUCCESS
-                    ? EnableApplicationStatus.SUCCESS
-                    : EnableApplicationStatus.FAILED,
-                error:
-                  response.variablesValidationStatus === VariablesValidationStatus.SUCCESS
-                    ? ''
-                    : response.error,
+                status: response.isEnabled
+                  ? EnableApplicationStatus.SUCCESS
+                  : EnableApplicationStatus.FAILED,
+                error: response.isEnabled ? '' : response.error,
               });
-              dispatchResults(
-                response.variablesValidationStatus === VariablesValidationStatus.SUCCESS
-                  ? undefined
-                  : response.error,
-              );
+              dispatchResults(response.isEnabled ? undefined : response.error);
             })
             .catch((e) => {
               if (!cancelled) {
@@ -140,8 +132,9 @@ export const useEnableApplication = (
     let closed = false;
     if (doEnable) {
       if (isInternalRouteIntegrationsApp(internalRoute)) {
-        // Capture the baseline timestamp before polling starts.
-        baselineTimestampRef.current = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+        // Set baseline timestamp 1s earlier to avoid polling loop
+        const oneSecondAgo = new Date(Date.now() - 1000);
+        baselineTimestampRef.current = oneSecondAgo.toISOString().replace(/\.\d{3}Z$/, 'Z');
         enableIntegrationApp(internalRoute, enableValues)
           .then((response) => {
             if (!closed) {

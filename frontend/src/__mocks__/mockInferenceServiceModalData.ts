@@ -1,7 +1,7 @@
 import {
   CreatingInferenceServiceObject,
   InferenceServiceStorageType,
-} from '~/pages/modelServing/screens/types';
+} from '#~/pages/modelServing/screens/types';
 
 type MockResourceConfigType = Partial<CreatingInferenceServiceObject>;
 
@@ -26,7 +26,8 @@ export const mockInferenceServiceModalData = ({
   externalRoute = false,
   tokenAuth = false,
   tokens = [],
-  isKServeRawDeployment,
+  dashboardNamespace = 'opendatahub',
+  labels = undefined,
 }: MockResourceConfigType): CreatingInferenceServiceObject => ({
   name,
   k8sName,
@@ -40,5 +41,6 @@ export const mockInferenceServiceModalData = ({
   externalRoute,
   tokenAuth,
   tokens,
-  isKServeRawDeployment,
+  dashboardNamespace,
+  labels,
 });

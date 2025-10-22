@@ -6,33 +6,34 @@ import {
   mockProjectK8sResource,
   mockSecretK8sResource,
   mockServingRuntimeK8sResource,
-} from '~/__mocks__';
+} from '#~/__mocks__';
 import {
   mockConnectionTypeConfigMap,
   mockModelServingFields,
-} from '~/__mocks__/mockConnectionType';
-import { mockNimAccount } from '~/__mocks__/mockNimAccount';
+} from '#~/__mocks__/mockConnectionType';
+import { mockNimAccount } from '#~/__mocks__/mockNimAccount';
 import {
   mockNimInferenceService,
   mockNimProject,
   mockNimServingRuntime,
-} from '~/__mocks__/mockNimResource';
-import { mockOdhApplication } from '~/__mocks__/mockOdhApplication';
+} from '#~/__mocks__/mockNimResource';
+import { mockOdhApplication } from '#~/__mocks__/mockOdhApplication';
 import {
   InferenceServiceModel,
   NIMAccountModel,
   ProjectModel,
   SecretModel,
   ServingRuntimeModel,
-} from '~/__tests__/cypress/cypress/utils/models';
+} from '#~/__tests__/cypress/cypress/utils/models';
+import { DataScienceStackComponent } from '#~/concepts/areas/types';
 
 export const initInterceptsForAllProjects = (): void => {
   cy.interceptOdh(
     'GET /api/dsc/status',
     mockDscStatus({
-      installedComponents: {
-        kserve: true,
-        'model-mesh': true,
+      components: {
+        [DataScienceStackComponent.K_SERVE]: { managementState: 'Managed' },
+        [DataScienceStackComponent.MODEL_MESH_SERVING]: { managementState: 'Managed' },
       },
     }),
   );
