@@ -154,23 +154,26 @@ clean_exit() {
 }
 
 show_usage() {
-  echo "Usage: $0 --package=<package-name> [--commit=<commit-sha>] [--continue]"
+  echo "Usage: $0 --package=<package-name> [--commit=<commit-sha>] [--continue] [--pr=<pr-url>]"
   echo ""
   echo "Options:"
   echo "  --package=NAME     Required. Name of the package to update (e.g., @odh-dashboard/model-registry)"
   echo "  --commit=SHA       Optional. Specific commit to update to (default: latest)"
   echo "  --continue         Continue from a previous conflict resolution"
+  echo "  --pr=URL           Optional. GitHub PR URL to temporarily sync from (e.g., https://github.com/owner/repo/pull/123)"
   echo ""
   echo "Examples:"
   echo "  $0 --package=@odh-dashboard/model-registry"
   echo "  $0 --package=@odh-dashboard/model-registry --commit=abc123"
   echo "  $0 --package=@odh-dashboard/model-registry --continue"
+  echo "  $0 --package=@odh-dashboard/model-registry --pr=https://github.com/kubeflow/model-registry/pull/123"
 }
 
 # Parse command line arguments
 CONTINUE_MODE=false
 PACKAGE_NAME=""
 COMMIT_SHA=""
+PR_URL=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -184,6 +187,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --continue)
       CONTINUE_MODE=true
+      shift
+      ;;
+    --pr=*)
+      PR_URL="${1#*=}"
       shift
       ;;
     -h|--help)
@@ -236,11 +243,116 @@ PACKAGE_JSON="$MONOREPO_ROOT/$WORKSPACE_LOCATION/package.json"
 # Change to monorepo root to ensure we're in a safe directory
 cd "$MONOREPO_ROOT"
 
+# Handle --pr option to temporarily override repo and branch
+if [ -n "$PR_URL" ]; then
+  # Verify gh CLI is available
+  if ! command -v gh >/dev/null 2>&1; then
+    clean_exit 1 "The 'gh' CLI tool is required for --pr option but not found in PATH" true
+  fi
+
+  progress_msg "Fetching PR information from $PR_URL"
+
+  # Extract PR information using gh CLI
+  # Use the PR URL directly with gh pr view
+  # We need headRepositoryOwner to get the owner login separately since it's not nested in headRepository
+  PR_INFO=$(gh pr view "$PR_URL" --json headRepositoryOwner,headRepository,headRefName 2>&1)
+  if [ $? -ne 0 ]; then
+    error_msg "Failed to fetch PR information"
+    echo "$PR_INFO"
+    clean_exit 1 "" true
+  fi
+
+  # Extract repo owner, name, and branch
+  PR_REPO_OWNER=$(echo "$PR_INFO" | jq -r '.headRepositoryOwner.login')
+  PR_REPO_NAME=$(echo "$PR_INFO" | jq -r '.headRepository.name')
+  PR_BRANCH=$(echo "$PR_INFO" | jq -r '.headRefName')
+
+  if [ -z "$PR_REPO_OWNER" ] || [ "$PR_REPO_OWNER" = "null" ] || \
+     [ -z "$PR_REPO_NAME" ] || [ "$PR_REPO_NAME" = "null" ] || \
+     [ -z "$PR_BRANCH" ] || [ "$PR_BRANCH" = "null" ]; then
+    error_msg "Failed to extract repository and branch information from PR"
+    echo "This could mean:"
+    echo "  • The gh CLI is not authenticated (run 'gh auth login')"
+    echo "  • The PR URL is invalid"
+    echo "  • The JSON structure from gh has changed"
+    clean_exit 1 "" true
+  fi
+
+  PR_REPO_URL="https://github.com/$PR_REPO_OWNER/$PR_REPO_NAME.git"
+
+  info_msg "PR Details:"
+  echo "  Repository: $PR_REPO_URL"
+  echo "  Branch: $PR_BRANCH"
+  echo ""
+
+  # Update package.json with temporary overrides
+  warning_msg "Temporarily updating package.json with PR overrides"
+  echo -e "${RED}⚠️  DO NOT MERGE these changes!${NC}"
+  echo ""
+
+  temp_file="$PACKAGE_JSON.tmp"
+  # Reconstruct the subtree object with DO_NOT_MERGE_OVERRIDDEN_FOR_PR first
+  if ! jq --arg repo "$PR_REPO_URL" \
+          --arg branch "$PR_BRANCH" \
+          --arg pr_url "$PR_URL" \
+          '.subtree = {
+            DO_NOT_MERGE_OVERRIDDEN_FOR_PR: $pr_url,
+            repo: $repo,
+            branch: $branch,
+            src: .subtree.src,
+            target: .subtree.target,
+            commit: .subtree.commit
+          } |
+          if .subtree.src == null then del(.subtree.src) else . end' \
+          "$PACKAGE_JSON" > "$temp_file"; then
+    error_msg "Failed to update package.json with PR overrides"
+    rm -f "$temp_file"
+    clean_exit 1 "" true
+  fi
+
+  if ! mv "$temp_file" "$PACKAGE_JSON"; then
+    error_msg "Failed to write updated package.json"
+    rm -f "$temp_file"
+    clean_exit 1 "" true
+  fi
+
+  success_msg "Updated package.json with temporary PR overrides"
+
+  # Commit the package.json changes
+  if ! git add "$PACKAGE_JSON"; then
+    error_msg "Failed to stage package.json"
+    clean_exit 1 "" true
+  fi
+
+  commit_msg="[DO NOT MERGE - PR TEST SYNC] Override subtree config for PR testing
+
+Temporarily syncing from PR: $PR_URL
+Repository: $PR_REPO_URL
+Branch: $PR_BRANCH
+
+This commit should NOT be merged. It exists only to test changes from an unmerged PR."
+
+  if ! git commit -q -m "$commit_msg"; then
+    warning_msg "Failed to commit package.json changes (assuming changes were already present)"
+  else
+    success_msg "Committed package.json changes with DO NOT MERGE warning"
+  fi
+  echo ""
+fi
+
 # Read config from package.json (needed for both modes)
 UPSTREAM_REPO=$(jq -r '.subtree.repo' "$PACKAGE_JSON")
 UPSTREAM_SUBDIR=$(jq -r '.subtree.src // ""' "$PACKAGE_JSON")
 TARGET_RELATIVE=$(jq -r '.subtree.target' "$PACKAGE_JSON")
 CURRENT_COMMIT=$(jq -r '.subtree.commit // ""' "$PACKAGE_JSON")
+UPSTREAM_BRANCH=$(jq -r '.subtree.branch // "main"' "$PACKAGE_JSON")
+DO_NOT_MERGE_FLAG=$(jq -r '.subtree.DO_NOT_MERGE_OVERRIDDEN_FOR_PR // ""' "$PACKAGE_JSON")
+
+# Set commit message prefix if this is a PR test sync
+COMMIT_PREFIX=""
+if [ -n "$DO_NOT_MERGE_FLAG" ] && [ "$DO_NOT_MERGE_FLAG" != "null" ]; then
+  COMMIT_PREFIX="[DO NOT MERGE - PR TEST SYNC] "
+fi
 
 # Validate required configuration fields
 if [ -z "$UPSTREAM_REPO" ] || [ "$UPSTREAM_REPO" = "null" ]; then
@@ -301,9 +413,9 @@ if [ "$CONTINUE_MODE" = true ]; then
   trap 'cd "$MONOREPO_ROOT"; rm -rf "$TMP_DIR"' EXIT
   
   # Clone repository to determine commit information
-  git clone -q "$UPSTREAM_REPO" "$TMP_DIR/repo"
+  git clone -q -b "$UPSTREAM_BRANCH" "$UPSTREAM_REPO" "$TMP_DIR/repo"
   cd "$TMP_DIR/repo"
-  
+
   # Get target commit SHA
   if [ -n "$COMMIT_SHA" ]; then
     git checkout -q "$COMMIT_SHA"
@@ -311,16 +423,27 @@ if [ "$CONTINUE_MODE" = true ]; then
   else
     TARGET_COMMIT=$(git rev-parse HEAD)
   fi
-  
+
+  # Validate that CURRENT_COMMIT exists in this branch's history
+  # Check if the commit is an ancestor of HEAD (i.e., it's in this branch's history)
+  if ! git merge-base --is-ancestor "$CURRENT_COMMIT" HEAD 2>/dev/null; then
+    cd "$MONOREPO_ROOT"
+    error_msg "Current commit $CURRENT_COMMIT not found in branch '$UPSTREAM_BRANCH' of $UPSTREAM_REPO"
+    echo ""
+    echo "You are probably syncing from a temporarily overridden repo and branch for an"
+    echo "unmerged PR. The PR's branch may be out of date. Rebase it and try again."
+    clean_exit 1 "" true
+  fi
+
   # We need to determine what commit we're continuing from
   # This should be the next commit after the current one in package.json
   commits=$(git rev-list --reverse "$CURRENT_COMMIT..$TARGET_COMMIT")
   if [ -n "$commits" ]; then
     continue_commit=$(echo "$commits" | head -n 1)
     continue_commit_msg=$(git log -1 --format="%s" "$continue_commit")
-    
+
     cd "$MONOREPO_ROOT"
-    git commit -q -m "Update $PACKAGE_NAME: $continue_commit_msg (resolved conflicts)
+    git commit -q -m "${COMMIT_PREFIX}Update $PACKAGE_NAME: $continue_commit_msg (resolved conflicts)
 
 Upstream commit: $continue_commit"
     
@@ -341,7 +464,7 @@ Upstream commit: $continue_commit"
     CURRENT_COMMIT="$continue_commit"
   else
     # No more commits, just commit with a generic message
-    git commit -q -m "Update $PACKAGE_NAME: Manual conflict resolution"
+    git commit -q -m "${COMMIT_PREFIX}Update $PACKAGE_NAME: Manual conflict resolution"
     success_msg "Committed staged changes"
   fi
   
@@ -378,7 +501,7 @@ TMP_DIR=$(mktemp -d)
 trap 'cd "$MONOREPO_ROOT"; rm -rf "$TMP_DIR"' EXIT
 
 # Clone repository
-git clone -q "$UPSTREAM_REPO" "$TMP_DIR/repo"
+git clone -q -b "$UPSTREAM_BRANCH" "$UPSTREAM_REPO" "$TMP_DIR/repo"
 cd "$TMP_DIR/repo"
 
 # Get target commit SHA
@@ -387,6 +510,18 @@ if [ -n "$COMMIT_SHA" ]; then
   TARGET_COMMIT=$(git rev-parse HEAD)
 else
   TARGET_COMMIT=$(git rev-parse HEAD)
+fi
+
+# Validate that CURRENT_COMMIT exists in this branch (skip for initial setup)
+if [ -n "$CURRENT_COMMIT" ] && [ "$CURRENT_COMMIT" != "null" ] && [ "$CURRENT_COMMIT" != "" ]; then
+  # Check if the commit is an ancestor of HEAD (i.e., it's in this branch's history)
+  if ! git merge-base --is-ancestor "$CURRENT_COMMIT" HEAD 2>/dev/null; then
+    error_msg "Current commit $CURRENT_COMMIT not found in branch '$UPSTREAM_BRANCH' of $UPSTREAM_REPO"
+    echo ""
+    echo "You are probably syncing from a temporarily overridden repo and branch for an"
+    echo "unmerged PR. The PR's branch may be out of date. Rebase it and try again."
+    clean_exit 1 "" true
+  fi
 fi
 
 # Handle initial setup case
@@ -416,7 +551,7 @@ if [ ! -d "$TARGET_DIR" ] && ([ -z "$CURRENT_COMMIT" ] || [ "$CURRENT_COMMIT" = 
   fi
   
   # Create initial commit
-  initial_commit_msg="chore(subtree): initial sync of $PACKAGE_NAME to $TARGET_COMMIT"
+  initial_commit_msg="${COMMIT_PREFIX}chore(subtree): initial sync of $PACKAGE_NAME to $TARGET_COMMIT"
   if ! git commit -q -m "$initial_commit_msg"; then
     clean_exit 1 "Failed to create initial setup commit"
   fi
@@ -430,6 +565,73 @@ if [ "$CURRENT_COMMIT" = "$TARGET_COMMIT" ] && [ -d "$TARGET_DIR" ]; then
   info_msg "Already up-to-date at $TARGET_COMMIT"
   exit 0
 fi
+
+# Function to inject helpful conflict markers for failed patches
+inject_conflict_markers() {
+  local patch_file="$1"
+  local commit_sha="$2"
+  local commit_msg="$3"
+  shift 3
+  local failed_files=("$@")
+  
+  # Only process files that actually failed
+  for rel_file in "${failed_files[@]}"; do
+    [ -z "$rel_file" ] && continue
+    
+    local target_file="$MONOREPO_ROOT/$WORKSPACE_LOCATION/$TARGET_RELATIVE/$rel_file"
+    
+    # Only inject if file exists and doesn't already have conflict markers
+    if [ -f "$target_file" ] && ! grep -q '^<<<<<<< ' "$target_file" 2>/dev/null; then
+      
+      # Extract the relevant patch section for this file
+      local temp_patch="$TMP_DIR/file_patch_$$.txt"
+      awk -v file="$rel_file" '
+        /^diff --git/ { 
+          in_file = ($0 ~ " b/" file "$" || $0 ~ " b/" file " ")
+          if (in_file) print
+          next
+        }
+        in_file { print }
+        /^diff --git/ && !in_file { exit }
+      ' "$patch_file" > "$temp_patch"
+      
+      if [ -s "$temp_patch" ]; then
+        # Append informative marker to the file
+        cat >> "$target_file" << EOF
+
+<<<<<<< PATCH FAILED TO APPLY
+UPSTREAM COMMIT: $commit_sha
+COMMIT MESSAGE: $commit_msg
+FILE: $rel_file
+=======
+The patch below could not be applied automatically.
+This usually means the file content differs from what upstream expects.
+
+WHAT THE PATCH WANTS TO DO:
+────────────────────────────────────────────────────────────
+EOF
+        # Append the actual patch content
+        cat "$temp_patch" >> "$target_file"
+        
+        cat >> "$target_file" << EOF
+────────────────────────────────────────────────────────────
+
+INSTRUCTIONS:
+1. Review the patch above (lines with - are removed, lines with + are added)
+2. Manually apply the intended changes to this file
+3. Remove this entire conflict marker block (from <<<<<<< to >>>>>>>)
+4. Stage the file: git add $WORKSPACE_LOCATION
+5. Continue: npm run update-subtree -- --continue
+
+For more details, view the upstream commit at:
+  https://github.com/<owner>/<repo>/commit/${commit_sha}
+>>>>>>> END PATCH FAILED
+EOF
+      fi
+      rm -f "$temp_patch"
+    fi
+  done
+}
 
 # Function to apply patch-based updates
 apply_patch_based_update() {
@@ -487,29 +689,162 @@ apply_patch_based_update() {
       cd "$MONOREPO_ROOT"
       
       # Try to apply the patch with 3-way merge for better conflict resolution
-      if ! git apply --directory="$WORKSPACE_LOCATION/$TARGET_RELATIVE" --3way --index "$filtered_patch"; then
+      if ! git apply --directory="$WORKSPACE_LOCATION/$TARGET_RELATIVE" --3way --index "$filtered_patch" 2>"$TMP_DIR/apply_error.log"; then
         error_msg "Conflict detected while applying commit $commit_count/$total_commits"
         echo -e "   ${YELLOW}Commit message: $commit_msg${NC}"
+        echo -e "   ${YELLOW}Upstream commit: $commit${NC}"
         echo ""
-        warning_msg "Git is now in a conflicted state with conflict markers in files."
+        
+        # Parse error output
+        local apply_error=$(cat "$TMP_DIR/apply_error.log" 2>/dev/null || echo "")
+        local has_git_conflicts=false
+        local has_rejected_patches=false
+        local failed_files=()
+        local succeeded_files=()
+        
+        # Check if git created conflict markers (partial success with conflicts)
+        if git diff --name-only --diff-filter=U 2>/dev/null | grep -q .; then
+          has_git_conflicts=true
+        fi
+        
+        # Check for completely rejected patches and collect failed files
+        if echo "$apply_error" | grep -q "patch does not apply"; then
+          has_rejected_patches=true
+          # Extract file names that failed
+          while IFS= read -r line; do
+            if [[ "$line" =~ error:\ (.+):\ patch\ does\ not\ apply ]]; then
+              local failed_file="${BASH_REMATCH[1]}"
+              # Remove the directory prefix to get relative path
+              failed_file="${failed_file#$WORKSPACE_LOCATION/$TARGET_RELATIVE/}"
+              failed_files+=("$failed_file")
+            fi
+          done <<< "$apply_error"
+          
+          # If patch was completely rejected, try to apply files individually
+          if [ "$has_git_conflicts" = false ] && [ ${#failed_files[@]} -gt 0 ]; then
+            info_msg "Attempting to apply other files from the patch individually..."
+            echo ""
+            
+            # Extract all files from the patch
+            local all_files=$(grep '^diff --git' "$filtered_patch" | sed 's/^diff --git a\/.* b\///' || true)
+            
+            while IFS= read -r file; do
+              [ -z "$file" ] && continue
+              
+              # Skip if this is one of the files that already failed
+              local is_failed=false
+              for failed in "${failed_files[@]}"; do
+                if [ "$file" = "$failed" ]; then
+                  is_failed=true
+                  break
+                fi
+              done
+              
+              if [ "$is_failed" = false ]; then
+                # Extract patch for just this file
+                local single_file_patch="$TMP_DIR/single_${file//\//_}.patch"
+                awk -v target="$file" '
+                  /^diff --git/ { 
+                    in_target = ($0 ~ " b/" target "$")
+                    if (in_target) print
+                    next
+                  }
+                  in_target { print }
+                  /^diff --git/ && !in_target { exit }
+                ' "$filtered_patch" > "$single_file_patch"
+                
+                # Try to apply this single file
+                if [ -s "$single_file_patch" ] && git apply --directory="$WORKSPACE_LOCATION/$TARGET_RELATIVE" --3way --index "$single_file_patch" 2>/dev/null; then
+                  succeeded_files+=("$file")
+                  echo -e "  ${GREEN}✓${NC} $file"
+                else
+                  failed_files+=("$file")
+                  echo -e "  ${RED}✗${NC} $file"
+                fi
+              fi
+            done <<< "$all_files"
+            echo ""
+          fi
+        fi
+        
+        # Provide context about what happened
+        if [ "$has_git_conflicts" = true ] && [ "$has_rejected_patches" = false ]; then
+          warning_msg "Git created conflict markers (partial application succeeded)"
+          echo "Some changes were applied, but conflicts need manual resolution."
+        elif [ "$has_git_conflicts" = false ] && [ "$has_rejected_patches" = true ]; then
+          warning_msg "Patch was completely rejected (no automatic application possible)"
+          echo "This typically means file content differs significantly from upstream."
+          echo ""
+          echo -e "${CYAN}Common causes:${NC}"
+          echo "  • Local customizations/modifications in the fork"
+          echo "  • Different code structure than upstream expects"
+          echo "  • Previous patches changed the context"
+        else
+          warning_msg "Mixed results: some changes applied with conflicts, others rejected"
+        fi
+        
         echo ""
-        echo -e "${CYAN}To resolve conflicts:${NC}"
-        echo -e "1. Look for conflict markers (${RED}<<<<<<<${NC} ${YELLOW}=======${NC} ${RED}>>>>>>>${NC}) in files under:"
-        echo -e "   ${BLUE}$WORKSPACE_LOCATION/$TARGET_RELATIVE${NC}"
-        echo "2. Edit the files to resolve conflicts"
-        echo -e "3. Stage your changes: ${YELLOW}git add $WORKSPACE_LOCATION${NC}"
-        echo -e "4. Re-run with the ${GREEN}--continue${NC} option"
+        
+        # Show summary of what succeeded and what failed
+        if [ ${#succeeded_files[@]} -gt 0 ]; then
+          success_msg "Successfully applied ${#succeeded_files[@]} file(s):"
+          for file in "${succeeded_files[@]}"; do
+            echo "  ✓ $file"
+          done
+          echo ""
+        fi
+        
+        # Try to inject helpful markers for completely failed files
+        if [ "$has_rejected_patches" = true ] && [ ${#failed_files[@]} -gt 0 ]; then
+          info_msg "Injecting conflict markers for ${#failed_files[@]} failed file(s)..."
+          inject_conflict_markers "$filtered_patch" "$commit" "$commit_msg" "${failed_files[@]}"
+          echo ""
+          warning_msg "Files that need manual resolution:"
+          for failed_file in "${failed_files[@]}"; do
+            echo "  ✗ $failed_file"
+          done
+          echo ""
+        fi
+        
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${CYAN}RESOLUTION STEPS:${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo "1. Find conflict markers in: $WORKSPACE_LOCATION/$TARGET_RELATIVE/"
+        echo ""
+        echo "   Two types of markers to look for:"
+        echo -e "   ${RED}a)${NC} Git conflict markers:    ${RED}<<<<<<<${NC} ${YELLOW}=======${NC} ${RED}>>>>>>>${NC}"
+        echo -e "   ${RED}b)${NC} Script-injected markers: ${RED}<<<<<<< PATCH FAILED${NC} ... ${RED}>>>>>>> END PATCH${NC}"
+        echo ""
+        echo "2. For EACH conflict marker:"
+        echo "   • Review what the patch wants to change"
+        echo "   • Manually apply the intended changes"
+        echo "   • Remove all conflict marker lines"
+        echo ""
+        echo "3. Verify your changes make sense:"
+        echo -e "   ${YELLOW}git diff $WORKSPACE_LOCATION${NC}"
+        echo ""
+        echo "4. Stage all resolved files:"
+        echo -e "   ${YELLOW}git add $WORKSPACE_LOCATION${NC}"
+        echo ""
+        echo "5. Continue the update process:"
+        echo -e "   ${GREEN}npm run update-subtree -- --continue${NC}"
+        if [ ${#succeeded_files[@]} -gt 0 ]; then
+          echo ""
+          echo "   Note: Successfully applied files are already staged."
+          echo "   This will commit everything and proceed to the next patch."
+        fi
+        echo ""
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
         info_msg "Progress: Applied $((commit_count - 1))/$total_commits commits successfully"
         info_msg "Failed on commit: $commit ($commit_count/$total_commits)"
         info_msg "Remaining: $((total_commits - commit_count + 1)) commits"
-        echo ""
-        info_msg "The --continue option will automatically commit your staged changes and proceed with remaining patches."
         clean_exit 1 "" true
       fi
       
       # Stage changes and create commit
-      safe_git_commit_if_changes "Update $PACKAGE_NAME: $commit_msg
+      safe_git_commit_if_changes "${COMMIT_PREFIX}Update $PACKAGE_NAME: $commit_msg
 
 Upstream commit: $commit" "$WORKSPACE_LOCATION/$TARGET_RELATIVE"
       local commit_exit_code=$?
@@ -526,7 +861,7 @@ Upstream commit: $commit" "$WORKSPACE_LOCATION/$TARGET_RELATIVE"
       elif [ $commit_exit_code -eq 2 ]; then
         # No changes to commit, but still update package.json for tracking
         if update_package_json_commit "$commit"; then
-          local tracking_msg="Update $PACKAGE_NAME tracking to $commit (no file changes)"
+          local tracking_msg="${COMMIT_PREFIX}Update $PACKAGE_NAME tracking to $commit (no file changes)"
           if safe_git_commit_if_changes "$tracking_msg" "$PACKAGE_JSON" >/dev/null; then
             info_msg "No changes from commit $commit_count/$total_commits"
           fi
@@ -545,7 +880,7 @@ Upstream commit: $commit" "$WORKSPACE_LOCATION/$TARGET_RELATIVE"
       # Still update package.json to track progress
       cd "$MONOREPO_ROOT"
       if update_package_json_commit "$commit"; then
-        local tracking_msg="Update $PACKAGE_NAME tracking to $commit (no file changes)"
+        local tracking_msg="${COMMIT_PREFIX}Update $PACKAGE_NAME tracking to $commit (no file changes)"
         safe_git_commit_if_changes "$tracking_msg" "$PACKAGE_JSON" >/dev/null
       else
         warning_msg "Failed to update package.json tracking for commit $commit_count/$total_commits"
@@ -660,3 +995,28 @@ apply_patch_based_update "$CURRENT_COMMIT" "$TARGET_COMMIT" "$UPSTREAM_SUBDIR" "
 cd "$MONOREPO_ROOT"
 
 success_msg "Successfully updated $PACKAGE_NAME to $TARGET_COMMIT"
+
+# Display final warning if this was a PR test sync
+if [ -n "$DO_NOT_MERGE_FLAG" ] && [ "$DO_NOT_MERGE_FLAG" != "null" ]; then
+  echo ""
+  echo -e "${RED}╔════════════════════════════════════════════════════════════════════════════╗${NC}"
+  echo -e "${RED}║                                                                            ║${NC}"
+  echo -e "${RED}║  ⚠️  WARNING: DO NOT MERGE THESE COMMITS! ⚠️                               ║${NC}"
+  echo -e "${RED}║                                                                            ║${NC}"
+  echo -e "${RED}║  These commits are ONLY for testing changes from an unmerged upstream PR.  ║${NC}"
+  echo -e "${RED}║                                                                            ║${NC}"
+  echo -e "${RED}║  All commits created during this sync have the prefix:                     ║${NC}"
+  echo -e "${RED}║  [DO NOT MERGE - PR TEST SYNC]                                             ║${NC}"
+  echo -e "${RED}║                                                                            ║${NC}"
+  echo -e "${RED}║  Next steps:                                                               ║${NC}"
+  echo -e "${RED}║  1. Test the changes from the upstream PR                                  ║${NC}"
+  echo -e "${RED}║  2. After the PR is merged upstream, start a fresh branch from             ║${NC}"
+  echo -e "${RED}║     odh-dashboard main                                                     ║${NC}"
+  echo -e "${RED}║  3. Run the sync script again WITHOUT the --pr option to get the           ║${NC}"
+  echo -e "${RED}║     official merged changes                                                ║${NC}"
+  echo -e "${RED}║                                                                            ║${NC}"
+  echo -e "${RED}║  DO NOT merge this branch into odh-dashboard main!                         ║${NC}"
+  echo -e "${RED}║                                                                            ║${NC}"
+  echo -e "${RED}╚════════════════════════════════════════════════════════════════════════════╝${NC}"
+  echo ""
+fi

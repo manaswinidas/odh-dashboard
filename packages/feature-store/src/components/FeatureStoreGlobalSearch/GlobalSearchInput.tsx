@@ -56,7 +56,7 @@ const renderNoResults = (
   isSearching: boolean,
   searchValue: string,
 ): React.ReactElement => {
-  const projectName = 'All repositories';
+  const projectName = 'All feature stores';
   const showSearching = isLoading || isSearching;
 
   return (
@@ -212,7 +212,7 @@ const GlobalSearchInput: React.FC<ISearchInputProps> = ({
                           </StackItem>
                           <StackItem>
                             <Content
-                              className={`${text.fontSizeSm} ${text.textColorSubtle}`}
+                              className={`${text.fontSizeSm} ${text.textColorSubtle} ${text.textWrap}`}
                               style={{
                                 marginTop: '0.25rem',
                                 display: 'block',

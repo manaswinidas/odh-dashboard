@@ -4,8 +4,14 @@ import {
   ConnectionTypeConfigMapObj,
   ConnectionTypeValueType,
 } from '@odh-dashboard/internal/concepts/connectionTypes/types';
-import type { SecretKind, SupportedModelFormats } from '@odh-dashboard/internal/k8sTypes';
+import type {
+  ProjectKind,
+  SecretKind,
+  SupportedModelFormats,
+} from '@odh-dashboard/internal/k8sTypes';
 import type { LabeledConnection } from '@odh-dashboard/internal/pages/modelServing/screens/types';
+import type { RecursivePartial } from '@odh-dashboard/internal/typeHelpers';
+import type { z } from 'zod';
 import type {
   ModelServerOption,
   useModelServerSelectField,
@@ -19,10 +25,13 @@ import type { useModelLocationData } from './fields/ModelLocationInputFields';
 import type { useNumReplicasField } from './fields/NumReplicasField';
 import type { useRuntimeArgsField } from './fields/RuntimeArgsField';
 import type { useTokenAuthenticationField } from './fields/TokenAuthenticationField';
+import type { useDeploymentStrategyField } from './fields/DeploymentStrategyField';
 import {
   useCreateConnectionData,
   type CreateConnectionData,
 } from './fields/CreateConnectionInputFields';
+import { useProjectSection } from './fields/ProjectSection';
+import type { ModelServingClusterSettings } from '../../concepts/useModelServingClusterSettings';
 
 export enum ConnectionTypeRefs {
   S3 = 's3',
@@ -36,10 +45,17 @@ export enum ModelLocationType {
   PVC = 'pvc',
 }
 
+export enum ModelTypeLabel {
+  PREDICTIVE = 'Predictive model',
+  GENERATIVE = 'Generative AI model (Example, LLM)',
+}
+
 export type ModelLocationData = {
   type: ModelLocationType.EXISTING | ModelLocationType.NEW | ModelLocationType.PVC;
   connectionTypeObject?: ConnectionTypeConfigMapObj;
   connection?: string;
+  disableInputFields?: boolean;
+  prefillAlertText?: string;
   fieldValues: Record<string, ConnectionTypeValueType>;
   additionalFields: {
     // For S3 and OCI additional fields
@@ -49,7 +65,14 @@ export type ModelLocationData = {
   };
 };
 
+/**
+ * Initial data for the deployment wizard form.
+ * Known field data properties are explicitly typed, while dynamic field data
+ * (from WizardField2Extension) can be added with any string key.
+ */
 export type InitialWizardFormData = {
+  wizardStartIndex?: number;
+  project?: ProjectKind | null;
   modelTypeField?: ModelTypeFieldData;
   k8sNameDesc?: K8sNameDescriptionFieldData;
   externalRoute?: ExternalRouteFieldData;
@@ -67,12 +90,15 @@ export type InitialWizardFormData = {
   initSelectedConnection?: LabeledConnection | undefined;
   modelAvailability?: ModelAvailabilityFieldsData;
   createConnectionData?: CreateConnectionData;
+  deploymentStrategy?: DeploymentStrategyFieldData;
+  transformData?: { metadata?: { labels?: Record<string, string> } };
   // Add more field handlers as needed
-};
+} & Record<string, unknown>;
 
 export type WizardFormData = {
   initialData?: InitialWizardFormData;
   state: {
+    project: ReturnType<typeof useProjectSection>;
     modelType: ReturnType<typeof useModelTypeField>;
     k8sNameDesc: ReturnType<typeof useK8sNameDescriptionFieldData>;
     hardwareProfileConfig: ReturnType<typeof useHardwareProfileConfig>;
@@ -86,7 +112,8 @@ export type WizardFormData = {
     modelAvailability: ReturnType<typeof useModelAvailabilityFields>;
     modelServer: ReturnType<typeof useModelServerSelectField>;
     createConnectionData: ReturnType<typeof useCreateConnectionData>;
-  };
+    deploymentStrategy: ReturnType<typeof useDeploymentStrategyField>;
+  } & Record<string, unknown>;
 };
 // wizard form data
 
@@ -104,6 +131,7 @@ export type HardwareProfileConfigFieldData =
   WizardFormData['state']['hardwareProfileConfig']['formData'];
 export type ModelFormatFieldData = WizardFormData['state']['modelFormatState']['modelFormat'];
 export type ModelAvailabilityFieldsData = WizardFormData['state']['modelAvailability']['data'];
+export type DeploymentStrategyFieldData = WizardFormData['state']['deploymentStrategy']['data'];
 
 // extensible fields
 
@@ -111,43 +139,44 @@ export type DeploymentWizardFieldId =
   | 'modelServerTemplate'
   | 'modelAvailability'
   | 'externalRoute'
-  | 'tokenAuth';
+  | 'tokenAuth'
+  | 'deploymentStrategy';
 
-export type DeploymentWizardFieldBase = {
-  id: DeploymentWizardFieldId;
+export type DeploymentWizardFieldBase<ID extends DeploymentWizardFieldId | string> = {
+  id: ID;
   type: 'modifier' | 'replacement' | 'addition';
-  isActive: (data: Partial<WizardFormData['state']>) => boolean;
+} & {
+  isActive: (wizardFormData: RecursivePartial<WizardFormData['state']>) => boolean;
 };
 
-export type ModifierField<T extends (...args: Parameters<T>) => ReturnType<T>> =
-  DeploymentWizardFieldBase & {
-    type: 'modifier';
-    modifier: (stateInput: Parameters<T>, stateOutput: ReturnType<T>) => ReturnType<T>;
+export type WizardField<T = unknown> = DeploymentWizardFieldBase<string> & {
+  type: 'addition';
+  parentId?: string;
+  step?: 'modelSource' | 'modelDeployment' | 'advancedOptions' | 'summary'; // used for validation of the entire step. Ideally this should be dynamic from the parent field.
+  reducerFunctions: {
+    // TODO: make dispatch function that clears if this field's dependencies are changing
+    setFieldData: (fieldData: T) => T;
+    getInitialFieldData: (fieldData?: T) => T;
+    validationSchema?: z.ZodSchema<T>;
   };
-export const isModifierField = <T extends (...args: Parameters<T>) => ReturnType<T>>(
-  field: DeploymentWizardFieldBase,
-): field is ModifierField<T> => {
-  return field.type === 'modifier';
+  // externalDataHook: ... // TODO: add this if we need to fetch data for the field.
+  component: React.FC<{ id: string; value: T; onChange: (value: T) => void }>;
 };
 
 // actual fields
 
-export type ModelServerTemplateField = ModifierField<typeof useModelServerSelectField> & {
-  id: 'modelServerTemplate';
+export type ModelServerTemplateField = DeploymentWizardFieldBase<'modelServerTemplate'> & {
+  extraOptions?: ModelServerOption[];
+  suggestion?: (clusterSettings?: ModelServingClusterSettings) => ModelServerOption | undefined;
 };
-export type ModelAvailabilityField = ModifierField<typeof useModelAvailabilityFields> & {
+export type ModelAvailabilityField = DeploymentWizardFieldBase<'modelAvailability'> & {
   id: 'modelAvailability';
+  showSaveAsMaaS?: boolean;
 };
-// todo should extend ModifierField
-export type ExternalRouteField = DeploymentWizardFieldBase & {
-  id: 'externalRoute';
-  type: 'modifier';
+export type ExternalRouteField = DeploymentWizardFieldBase<'externalRoute'> & {
   isVisible: boolean;
 };
-// todo should extend ModifierField
-export type TokenAuthField = DeploymentWizardFieldBase & {
-  id: 'tokenAuth';
-  type: 'modifier';
+export type TokenAuthField = DeploymentWizardFieldBase<'tokenAuth'> & {
   initialValue: boolean;
 };
 
@@ -157,7 +186,8 @@ export type DeploymentWizardField =
   | ModelServerTemplateField
   | ModelAvailabilityField
   | ExternalRouteField
-  | TokenAuthField;
+  | TokenAuthField
+  | DeploymentStrategyField;
 
 export const isModelServerTemplateField = (
   field: DeploymentWizardField,
@@ -175,4 +205,14 @@ export const isExternalRouteField = (field: DeploymentWizardField): field is Ext
 };
 export const isTokenAuthField = (field: DeploymentWizardField): field is TokenAuthField => {
   return field.id === 'tokenAuth';
+};
+export type DeploymentStrategyField = DeploymentWizardFieldBase<'deploymentStrategy'> & {
+  id: 'deploymentStrategy';
+  type: 'modifier';
+  isVisible: boolean;
+};
+export const isDeploymentStrategyField = (
+  field: DeploymentWizardField,
+): field is DeploymentStrategyField => {
+  return field.id === 'deploymentStrategy';
 };

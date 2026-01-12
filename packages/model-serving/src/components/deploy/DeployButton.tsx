@@ -1,47 +1,30 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Button, Tooltip, type ButtonProps } from '@patternfly/react-core';
 import { ProjectKind } from '@odh-dashboard/internal/k8sTypes';
-import { useKueueConfiguration } from '@odh-dashboard/internal/concepts/hardwareProfiles/kueueUtils';
-import { useServingRuntimeTemplates } from '../../concepts/servingRuntimeTemplates/useServingRuntimeTemplates';
+import { useNavigateToDeploymentWizard } from '../deploymentWizard/useNavigateToDeploymentWizard';
+import { useCanMakeNewDeployment } from '../../concepts/useCanMakeNewDeployment';
 
 export const DeployButton: React.FC<{
   project: ProjectKind | null;
   variant?: ButtonProps['variant'];
-  createRoute?: string;
-}> = ({ project, variant = 'primary', createRoute }) => {
-  const navigate = useNavigate();
+}> = ({ project, variant = 'primary' }) => {
+  const navigateToDeploymentWizard = useNavigateToDeploymentWizard();
 
-  const handleDeployClick = () => {
-    if (!createRoute) {
-      console.error('createRoute is not set. Nowhere to navigate to.');
-      return;
-    }
-    navigate(createRoute);
-  };
-
-  const { isKueueDisabled } = useKueueConfiguration(project ?? undefined);
-  const [globalTemplates, globalTemplatesLoaded] = useServingRuntimeTemplates();
-  const isMissingTemplates = globalTemplates.length === 0 && globalTemplatesLoaded;
-
-  const disableButton = !project || isMissingTemplates || isKueueDisabled;
-  const disabledReason = isMissingTemplates
-    ? 'At least one serving runtime must be enabled to deploy a model. Contact your administrator.'
-    : 'To deploy a model, select a project.';
+  const { disabled, disabledReason } = useCanMakeNewDeployment(project);
 
   const deployButton = (
     <Button
       data-testid="deploy-button"
       variant={variant}
-      onClick={handleDeployClick}
-      isAriaDisabled={disableButton}
+      onClick={() => navigateToDeploymentWizard(project?.metadata.name)}
+      isAriaDisabled={disabled}
       isInline={variant === 'link'}
     >
       Deploy model
     </Button>
   );
 
-  if (disableButton) {
+  if (disabled) {
     return (
       <Tooltip
         data-testid="deploy-model-tooltip"

@@ -4,6 +4,7 @@ import {
   k8sPatchResource,
   k8sListResource,
   k8sDeleteResource,
+  k8sUpdateResource,
   K8sStatus,
 } from '@openshift/dynamic-plugin-sdk-utils';
 import { NotebookKind } from '#~/k8sTypes';
@@ -12,6 +13,7 @@ import { mockK8sResourceList } from '#~/__mocks__/mockK8sResourceList';
 import { mock200Status } from '#~/__mocks__/mockK8sStatus';
 import { mockStartNotebookData } from '#~/__mocks__/mockStartNotebookData';
 import { mockHardwareProfile } from '#~/__mocks__/mockHardwareProfile';
+import { mockUseAssignHardwareProfileResult } from '#~/__mocks__/mockUseAssignHardwareProfileResult';
 
 import {
   assembleNotebook,
@@ -29,6 +31,7 @@ import {
   getStopPatch,
   startPatch,
   mergePatchUpdateNotebook,
+  updateNotebook,
   restartNotebook,
   patchNotebookImage,
 } from '#~/api/k8s/notebooks';
@@ -49,6 +52,7 @@ jest.mock('@openshift/dynamic-plugin-sdk-utils', () => ({
   k8sGetResource: jest.fn(),
   k8sListResource: jest.fn(),
   k8sPatchResource: jest.fn(),
+  k8sUpdateResource: jest.fn(),
 }));
 
 jest.mock('#~/api/k8sUtils', () => ({
@@ -66,6 +70,7 @@ const k8sCreateResourceMock = jest.mocked(k8sCreateResource<NotebookKind>);
 const k8sGetResourceMock = jest.mocked(k8sGetResource<NotebookKind>);
 const k8sPatchResourceMock = jest.mocked(k8sPatchResource<NotebookKind>);
 const k8sListResourceMock = jest.mocked(k8sListResource<NotebookKind>);
+const k8sUpdateResourceMock = jest.mocked(k8sUpdateResource<NotebookKind>);
 const k8sMergePatchResourceMock = jest.mocked(k8sMergePatchResource<NotebookKind>);
 const k8sDeleteResourceMock = jest.mocked(k8sDeleteResource<NotebookKind, K8sStatus>);
 
@@ -211,7 +216,7 @@ describe('assembleNotebook', () => {
           },
         },
       },
-      podSpecOptions: {},
+      hardwareProfileOptions: mockStartNotebookData({}).hardwareProfileOptions,
     };
     const result = assembleNotebook(notebookData, 'test-user');
     expect(result.metadata.annotations?.['notebooks.opendatahub.io/last-image-selection']).toBe(
@@ -295,31 +300,65 @@ describe('assembleNotebook', () => {
   });
 
   it('should set hardware profile annotation for real profiles', () => {
-    const notebookData = mockStartNotebookData({});
     const hardwareProfile = mockHardwareProfile({ name: 'real-profile' });
-    hardwareProfile.metadata.uid = 'test-uid';
-    notebookData.podSpecOptions.selectedHardwareProfile = hardwareProfile;
+    const notebookData = mockStartNotebookData({});
+    notebookData.hardwareProfileOptions = mockUseAssignHardwareProfileResult({
+      selectedHardwareProfile: hardwareProfile,
+    });
     const result = assembleNotebook(notebookData, 'test-user');
     expect(result.metadata.annotations?.['opendatahub.io/hardware-profile-name']).toBe(
       'real-profile',
     );
   });
 
-  it('should not set pod specs like tolerations and nodeSelector for real hardware profiles', () => {
+  it('should apply hardware profile annotations even without scheduling config', () => {
     const notebookData = mockStartNotebookData({});
-    const hardwareProfile = mockHardwareProfile({});
-    hardwareProfile.metadata.uid = 'test-uid';
-    notebookData.podSpecOptions.selectedHardwareProfile = hardwareProfile;
+    const hardwareProfile = mockHardwareProfile({
+      schedulingType: '',
+      name: 'no-scheduling-profile',
+    });
+    notebookData.hardwareProfileOptions = mockUseAssignHardwareProfileResult({
+      selectedHardwareProfile: hardwareProfile,
+    });
+
     const result = assembleNotebook(notebookData, 'test-user');
+
+    expect(result.metadata.annotations?.['opendatahub.io/hardware-profile-name']).toBe(
+      'no-scheduling-profile',
+    );
+
+    expect(result.spec.template.spec.containers[0].resources).toEqual({
+      requests: {
+        memory: '2Gi',
+        cpu: '500m',
+      },
+      limits: {
+        memory: '2Gi',
+        cpu: '500m',
+      },
+    });
+    // the following should be injected by the operator's mutating webhook
     expect(result.spec.template.spec.tolerations).toBeUndefined();
     expect(result.spec.template.spec.nodeSelector).toBeUndefined();
   });
 
   it('should set hardware profile namespace annotation to dashboard namespace when global scoped', () => {
+    const hardwareProfile = mockHardwareProfile({ name: 'real-profile', namespace: 'opendatahub' });
     const notebookData = mockStartNotebookData({});
-    const hardwareProfile = mockHardwareProfile({ name: 'real-profile' });
-    hardwareProfile.metadata.uid = 'test-uid';
-    notebookData.podSpecOptions.selectedHardwareProfile = hardwareProfile;
+    notebookData.hardwareProfileOptions = mockUseAssignHardwareProfileResult({
+      selectedHardwareProfile: hardwareProfile,
+      resources: {
+        requests: {
+          memory: '2Gi',
+          cpu: '500m',
+        },
+        limits: {
+          memory: '2Gi',
+          cpu: '500m',
+        },
+      },
+    });
+
     const result = assembleNotebook(notebookData, 'test-user');
     expect(result.metadata.annotations?.['opendatahub.io/hardware-profile-namespace']).toBe(
       'opendatahub',
@@ -1313,5 +1352,80 @@ describe('restartNotebook', () => {
     });
     expect(k8sPatchResourceMock).toHaveBeenCalledTimes(1);
     expect(renderResult).toStrictEqual(notebookMock);
+  });
+});
+
+describe('updateNotebook', () => {
+  it('should clear old volumes and volumeMounts to prevent lodash merge corruption', async () => {
+    // Create existing notebook with multiple volumes including system volumes
+    const existingNotebook = mockNotebookK8sResource({ uid });
+
+    // Add volumes that would cause corruption if merged by index with lodash
+    existingNotebook.spec.template.spec.volumes = [
+      { name: 'storage-1', persistentVolumeClaim: { claimName: 'storage-1' } },
+      { name: 'storage-2', persistentVolumeClaim: { claimName: 'storage-2' } },
+      { name: 'shm', emptyDir: { medium: 'Memory' } },
+      {
+        name: 'trusted-ca',
+        configMap: {
+          name: 'workbench-trusted-ca-bundle',
+          optional: true,
+        },
+      },
+      { name: 'oauth-config', secret: { secretName: 'test-oauth-config', defaultMode: 420 } },
+    ];
+
+    existingNotebook.spec.template.spec.containers[0].volumeMounts = [
+      { name: 'storage-1', mountPath: '/opt/app-root/src' },
+      { name: 'storage-2', mountPath: '/data' },
+      { name: 'shm', mountPath: '/dev/shm' },
+      { name: 'trusted-ca', mountPath: '/etc/pki/tls/certs/ca-bundle.crt' },
+    ];
+
+    // Create new notebook data with only storage-1 (simulating removal of storage-2)
+    const newNotebookData = mockStartNotebookData({
+      notebookId: existingNotebook.metadata.name,
+    });
+
+    k8sUpdateResourceMock.mockResolvedValue(existingNotebook);
+
+    await updateNotebook(existingNotebook, newNotebookData, username);
+
+    // Get the resource that was passed to k8sUpdateResource
+    const { resource: mergedNotebook } = k8sUpdateResourceMock.mock.calls[0][0];
+
+    // Verify volumes are clean (no duplicates, no multiple source types per volume)
+    const { volumes } = mergedNotebook.spec.template.spec;
+    expect(volumes).toBeDefined();
+
+    // Check that shm volume was added and is clean (only has emptyDir, not merged with PVC)
+    const shmVolume = volumes?.find((v) => v.name === 'shm');
+    expect(shmVolume).toBeDefined();
+    expect(shmVolume).toEqual({
+      name: 'shm',
+      emptyDir: { medium: 'Memory' },
+    });
+    // Verify no corruption - should not have both emptyDir and persistentVolumeClaim
+    expect(shmVolume?.persistentVolumeClaim).toBeUndefined();
+    expect(shmVolume?.secret).toBeUndefined();
+    expect(shmVolume?.configMap).toBeUndefined();
+
+    // Verify no duplicate volume names
+    const volumeNames = volumes?.map((v) => v.name) || [];
+    const uniqueVolumeNames = new Set(volumeNames);
+    expect(volumeNames.length).toBe(uniqueVolumeNames.size);
+
+    // Verify volumeMounts are clean
+    const volumeMounts = mergedNotebook.spec.template.spec.containers[0].volumeMounts || [];
+
+    // Verify no duplicate mount paths
+    const mountPaths = volumeMounts.map((m) => m.mountPath);
+    const uniqueMountPaths = new Set(mountPaths);
+    expect(mountPaths.length).toBe(uniqueMountPaths.size);
+
+    // Verify shm volumeMount exists
+    const shmMount = volumeMounts.find((m) => m.name === 'shm');
+    expect(shmMount).toBeDefined();
+    expect(shmMount?.mountPath).toBe('/dev/shm');
   });
 });

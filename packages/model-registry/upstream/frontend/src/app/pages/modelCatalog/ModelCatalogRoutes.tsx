@@ -1,16 +1,16 @@
 import * as React from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { ModelCatalogContextProvider } from '~/app/context/modelCatalog/ModelCatalogContext';
-import ModelCatalogCoreLoader from './ModelCatalogCoreLoader';
+import { ModelDetailsTab } from '~/concepts/modelCatalog/const';
+import OdhModelCatalogCoreLoader from '~/odh/components/OdhModelCatalogCoreLoader';
 import ModelDetailsPage from './screens/ModelDetailsPage';
 import RegisterCatalogModelPage from './screens/RegisterCatalogModelPage';
 import ModelCatalog from './screens/ModelCatalog';
-import { ModelDetailsTab } from './screens/ModelDetailsTabs';
 
 const ModelCatalogRoutes: React.FC = () => (
   <ModelCatalogContextProvider>
     <Routes>
-      <Route path="/:sourceId?/*" element={<ModelCatalogCoreLoader />}>
+      <Route path="/:sourceId?/*" element={<OdhModelCatalogCoreLoader />}>
         <Route index element={<ModelCatalog />} />
         <Route path=":modelName">
           <Route index element={<Navigate to={ModelDetailsTab.OVERVIEW} replace />} />

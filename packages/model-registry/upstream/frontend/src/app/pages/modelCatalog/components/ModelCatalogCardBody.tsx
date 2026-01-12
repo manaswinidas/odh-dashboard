@@ -4,7 +4,6 @@ import {
   Button,
   Content,
   ContentVariants,
-  // Divider, // NOTE: overall_average is currently omitted from the API and will be restored
   Flex,
   List,
   ListItem,
@@ -14,11 +13,7 @@ import {
   StackItem,
 } from '@patternfly/react-core';
 import { Link } from 'react-router-dom';
-import {
-  /* MonitoringIcon, */ HelpIcon,
-  AngleLeftIcon,
-  AngleRightIcon,
-} from '@patternfly/react-icons'; // NOTE: MonitoringIcon - overall_average is currently omitted from the API and will be restored
+import { HelpIcon, AngleLeftIcon, AngleRightIcon } from '@patternfly/react-icons';
 import {
   CatalogModel,
   CatalogSource,
@@ -29,9 +24,14 @@ import {
 } from '~/app/modelCatalogTypes';
 import { extractValidatedModelMetrics } from '~/app/pages/modelCatalog/utils/validatedModelUtils';
 import { catalogModelDetailsTabFromModel } from '~/app/routes/modelCatalog/catalogModel';
-import { ModelDetailsTab } from '~/app/pages/modelCatalog/screens/ModelDetailsTabs';
-import { useCatalogModelArtifacts } from '~/app/hooks/modelCatalog/useCatalogModelArtifacts';
-import { filterArtifactsByType } from '~/app/pages/modelCatalog/utils/modelCatalogUtils';
+import { ModelDetailsTab, ModelCatalogNumberFilterKey } from '~/concepts/modelCatalog/const';
+import { useCatalogPerformanceArtifacts } from '~/app/hooks/modelCatalog/useCatalogPerformanceArtifacts';
+import {
+  filterArtifactsByType,
+  getActiveLatencyFieldName,
+} from '~/app/pages/modelCatalog/utils/modelCatalogUtils';
+import { formatLatency } from '~/app/pages/modelCatalog/utils/performanceMetricsUtils';
+import { ModelCatalogContext } from '~/app/context/modelCatalog/ModelCatalogContext';
 
 type ModelCatalogCardBodyProps = {
   model: CatalogModel;
@@ -45,6 +45,7 @@ const ModelCatalogCardBody: React.FC<ModelCatalogCardBodyProps> = ({
   source,
 }) => {
   const [currentPerformanceIndex, setCurrentPerformanceIndex] = useState(0);
+  const { filterData, filterOptions } = React.useContext(ModelCatalogContext);
 
   const handlePreviousBenchmark = () => {
     setCurrentPerformanceIndex((prev) => (prev > 0 ? prev - 1 : performanceMetrics.length - 1));
@@ -54,38 +55,52 @@ const ModelCatalogCardBody: React.FC<ModelCatalogCardBodyProps> = ({
     setCurrentPerformanceIndex((prev) => (prev < performanceMetrics.length - 1 ? prev + 1 : 0));
   };
 
-  const [artifacts, artifactsLoaded, artifactsLoadError] = useCatalogModelArtifacts(
-    source?.id || '',
-    model.name,
-    isValidated,
-    true,
-  );
+  // Get performance-specific filter params for the /performance_artifacts endpoint
+  const targetRPS = filterData[ModelCatalogNumberFilterKey.MIN_RPS];
+  const latencyProperty = getActiveLatencyFieldName(filterData);
+
+  // Fetch performance artifacts from the new endpoint with server-side filtering
+  const [performanceArtifactsList, performanceArtifactsLoaded, performanceArtifactsError] =
+    useCatalogPerformanceArtifacts(
+      source?.id || '',
+      model.name,
+      {
+        targetRPS,
+        latencyProperty,
+        recommendations: true,
+      },
+      filterData,
+      filterOptions,
+      isValidated, // Only fetch if validated
+    );
 
   const performanceMetrics = filterArtifactsByType<CatalogPerformanceMetricsArtifact>(
-    artifacts.items,
+    performanceArtifactsList.items,
     CatalogArtifactType.metricsArtifact,
     MetricsType.performanceMetrics,
   );
 
   const accuracyMetrics = filterArtifactsByType<CatalogAccuracyMetricsArtifact>(
-    artifacts.items,
+    performanceArtifactsList.items,
     CatalogArtifactType.metricsArtifact,
     MetricsType.accuracyMetrics,
   );
 
-  if (!artifactsLoaded && isValidated) {
+  const isLoading = isValidated && !performanceArtifactsLoaded;
+
+  if (isLoading) {
     return <Spinner />;
   }
 
-  if (artifactsLoadError && isValidated) {
+  if (performanceArtifactsError && isValidated) {
     return (
-      <Alert variant="danger" isInline title={artifactsLoadError.name}>
-        {artifactsLoadError.message}
+      <Alert variant="danger" isInline title={performanceArtifactsError.name}>
+        {performanceArtifactsError.message}
       </Alert>
     );
   }
 
-  if (isValidated && performanceMetrics.length > 0 && accuracyMetrics.length > 0) {
+  if (isValidated && performanceMetrics.length > 0) {
     const metrics = extractValidatedModelMetrics(
       performanceMetrics,
       accuracyMetrics,
@@ -94,44 +109,6 @@ const ModelCatalogCardBody: React.FC<ModelCatalogCardBodyProps> = ({
 
     return (
       <Stack hasGutter>
-        {/* NOTE: overall_average is currently omitted from the API and will be restored
-        <StackItem>
-          <Flex
-            alignItems={{ default: 'alignItemsCenter' }}
-            justifyContent={{ default: 'justifyContentSpaceBetween' }}
-          >
-            <Flex
-              alignItems={{ default: 'alignItemsCenter' }}
-              gap={{ default: 'gapSm' }}
-              wrap="nowrap"
-            >
-              <MonitoringIcon />
-              <span data-testid="validated-model-accuracy" className="pf-v6-u-font-weight-bold">
-                {metrics.accuracy}%
-              </span>
-            </Flex>
-            <Flex alignItems={{ default: 'alignItemsCenter' }} gap={{ default: 'gapXs' }}>
-              <span style={{ fontSize: '14px', color: 'var(--pf-v5-global--Color--200)' }}>
-                Average accuracy
-              </span>
-              <Popover
-                headerContent="Average accuracy"
-                bodyContent="The weighted average of normalized scores from all benchmarks. Each benchmark is normalized to a 0-100 scale. All normalized benchmarks are then averaged together."
-              >
-                <Button
-                  icon={<HelpIcon />}
-                  hasNoPadding
-                  aria-label="More info for average accuracy"
-                  variant="plain"
-                />
-              </Popover>
-            </Flex>
-          </Flex>
-        </StackItem>
-
-        <Divider />
-        */}
-
         <StackItem>
           <Flex justifyContent={{ default: 'justifyContentSpaceBetween' }}>
             <Flex direction={{ default: 'column' }}>
@@ -141,19 +118,19 @@ const ModelCatalogCardBody: React.FC<ModelCatalogCardBodyProps> = ({
               <Content component={ContentVariants.small}>Hardware</Content>
             </Flex>
             <Flex direction={{ default: 'column' }}>
-              <span className="pf-v6-u-font-weight-bold" data-testid="validated-model-rps">
-                {metrics.rpsPerReplica}
+              <span className="pf-v6-u-font-weight-bold" data-testid="validated-model-replicas">
+                {metrics.replicas !== undefined ? metrics.replicas : metrics.rpsPerReplica}
               </span>
-              <Content component={ContentVariants.small}>RPS/rep.</Content>
+              <Content component={ContentVariants.small}>
+                {metrics.replicas !== undefined ? 'Replicas' : 'RPS/rep.'}
+              </Content>
             </Flex>
             <Flex direction={{ default: 'column' }}>
               <span className="pf-v6-u-font-weight-bold" data-testid="validated-model-ttft">
-                {metrics.ttftMean} ms
+                {formatLatency(metrics.ttftMean)}
               </span>
-              <Flex alignItems={{ default: 'alignItemsCenter' }} gap={{ default: 'gapXs' }}>
-                <span style={{ fontSize: '14px', color: 'var(--pf-v5-global--Color--200)' }}>
-                  TTFT
-                </span>
+              <Flex alignItems={{ default: 'alignItemsBaseline' }} gap={{ default: 'gapXs' }}>
+                <Content component={ContentVariants.small}>TTFT</Content>
                 <Popover
                   headerContent="Latency"
                   bodyContent={

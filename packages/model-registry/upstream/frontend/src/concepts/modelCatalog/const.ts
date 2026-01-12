@@ -9,7 +9,6 @@ export enum ModelCatalogStringFilterKey {
 
 export enum ModelCatalogNumberFilterKey {
   MIN_RPS = 'rps_mean',
-  MAX_LATENCY = 'ttft_mean',
 }
 
 export enum LatencyMetric {
@@ -28,6 +27,40 @@ export enum LatencyPercentile {
 
 // Use getLatencyFieldName util to get values of this type
 export type LatencyMetricFieldName = `${Lowercase<LatencyMetric>}_${Lowercase<LatencyPercentile>}`;
+
+const isMetricLowercase = (str: string): str is Lowercase<LatencyMetric> =>
+  Object.values(LatencyMetric)
+    .map((value) => value.toLowerCase())
+    .includes(str);
+
+const isPercentileLowercase = (str: string): str is Lowercase<LatencyPercentile> =>
+  Object.values(LatencyPercentile)
+    .map((value) => value.toLowerCase())
+    .includes(str);
+
+/**
+ * Maps metric and percentile combination to the corresponding artifact field
+ */
+export const getLatencyFieldName = (
+  metric: LatencyMetric,
+  percentile: LatencyPercentile,
+): LatencyMetricFieldName => {
+  const metricPrefix = metric.toLowerCase();
+  const percentileSuffix = percentile.toLowerCase();
+  if (!isMetricLowercase(metricPrefix) || !isPercentileLowercase(percentileSuffix)) {
+    return 'ttft_mean'; // Default fallback
+  }
+  return `${metricPrefix}_${percentileSuffix}`;
+};
+
+/**
+ * All possible latency field names computed from LatencyMetric and LatencyPercentile enums
+ */
+export const ALL_LATENCY_FIELD_NAMES: LatencyMetricFieldName[] = Object.values(
+  LatencyMetric,
+).flatMap((metric) =>
+  Object.values(LatencyPercentile).map((percentile) => getLatencyFieldName(metric, percentile)),
+);
 
 export enum UseCaseOptionValue {
   CHATBOT = 'chatbot',
@@ -104,6 +137,18 @@ export const MODEL_CATALOG_PROVIDER_NOTABLE_MODELS = {
   [ModelCatalogProvider.NVIDIA_ALTERNATE]: 'NVIDIA research models',
   [ModelCatalogProvider.RED_HAT]: 'Red Hat optimized models',
 };
+
+export const MODEL_CATALOG_POPOVER_MESSAGES = {
+  VALIDATED:
+    'Validated models are benchmarked for performance and quality using leading open source evaluation datasets.',
+  RED_HAT: 'Red Hat AI models are provided and supported by Red Hat.',
+} as const;
+
+export enum CatalogModelCustomPropertyKey {
+  VALIDATED_ON = 'validated_on',
+  TENSOR_TYPE = 'tensor_type',
+  SIZE = 'size',
+}
 
 export enum ModelCatalogLicense {
   APACHE_2_0 = 'apache-2.0',
@@ -318,4 +363,51 @@ export enum AllLanguageCode {
   TR = 'tr',
   UR = 'ur',
   TL = 'tl',
+}
+
+export type ModelCatalogFilterKey =
+  | ModelCatalogStringFilterKey
+  | ModelCatalogNumberFilterKey
+  | LatencyMetricFieldName;
+
+/**
+ * All possible filter keys combining string, number, and latency field keys
+ */
+export const ALL_CATALOG_FILTER_KEYS: ModelCatalogFilterKey[] = [
+  ...Object.values(ModelCatalogStringFilterKey),
+  ...Object.values(ModelCatalogNumberFilterKey),
+  ...ALL_LATENCY_FIELD_NAMES,
+];
+
+/**
+ * Type guard to check if a string is a valid ModelCatalogFilterKey
+ */
+export const isCatalogFilterKey = (key: string): key is ModelCatalogFilterKey =>
+  ALL_CATALOG_FILTER_KEYS.some((k) => String(k) === key);
+
+/**
+ * Display names for filter categories.
+ * Includes all ModelCatalogFilterKeys (ModelCatalogStringFilterKey | ModelCatalogNumberFilterKey | LatencyMetricFieldName).
+ */
+export const MODEL_CATALOG_FILTER_CATEGORY_NAMES: Record<ModelCatalogFilterKey, string> = {
+  // String filter keys
+  [ModelCatalogStringFilterKey.PROVIDER]: 'Provider',
+  [ModelCatalogStringFilterKey.LICENSE]: 'License',
+  [ModelCatalogStringFilterKey.TASK]: 'Task',
+  [ModelCatalogStringFilterKey.LANGUAGE]: 'Language',
+  [ModelCatalogStringFilterKey.HARDWARE_TYPE]: 'Hardware type',
+  [ModelCatalogStringFilterKey.USE_CASE]: 'Workload type',
+  // Number filter keys
+  [ModelCatalogNumberFilterKey.MIN_RPS]: 'Min RPS',
+  // Latency field names - all use "Max latency" as category name
+  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+  ...(Object.fromEntries(ALL_LATENCY_FIELD_NAMES.map((field) => [field, 'Max latency'])) as Record<
+    LatencyMetricFieldName,
+    string
+  >),
+};
+
+export enum ModelDetailsTab {
+  OVERVIEW = 'overview',
+  PERFORMANCE_INSIGHTS = 'performance-insights',
 }

@@ -2,18 +2,18 @@ import React from 'react';
 import {
   AccessReviewResourceAttributes,
   K8sDSGResource,
-  ProjectKind,
   ServingContainer,
   ServingRuntimeKind,
 } from '@odh-dashboard/internal/k8sTypes';
 import { isServingRuntimeKind } from '@odh-dashboard/internal/pages/modelServing/customServingRuntimes/utils';
 import { Form, Stack, StackItem, Alert, FormGroup, FormSection } from '@patternfly/react-core';
-import { useAccessReview } from '../../../../../../frontend/src/api';
+import { useAccessReview } from '@odh-dashboard/internal/api/index';
 import { ExternalRouteField } from '../fields/ExternalRouteField';
 import { TokenAuthenticationField } from '../fields/TokenAuthenticationField';
 import { RuntimeArgsField } from '../fields/RuntimeArgsField';
 import { EnvironmentVariablesField } from '../fields/EnvironmentVariablesField';
-import { UseModelDeploymentWizardState } from '../useDeploymentWizard';
+import { DeploymentStrategyField } from '../fields/DeploymentStrategyField';
+import { type UseModelDeploymentWizardState } from '../useDeploymentWizard';
 import { AvailableAiAssetsFieldsComponent } from '../fields/ModelAvailabilityFields';
 import { showAuthWarning } from '../hooks/useAuthWarning';
 
@@ -25,12 +25,12 @@ const accessReviewResource: AccessReviewResourceAttributes = {
 
 type AdvancedSettingsStepContentProps = {
   wizardState: UseModelDeploymentWizardState;
-  project: ProjectKind;
+  projectName?: string;
 };
 
 export const AdvancedSettingsStepContent: React.FC<AdvancedSettingsStepContentProps> = ({
   wizardState,
-  project,
+  projectName,
 }) => {
   const externalRouteData = wizardState.state.externalRoute.data;
   const tokenAuthData = wizardState.state.tokenAuthentication.data;
@@ -83,7 +83,7 @@ export const AdvancedSettingsStepContent: React.FC<AdvancedSettingsStepContentPr
 
   const [allowCreate] = useAccessReview({
     ...accessReviewResource,
-    namespace: project.metadata.name,
+    namespace: projectName,
   });
 
   const handleExternalRouteChange = (checked: boolean) => {
@@ -109,13 +109,13 @@ export const AdvancedSettingsStepContent: React.FC<AdvancedSettingsStepContentPr
               <StackItem>
                 <FormGroup
                   label="Model playground availability"
-                  data-testid="Model-playground-availability-section"
-                  fieldId="Model playground availability"
+                  data-testid="model-playground-availability"
+                  fieldId="model-playground-availability"
                 >
                   <AvailableAiAssetsFieldsComponent
                     data={wizardState.state.modelAvailability.data}
                     setData={wizardState.state.modelAvailability.setData}
-                    showSaveAsMaaS={wizardState.state.modelAvailability.showSaveAsMaaS}
+                    wizardState={wizardState}
                   />
                 </FormGroup>
               </StackItem>
@@ -192,6 +192,20 @@ export const AdvancedSettingsStepContent: React.FC<AdvancedSettingsStepContentPr
                 </Stack>
               </FormGroup>
             </StackItem>
+            {wizardState.state.deploymentStrategy.isVisible && (
+              <StackItem>
+                <FormGroup
+                  label="Deployment strategy"
+                  data-testid="deployment-strategy-section"
+                  fieldId="deployment-strategy"
+                >
+                  <DeploymentStrategyField
+                    value={wizardState.state.deploymentStrategy.data}
+                    onChange={wizardState.state.deploymentStrategy.setData}
+                  />
+                </FormGroup>
+              </StackItem>
+            )}
           </Stack>
         </FormSection>
       </Form>

@@ -21,6 +21,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -55,6 +56,15 @@ const (
 
 	// Label for LSD identification
 	OpenDataHubDashboardLabelKey = "opendatahub.io/dashboard"
+
+	// Labels for identifying KServe services
+	InferenceServiceName                 = "serving.kserve.io/inferenceservice"
+	LLMInferenceServiceName              = "app.kubernetes.io/name"
+	LLMInferenceServiceComponent         = "app.kubernetes.io/component"
+	LLMInferenceServiceWorkloadComponent = "llminferenceservice-workload"
+
+	// Annotation for authentication
+	authAnnotationKey = "security.opendatahub.io/enable-auth"
 )
 
 type TokenKubernetesClient struct {
@@ -114,6 +124,49 @@ func (kc *TokenKubernetesClient) IsClusterAdmin(ctx context.Context, identity *i
 	return true, nil
 }
 
+// GetClusterDomainUsingServiceAccount retrieves cluster domain using the pod's service account
+func GetClusterDomainUsingServiceAccount(ctx context.Context, logger *slog.Logger) (string, error) {
+	// Use in-cluster config (pod's service account)
+	cfg, err := rest.InClusterConfig()
+	if err != nil {
+		return "", err
+	}
+
+	// Query ingresses.config.openshift.io/cluster using service account
+	config := rest.CopyConfig(cfg)
+	config.APIPath = "/apis"
+	config.GroupVersion = &schema.GroupVersion{Group: "config.openshift.io", Version: "v1"}
+	config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
+
+	restClient, err := rest.RESTClientFor(config)
+	if err != nil {
+		return "", err
+	}
+
+	result := restClient.Get().Resource("ingresses").Name("cluster").Do(ctx)
+	rawBytes, err := result.Raw()
+	if err != nil {
+		return "", err
+	}
+
+	var obj map[string]interface{}
+	if err := json.Unmarshal(rawBytes, &obj); err != nil {
+		return "", err
+	}
+
+	spec, ok := obj["spec"].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("invalid ingress config: missing spec")
+	}
+
+	domain, ok := spec["domain"].(string)
+	if !ok || domain == "" {
+		return "", fmt.Errorf("invalid ingress config: missing domain")
+	}
+
+	return domain, nil
+}
+
 func newTokenKubernetesClient(token string, logger *slog.Logger, envConfig config.EnvConfig) (*TokenKubernetesClient, error) {
 	baseConfig, err := helper.GetKubeconfig()
 	if err != nil {
@@ -156,21 +209,86 @@ func newTokenKubernetesClient(token string, logger *slog.Logger, envConfig confi
 	}, nil
 }
 
-// RequestIdentity is unused because the token already represents the user identity.
-// This endpoint is used only on dev mode that is why is safe to ignore permissions errors
-func (kc *TokenKubernetesClient) GetNamespaces(ctx context.Context, _ *integrations.RequestIdentity) ([]corev1.Namespace, error) {
+// GetNamespaces returns namespaces accessible to the user.
+// For cluster admins, returns all namespaces.
+// For regular users, uses OpenShift Projects API which returns only accessible projects.
+func (kc *TokenKubernetesClient) GetNamespaces(ctx context.Context, identity *integrations.RequestIdentity) ([]corev1.Namespace, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	// Using controller-runtime client - much simpler!
-	var nsList corev1.NamespaceList
-	err := kc.Client.List(ctx, &nsList)
-	if err != nil {
-		kc.Logger.Error("user is not allowed to list namespaces or failed to list namespaces")
-		return []corev1.Namespace{}, fmt.Errorf("failed to list namespaces: %w", err)
+	// Check for nil identity
+	if identity == nil {
+		kc.Logger.Error("identity is nil")
+		return nil, fmt.Errorf("identity cannot be nil")
 	}
 
-	return nsList.Items, nil
+	// Create a dynamic client with user token
+	userConfig := rest.CopyConfig(kc.Config)
+	userConfig.BearerToken = identity.Token
+	userConfig.BearerTokenFile = ""
+
+	// Create controller-runtime client with user token
+	userClient, err := client.New(userConfig, client.Options{Scheme: kc.Client.Scheme()})
+	if err != nil {
+		kc.Logger.Error("failed to create user client", "error", err)
+		return nil, fmt.Errorf("failed to create user client: %w", err)
+	}
+
+	// Try cluster-wide namespace list first (works for admins)
+	var nsList corev1.NamespaceList
+	err = userClient.List(ctx, &nsList)
+	if err == nil {
+		// User can list namespaces cluster-wide (admin path)
+		kc.Logger.Debug("user can list namespaces cluster-wide",
+			"count", len(nsList.Items))
+		return nsList.Items, nil
+	}
+
+	// User cannot list cluster-wide, use OpenShift Projects API
+	// This API returns only projects the user has access to
+	kc.Logger.Debug("falling back to OpenShift Projects API", "error", err)
+
+	// Use Unstructured to query project.openshift.io/v1 projects
+	projectList := &unstructured.UnstructuredList{}
+	projectList.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "project.openshift.io",
+		Version: "v1",
+		Kind:    "ProjectList",
+	})
+
+	err = userClient.List(ctx, projectList)
+	if err != nil {
+		kc.Logger.Error("failed to list OpenShift projects", "error", err)
+		return nil, fmt.Errorf("failed to list projects: %w", err)
+	}
+
+	// Convert projects to namespaces
+	namespaces := make([]corev1.Namespace, 0, len(projectList.Items))
+	for _, project := range projectList.Items {
+		projectName := project.GetName()
+
+		// Fetch full namespace object
+		ns := &corev1.Namespace{}
+		err := userClient.Get(ctx, types.NamespacedName{Name: projectName}, ns)
+		if err != nil {
+			kc.Logger.Warn("failed to get namespace details", "namespace", projectName, "error", err)
+			// Create minimal namespace if we can't fetch full details
+			namespaces = append(namespaces, corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        projectName,
+					Annotations: project.GetAnnotations(),
+					Labels:      project.GetLabels(),
+				},
+			})
+		} else {
+			namespaces = append(namespaces, *ns)
+		}
+	}
+
+	kc.Logger.Debug("listed namespaces via OpenShift Projects API",
+		"count", len(namespaces))
+
+	return namespaces, nil
 }
 
 // CanListNamespaces performs a SubjectAccessReview to check if the user has permission to list namespaces
@@ -256,7 +374,7 @@ func (kc *TokenKubernetesClient) CanListLlamaStackDistributions(ctx context.Cont
 	resp, err := clientset.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, sar, metav1.CreateOptions{})
 	if err != nil {
 		kc.Logger.Error("failed to perform LlamaStackDistribution list SAR", "error", err)
-		return false, fmt.Errorf("failed to verify LlamaStackDistribution list permissions: %w", err)
+		return false, wrapK8sSubjectAccessReviewError(err, namespace)
 	}
 
 	return resp.Status.Allowed, nil
@@ -352,6 +470,14 @@ func (kc *TokenKubernetesClient) GetConfigMap(ctx context.Context, identity *int
 	return configMap, nil
 }
 
+// GetGuardrailsOrchestratorStatus fetches the status of the GuardrailsOrchestrator CR
+// Real implementation not yet available - returns error
+func (kc *TokenKubernetesClient) GetGuardrailsOrchestratorStatus(ctx context.Context, identity *integrations.RequestIdentity, namespace string) (*models.GuardrailsStatus, error) {
+	// Real implementation not yet available
+	// Use MOCK_K8S_CLIENT=true to test with mock data
+	return nil, fmt.Errorf("guardrailsOrchestrator %q not found in namespace %q", constants.GuardrailsOrchestratorName, namespace)
+}
+
 func (kc *TokenKubernetesClient) GetAAModels(ctx context.Context, identity *integrations.RequestIdentity, namespace string) ([]models.AAModel, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -401,7 +527,7 @@ func (kc *TokenKubernetesClient) getAAModelsFromLLMInferenceService(ctx context.
 			ModelName:      llmSvc.Name,
 			ModelID:        *llmSvc.Spec.Model.Name,
 			Description:    kc.extractDescriptionFromLLMInferenceService(&llmSvc),
-			ServingRuntime: "Distributed Inference Server with llm-d",
+			ServingRuntime: "Distributed inference with llm-d",
 			APIProtocol:    "REST",
 			Usecase:        kc.extractUseCaseFromLLMInferenceService(&llmSvc),
 			Endpoints:      kc.extractEndpointsFromLLMInferenceService(&llmSvc),
@@ -561,6 +687,37 @@ func ExtractStatusFromInferenceService(isvc *kservev1beta1.InferenceService) str
 	return "Stop"
 }
 
+// ConstructLLMInferenceServiceURL constructs the internal URL for an LLMInferenceService
+// This function is exported for testing purposes
+func ConstructLLMInferenceServiceURL(scheme, serviceName, namespace string, port int32) string {
+	return fmt.Sprintf("%s://%s.%s.svc.cluster.local:%d/v1", scheme, serviceName, namespace, port)
+}
+
+// EnsureV1Suffix ensures that the URL ends with /v1 suffix
+// This function is exported for testing purposes
+func EnsureV1Suffix(url string) string {
+	if !strings.HasSuffix(url, "/v1") {
+		return url + "/v1"
+	}
+	return url
+}
+
+// DetermineSchemeFromAuth determines the URL scheme (http/https) based on auth annotation
+// This function is exported for testing purposes
+func DetermineSchemeFromAuth(authAnnotation string) string {
+	if authAnnotation == "true" {
+		return "https"
+	}
+	return "http"
+}
+
+// ShouldAddPortToURL determines if a port should be added to the URL
+// for InferenceService endpoints only.
+// This function is exported for testing purposes
+func ShouldAddPortToURL(isHeadless bool, urlHasPort bool) bool {
+	return isHeadless && !urlHasPort
+}
+
 func (kc *TokenKubernetesClient) extractDisplayNameFromInferenceService(isvc *kservev1beta1.InferenceService) string {
 	if isvc == nil || isvc.Annotations == nil {
 		return ""
@@ -713,7 +870,7 @@ func (kc *TokenKubernetesClient) extractDisplayNameFromLLMInferenceService(llmSv
 	return displayName
 }
 
-func (kc *TokenKubernetesClient) InstallLlamaStackDistribution(ctx context.Context, identity *integrations.RequestIdentity, namespace string, models []models.InstallModel, maasClient maas.MaaSClientInterface) (*lsdapi.LlamaStackDistribution, error) {
+func (kc *TokenKubernetesClient) InstallLlamaStackDistribution(ctx context.Context, identity *integrations.RequestIdentity, namespace string, models []models.InstallModel, guardrailModel *models.GuardrailModel, maasClient maas.MaaSClientInterface) (*lsdapi.LlamaStackDistribution, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
@@ -759,9 +916,9 @@ func (kc *TokenKubernetesClient) InstallLlamaStackDistribution(ctx context.Conte
 				hasToken:   secretName != "",
 			}
 			if secretName != "" {
-				kc.Logger.Info("found existing "+foundType+" service account token secret", "model", model.ModelName, "isMaaSModel", model.IsMaaSModel, "secretName", secretName, "hasToken", true)
+				kc.Logger.Debug("found existing "+foundType+" service account token secret", "model", model.ModelName, "isMaaSModel", model.IsMaaSModel, "secretName", secretName, "hasToken", true)
 			} else {
-				kc.Logger.Info("found "+foundType+" but no service account token secret", "model", model.ModelName, "isMaaSModel", model.IsMaaSModel, "hasToken", false)
+				kc.Logger.Debug("found "+foundType+" but no service account token secret", "model", model.ModelName, "isMaaSModel", model.IsMaaSModel, "hasToken", false)
 			}
 		} else {
 			kc.Logger.Debug("could not find InferenceService or LLMInferenceService for model, will use default", "model", model.ModelName, "isMaaSModel", model.IsMaaSModel)
@@ -810,7 +967,7 @@ func (kc *TokenKubernetesClient) InstallLlamaStackDistribution(ctx context.Conte
 						},
 					},
 				})
-				kc.Logger.Info("Referencing existing service account token secret", "model", model.ModelName, "envVar", envVarName, "secretName", secretInfo.secretName)
+				kc.Logger.Debug("Referencing existing service account token secret", "model", model.ModelName, "envVar", envVarName, "secretName", secretInfo.secretName)
 			} else {
 				// Secret doesn't exist, use default token
 				envVars = append(envVars, corev1.EnvVar{
@@ -942,7 +1099,7 @@ func (kc *TokenKubernetesClient) createConfigMapWithOwnerReference(ctx context.C
 			Name:               lsdName,
 			UID:                lsd.UID,
 			Controller:         &[]bool{true}[0],
-			BlockOwnerDeletion: &[]bool{true}[0],
+			BlockOwnerDeletion: &[]bool{false}[0],
 		},
 	}
 
@@ -972,7 +1129,7 @@ func ensureVLLMCompatibleURL(url string) string {
 // generateLlamaStackConfig generates the Llama Stack configuration YAML
 func (kc *TokenKubernetesClient) generateLlamaStackConfig(ctx context.Context, namespace string, installModels []models.InstallModel, maasClient maas.MaaSClientInterface) (string, error) {
 	// Create a new config to build
-	config := constants.NewDefaultLlamaStackConfig()
+	config := NewDefaultLlamaStackConfig()
 
 	// Create a map of MaaS models for efficient lookup (only call ListModels once)
 	maasModelsMap := make(map[string]*models.MaaSModel)
@@ -1000,16 +1157,17 @@ func (kc *TokenKubernetesClient) generateLlamaStackConfig(ctx context.Context, n
 				maasModelsMap[model.ID] = model
 			}
 
-			kc.Logger.Info("loaded MaaS models into map", "count", len(maasModelsMap))
+			kc.Logger.Debug("loaded MaaS models into map", "count", len(maasModelsMap))
 		}
 	}
 
 	// Add the default embedding model
-	embeddingModel := constants.NewEmbeddingModel(
-		constants.DefaultEmbeddingModel.ModelID,
-		constants.DefaultEmbeddingModel.ProviderID,
-		constants.DefaultEmbeddingModel.ProviderModelID,
-		int(constants.DefaultEmbeddingModel.EmbeddingDimension),
+	defaultEmbeddingModel := constants.DefaultEmbeddingModel()
+	embeddingModel := NewEmbeddingModel(
+		defaultEmbeddingModel.ModelID,
+		defaultEmbeddingModel.ProviderID,
+		defaultEmbeddingModel.ProviderModelID,
+		int(defaultEmbeddingModel.EmbeddingDimension),
 	)
 	config.AddModel(embeddingModel)
 
@@ -1031,8 +1189,8 @@ func (kc *TokenKubernetesClient) generateLlamaStackConfig(ctx context.Context, n
 			// Create provider and model for MaaS model
 			providerID := fmt.Sprintf("maas-vllm-inference-%d", i+1)
 			endpointURL := ensureVLLMCompatibleURL(maasModel.URL)
-			addProviderAndModel(config, providerID, endpointURL, i, maasModel.ID, "llm", nil)
-			kc.Logger.Info("Added MaaS model to configuration", "model", maasModel.ID, "endpoint", endpointURL)
+			config.AddVLLMProviderAndModel(providerID, endpointURL, i, maasModel.ID, "llm", nil)
+			kc.Logger.Debug("Added MaaS model to configuration", "model", maasModel.ID, "endpoint", endpointURL)
 		} else {
 			// Handle regular models
 			modelDetails, err := kc.getModelDetailsFromServingRuntime(ctx, namespace, model.ModelName)
@@ -1049,8 +1207,8 @@ func (kc *TokenKubernetesClient) generateLlamaStackConfig(ctx context.Context, n
 			metadata := modelDetails["metadata"].(map[string]interface{})
 
 			// Create provider and model for regular model
-			addProviderAndModel(config, providerID, endpointURL, i, modelID, modelType, metadata)
-			kc.Logger.Info("Added regular LLM model to configuration", "model", modelID, "endpoint", endpointURL)
+			config.AddVLLMProviderAndModel(providerID, endpointURL, i, modelID, modelType, metadata)
+			kc.Logger.Debug("Added regular LLM model to configuration", "model", modelID, "endpoint", endpointURL)
 
 		}
 	}
@@ -1082,7 +1240,7 @@ func (kc *TokenKubernetesClient) getModelDetailsFromServingRuntime(ctx context.C
 		}
 
 		// Extract endpoint from LLMInferenceService
-		endpointURL, extractErr := kc.extractEndpointFromLLMInferenceService(targetLLMSVC)
+		endpointURL, extractErr := kc.extractEndpointFromLLMInferenceService(ctx, targetLLMSVC)
 		if extractErr != nil {
 			kc.Logger.Error("failed to extract endpoint from LLMInferenceService", "modelID", modelID, "error", extractErr)
 			return nil, fmt.Errorf("failed to extract endpoint from LLMInferenceService for model '%s': %w", modelID, extractErr)
@@ -1104,7 +1262,7 @@ func (kc *TokenKubernetesClient) getModelDetailsFromServingRuntime(ctx context.C
 
 		// Use the actual model name from LLMInferenceService spec instead of service name
 		actualModelName := *targetLLMSVC.Spec.Model.Name
-		kc.Logger.Info("using LLMInferenceService for model", "serviceName", modelID, "actualModelName", actualModelName, "endpoint", endpointURL)
+		kc.Logger.Debug("using LLMInferenceService for model", "serviceName", modelID, "actualModelName", actualModelName, "endpoint", endpointURL)
 		return map[string]interface{}{
 			"model_id":     actualModelName, // Use the actual model name from spec.model.name
 			"model_type":   modelType,
@@ -1123,7 +1281,7 @@ func (kc *TokenKubernetesClient) getModelDetailsFromServingRuntime(ctx context.C
 	// When routes are enabled, the Status.URL is the route URL, not the internal URL so we use the Address.URL
 	internalURL := targetISVC.Status.Address.URL.URL()
 
-	if targetISVC.Annotations["security.opendatahub.io/enable-auth"] != "true" {
+	if targetISVC.Annotations[authAnnotationKey] != "true" {
 		// For non-auth services, ensure http scheme
 		if internalURL.Scheme == "https" {
 			internalURL.Scheme = "http"
@@ -1131,7 +1289,7 @@ func (kc *TokenKubernetesClient) getModelDetailsFromServingRuntime(ctx context.C
 	}
 
 	// Find services owned by this InferenceService
-	services, err := kc.findServicesForInferenceService(ctx, namespace, targetISVC)
+	services, err := kc.findServicesForKServeResource(ctx, namespace, targetISVC)
 	if err != nil {
 		kc.Logger.Warn("failed to find services for InferenceService", "name", targetISVC.Name, "error", err)
 	} else if len(services) == 0 {
@@ -1140,19 +1298,18 @@ func (kc *TokenKubernetesClient) getModelDetailsFromServingRuntime(ctx context.C
 		svc := services[0]
 		isHeadless := kc.isHeadlessService(ctx, namespace, svc.Name)
 		port := kc.getServingPort(ctx, namespace, svc.Name)
+		urlHasPort := internalURL.Port() != ""
 
-		if isHeadless && internalURL.Port() == "" {
+		if ShouldAddPortToURL(isHeadless, urlHasPort) {
 			internalURL.Host = fmt.Sprintf("%s:%d", internalURL.Hostname(), port)
-			kc.Logger.Info("headless kserve detected: HeadlessService is used; adding target port to internal URL",
+			kc.Logger.Debug("headless kserve detected: HeadlessService is used; adding target port to internal URL",
 				"service", svc.Name, "port", port, "url", internalURL.String())
 		}
 	}
 
 	internalURLStr := internalURL.String()
 	// Add /v1 suffix if not present
-	if !strings.HasSuffix(internalURLStr, "/v1") {
-		internalURLStr = internalURLStr + "/v1"
-	}
+	internalURLStr = EnsureV1Suffix(internalURLStr)
 
 	// Extract additional metadata from the InferenceService
 	metadata := map[string]interface{}{}
@@ -1168,7 +1325,7 @@ func (kc *TokenKubernetesClient) getModelDetailsFromServingRuntime(ctx context.C
 	// All models are LLM models using vllm-inference
 	modelType := "llm"
 
-	kc.Logger.Info("Using InferenceService for model", "modelID", modelID, "endpoint", internalURLStr)
+	kc.Logger.Debug("Using InferenceService for model", "modelID", modelID, "endpoint", internalURLStr)
 	return map[string]interface{}{
 		"model_id":     strings.ReplaceAll(modelID, ":", "-"),
 		"model_type":   modelType,
@@ -1203,12 +1360,13 @@ func (kc *TokenKubernetesClient) getServingPort(ctx context.Context, namespace, 
 	return defaultPort
 }
 
-func (kc *TokenKubernetesClient) findServicesForInferenceService(ctx context.Context, namespace string, isvc metav1.Object) ([]corev1.Service, error) {
+// findServicesForKServeResource finds services associated with a KServe resource (InferenceService or LLMInferenceService)
+func (kc *TokenKubernetesClient) findServicesForKServeResource(ctx context.Context, namespace string, isvc metav1.Object) ([]corev1.Service, error) {
 	var svcList corev1.ServiceList
 
-	// Use label selector to only fetch services with the serving.kserve.io/inferenceservice label
+	// Try InferenceService label first
 	labelSelector := labels.SelectorFromSet(map[string]string{
-		"serving.kserve.io/inferenceservice": isvc.GetName(),
+		InferenceServiceName: isvc.GetName(),
 	})
 
 	listOptions := &client.ListOptions{
@@ -1220,7 +1378,20 @@ func (kc *TokenKubernetesClient) findServicesForInferenceService(ctx context.Con
 		return nil, err
 	}
 
-	// Filter by owner reference to ensure we only get services owned by this InferenceService
+	// If not found, try LLMInferenceService workload service labels
+	if len(svcList.Items) == 0 {
+		labelSelector = labels.SelectorFromSet(map[string]string{
+			LLMInferenceServiceName:      isvc.GetName(),
+			LLMInferenceServiceComponent: LLMInferenceServiceWorkloadComponent,
+		})
+		listOptions.LabelSelector = labelSelector
+
+		if err := kc.Client.List(ctx, &svcList, listOptions); err != nil {
+			return nil, err
+		}
+	}
+
+	// Filter by owner reference to ensure we only get services owned by this InferenceService/LLMInferenceService
 	var services []corev1.Service
 	for _, svc := range svcList.Items {
 		for _, owner := range svc.OwnerReferences {
@@ -1247,7 +1418,7 @@ func (kc *TokenKubernetesClient) findInferenceServiceByModelName(ctx context.Con
 	// Find InferenceService with name matching the model name
 	for _, isvc := range isvcList.Items {
 		if isvc.Name == modelName {
-			kc.Logger.Info("Found InferenceService by model name", "modelName", modelName, "isvcName", isvc.Name, "namespace", namespace)
+			kc.Logger.Debug("Found InferenceService by model name", "modelName", modelName, "isvcName", isvc.Name, "namespace", namespace)
 			return &isvc, nil
 		}
 	}
@@ -1268,7 +1439,7 @@ func (kc *TokenKubernetesClient) findLLMInferenceServiceByModelName(ctx context.
 	// Find LLMInferenceService with name matching the model name
 	for _, llmSvc := range llmSvcList.Items {
 		if llmSvc.Name == modelName {
-			kc.Logger.Info("found LLMInferenceService by model name", "modelName", modelName, "llmSvcName", llmSvc.Name, "namespace", namespace)
+			kc.Logger.Debug("found LLMInferenceService by model name", "modelName", modelName, "llmSvcName", llmSvc.Name, "namespace", namespace)
 			return &llmSvc, nil
 		}
 	}
@@ -1276,31 +1447,41 @@ func (kc *TokenKubernetesClient) findLLMInferenceServiceByModelName(ctx context.
 	return nil, fmt.Errorf("LLMInferenceService with model name '%s' not found in namespace %s", modelName, namespace)
 }
 
-// extractEndpointFromLLMInferenceService extracts the endpoint URL from LLMInferenceService status.addresses
-func (kc *TokenKubernetesClient) extractEndpointFromLLMInferenceService(llmSvc *kservev1alpha1.LLMInferenceService) (string, error) {
-	// Check if status.addresses exists and has at least one address
-	if len(llmSvc.Status.Addresses) == 0 {
-		kc.Logger.Error("LLMInferenceService has no addresses in status", "name", llmSvc.Name, "namespace", llmSvc.Namespace)
-		return "", fmt.Errorf("LLMInferenceService '%s' has no addresses in status - service may not be ready", llmSvc.Name)
+// extractEndpointFromLLMInferenceService extracts the endpoint URL from LLMInferenceService by constructing internal URL from its Service
+func (kc *TokenKubernetesClient) extractEndpointFromLLMInferenceService(ctx context.Context, llmSvc *kservev1alpha1.LLMInferenceService) (string, error) {
+	// Find services owned by this LLMInferenceService
+	services, err := kc.findServicesForKServeResource(ctx, llmSvc.Namespace, llmSvc)
+	if err != nil {
+		kc.Logger.Error("failed to find services for LLMInferenceService", "name", llmSvc.Name, "error", err)
+		return "", fmt.Errorf("failed to find services for LLMInferenceService '%s': %w", llmSvc.Name, err)
+	}
+	if len(services) == 0 {
+		kc.Logger.Error("no services found for LLMInferenceService", "name", llmSvc.Name, "namespace", llmSvc.Namespace)
+		return "", fmt.Errorf("no services found for LLMInferenceService '%s' - service may not be ready", llmSvc.Name)
 	}
 
-	// Get the first address URL
-	firstAddress := llmSvc.Status.Addresses[0]
-	if firstAddress.URL == nil {
-		kc.Logger.Error("LLMInferenceService first address has no URL", "name", llmSvc.Name, "namespace", llmSvc.Namespace)
-		return "", fmt.Errorf("LLMInferenceService '%s' first address has no URL", llmSvc.Name)
+	// Use the first service to construct internal URL
+	svc := services[0]
+	port := kc.getServingPort(ctx, llmSvc.Namespace, svc.Name)
+
+	// Determine scheme based on authentication annotation
+	var authAnnotation string
+	if llmSvc.Annotations != nil {
+		authAnnotation = llmSvc.Annotations[authAnnotationKey]
 	}
+	scheme := DetermineSchemeFromAuth(authAnnotation)
 
-	endpointURL := firstAddress.URL.String()
+	// Construct internal URL from service name with port
+	// LLMInferenceService workload services (KServe headless mode) always require port
+	internalURL := ConstructLLMInferenceServiceURL(scheme, svc.Name, llmSvc.Namespace, port)
 
-	// Add /v1 suffix if not present for LLMInferenceService compatibility
-	if !strings.HasSuffix(endpointURL, "/v1") {
-		endpointURL = endpointURL + "/v1"
-	}
+	kc.Logger.Debug("constructed internal URL for LLMInferenceService",
+		"llmServiceName", llmSvc.Name,
+		"k8sServiceName", svc.Name,
+		"port", port,
+		"endpoint", internalURL)
 
-	kc.Logger.Info("extracted endpoint from LLMInferenceService", "name", llmSvc.Name, "endpoint", endpointURL)
-
-	return endpointURL, nil
+	return internalURL, nil
 }
 
 func (kc *TokenKubernetesClient) DeleteLlamaStackDistribution(ctx context.Context, identity *integrations.RequestIdentity, namespace string, name string) (*lsdapi.LlamaStackDistribution, error) {
@@ -1350,7 +1531,7 @@ func (kc *TokenKubernetesClient) DeleteLlamaStackDistribution(ctx context.Contex
 // GetModelProviderInfo retrieves provider configuration for a model from LlamaStackConfig
 func (kc *TokenKubernetesClient) GetModelProviderInfo(ctx context.Context, identity *integrations.RequestIdentity, namespace string, modelID string) (*genaitypes.ModelProviderInfo, error) {
 	// Get LlamaStackDistribution
-	config, err := loadLlamaStackConfig(ctx, kc, identity, namespace)
+	config, err := kc.loadLlamaStackConfig(ctx, identity, namespace)
 	if config == nil {
 		return nil, err
 	}
@@ -1358,32 +1539,8 @@ func (kc *TokenKubernetesClient) GetModelProviderInfo(ctx context.Context, ident
 	return config.GetModelProviderInfo(modelID)
 }
 
-// addProviderAndModel adds a provider and model to the LlamaStack configuration
-func addProviderAndModel(config *constants.LlamaStackConfig, providerID, endpointURL string, index int, modelID, modelType string, metadata map[string]interface{}) {
-	// Create provider config
-	providerConfig := constants.EmptyConfig()
-	providerConfig["url"] = endpointURL
-	providerConfig["max_tokens"] = "${env.VLLM_MAX_TOKENS:=4096}"
-	providerConfig["api_token"] = fmt.Sprintf("${env.VLLM_API_TOKEN_%d:=fake}", index+1)
-	providerConfig["tls_verify"] = "${env.VLLM_TLS_VERIFY:=true}"
-
-	// Add provider
-	provider := constants.NewProvider(providerID, "remote::vllm", providerConfig)
-	config.AddInferenceProvider(provider)
-
-	// Add model
-	var model constants.Model
-	if metadata == nil {
-		// For MaaS models or when no metadata is provided
-		model = constants.NewLLMModel(modelID, providerID, modelID)
-	} else {
-		// For regular models with metadata
-		model = constants.NewModel(modelID, providerID, modelType, metadata)
-	}
-	config.AddModel(model)
-}
-
-func loadLlamaStackConfig(ctx context.Context, kc *TokenKubernetesClient, identity *integrations.RequestIdentity, namespace string) (*constants.LlamaStackConfig, error) {
+// loadLlamaStackConfig loads the LlamaStack configuration from a ConfigMap in the cluster
+func (kc *TokenKubernetesClient) loadLlamaStackConfig(ctx context.Context, identity *integrations.RequestIdentity, namespace string) (*LlamaStackConfig, error) {
 	lsdList, err := kc.GetLlamaStackDistributions(ctx, identity, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get LlamaStackDistributions: %w", err)
@@ -1418,59 +1575,16 @@ func loadLlamaStackConfig(ctx context.Context, kc *TokenKubernetesClient, identi
 	}
 
 	// Parse YAML into config
-	var config constants.LlamaStackConfig
+	var config LlamaStackConfig
 	if err := config.FromYAML(runYAML); err != nil {
 		return nil, fmt.Errorf("failed to parse YAML: %w", err)
 	}
 	return &config, nil
 }
 
-// GetClusterDomain retrieves the cluster domain from the ingresses.config.openshift.io/cluster resource
-func (kc *TokenKubernetesClient) GetClusterDomain(ctx context.Context) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	// Create a REST client specifically configured for the config.openshift.io API
-	config := rest.CopyConfig(kc.Config)
-	config.APIPath = "/apis"
-	config.GroupVersion = &schema.GroupVersion{Group: "config.openshift.io", Version: "v1"}
-	config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
-
-	restClient, err := rest.RESTClientFor(config)
-	if err != nil {
-		kc.Logger.Error("failed to create REST client for cluster domain query", "error", err)
-		return "", fmt.Errorf("failed to create REST client: %w", err)
-	}
-
-	// Query the ingresses.config.openshift.io/cluster resource
-	result := restClient.Get().
-		Resource("ingresses").
-		Name("cluster").
-		Do(ctx)
-
-	rawBytes, err := result.Raw()
-	if err != nil {
-		kc.Logger.Debug("failed to get cluster ingress config", "error", err)
-		return "", fmt.Errorf("failed to get cluster domain: %w", err)
-	}
-
-	// Parse the JSON response
-	var obj map[string]interface{}
-	if err := json.Unmarshal(rawBytes, &obj); err != nil {
-		return "", fmt.Errorf("failed to parse ingress config response: %w", err)
-	}
-
-	// Extract the domain from spec.domain
-	spec, ok := obj["spec"].(map[string]interface{})
-	if !ok {
-		return "", fmt.Errorf("invalid ingress config structure: missing spec")
-	}
-
-	domain, ok := spec["domain"].(string)
-	if !ok || domain == "" {
-		return "", fmt.Errorf("invalid ingress config structure: missing or empty domain")
-	}
-
-	kc.Logger.Debug("discovered cluster domain", "domain", domain)
-	return domain, nil
+// GetSafetyConfig parses the llama-stack-config ConfigMap and returns guardrail models/shields
+// TODO: Real implementation pending - backend not yet completed
+// For now, returns error indicating not implemented
+func (kc *TokenKubernetesClient) GetSafetyConfig(ctx context.Context, identity *integrations.RequestIdentity, namespace string) (*models.SafetyConfigResponse, error) {
+	return nil, fmt.Errorf("getSafetyConfig not implemented - use mock mode (MOCK_K8S_CLIENT=true)")
 }

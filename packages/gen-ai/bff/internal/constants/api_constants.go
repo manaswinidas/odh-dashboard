@@ -20,6 +20,7 @@ const (
 	ResponsesPath                     = ApiPathPrefix + "/lsd/responses"
 	FilesListPath                     = ApiPathPrefix + "/lsd/files"
 	FilesUploadPath                   = ApiPathPrefix + "/lsd/files/upload"
+	FilesUploadStatusPath             = ApiPathPrefix + "/lsd/files/upload/status"
 	FilesDeletePath                   = ApiPathPrefix + "/lsd/files/delete"
 	VectorStoreFilesListPath          = ApiPathPrefix + "/lsd/vectorstores/files"
 	VectorStoreFilesUploadPath        = ApiPathPrefix + "/lsd/vectorstores/files/upload"
@@ -32,6 +33,7 @@ const (
 	CodeExporterPath = ApiPathPrefix + "/code-exporter"
 	NamespacesPath   = ApiPathPrefix + "/namespaces"
 	UserPath         = ApiPathPrefix + "/user"
+	ConfigPath       = ApiPathPrefix + "/config"
 
 	// MCP (Model Context Protocol) endpoint paths
 	MCPToolsPath  = ApiPathPrefix + "/mcp/tools"
@@ -44,4 +46,12 @@ const (
 	// Model as a Service (MaaS) endpoints
 	MaaSModelsPath = ApiPathPrefix + "/maas/models"
 	MaaSTokensPath = ApiPathPrefix + "/maas/tokens"
+
+	// Guardrails endpoint (fetched from dashboard namespace like MCP servers)
+	// Returns status of the "custom-guardrails" CR
+	GuardrailsStatusPath = ApiPathPrefix + "/guardrails/status"
+
+	// LSD Safety Config endpoint - returns configured guardrail models and shields
+	// Parsed from llama-stack-config ConfigMap
+	LSDSafetyConfigPath = ApiPathPrefix + "/lsd/safety/config"
 )

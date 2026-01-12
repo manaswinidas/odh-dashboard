@@ -1,20 +1,19 @@
 import { DashboardCommonConfig } from '#~/k8sTypes';
-import {
-  StackCapability,
-  SupportedArea,
-  SupportedAreasState,
-  DataScienceStackComponent,
-} from './types';
+import { SupportedArea, SupportedAreasState, DataScienceStackComponent } from './types';
 
 export const techPreviewFlags = {
   disableModelRegistry: true,
+  genAiStudio: false,
+  modelAsService: false,
+  mlflow: false,
+  projectRBAC: false,
+  observabilityDashboard: false,
 } satisfies Partial<DashboardCommonConfig>;
 
 export const devTemporaryFeatureFlags = {
   disableKueue: true,
-  disableLlamaStackChatBot: true, // internal dev only
   disableProjectScoped: true,
-  disableModelAsService: true,
+  embedMLflow: false,
 } satisfies Partial<DashboardCommonConfig>;
 
 // Group 1: Core Dashboard Features
@@ -48,7 +47,6 @@ export const modelServingFlags = {
   disableKServeAuth: false,
   disableKServeMetrics: false,
   disableKServeRaw: false,
-  disableModelMesh: false,
   disableNIMModelServing: false,
   disablePerformanceMetrics: false,
   disableTrustyBiasMetrics: false,
@@ -63,7 +61,7 @@ export const advancedAIMLFlags = {
   disableFeatureStore: false,
   disableFineTuning: true,
   disableLMEval: true,
-  disableModelTraining: true,
+  trainingJobs: true,
 } satisfies Partial<DashboardCommonConfig>;
 
 // Combined feature flags object
@@ -102,9 +100,6 @@ export const SupportedAreasStateMap: SupportedAreasState = {
   [SupportedArea.DS_PROJECTS_VIEW]: {
     featureFlags: ['disableProjects'],
   },
-  [SupportedArea.MODEL_AS_SERVICE]: {
-    featureFlags: ['disableModelAsService'],
-  },
   [SupportedArea.DS_PROJECT_SCOPED]: {
     featureFlags: ['disableProjectScoped'],
     reliantAreas: [SupportedArea.WORKBENCHES, SupportedArea.MODEL_SERVING],
@@ -116,7 +111,6 @@ export const SupportedAreasStateMap: SupportedAreasState = {
   [SupportedArea.K_SERVE_AUTH]: {
     featureFlags: ['disableKServeAuth'],
     reliantAreas: [SupportedArea.K_SERVE],
-    requiredCapabilities: [StackCapability.SERVICE_MESH, StackCapability.SERVICE_MESH_AUTHZ],
   },
   [SupportedArea.K_SERVE_METRICS]: {
     featureFlags: ['disableKServeMetrics'],
@@ -125,10 +119,6 @@ export const SupportedAreasStateMap: SupportedAreasState = {
   [SupportedArea.K_SERVE_RAW]: {
     featureFlags: ['disableKServeRaw'],
     reliantAreas: [SupportedArea.K_SERVE, SupportedArea.MODEL_SERVING],
-  },
-  [SupportedArea.MODEL_MESH]: {
-    featureFlags: ['disableModelMesh'],
-    requiredComponents: [DataScienceStackComponent.MODEL_MESH_SERVING],
   },
   [SupportedArea.MODEL_SERVING]: {
     featureFlags: ['disableModelServing'],
@@ -193,11 +183,6 @@ export const SupportedAreasStateMap: SupportedAreasState = {
       SupportedArea.MODEL_REGISTRY,
     ],
   },
-  [SupportedArea.LLAMA_STACK_CHAT_BOT]: {
-    featureFlags: ['disableLlamaStackChatBot'],
-    reliantAreas: [SupportedArea.MODEL_SERVING],
-    //TODO: Add Llama Stack component when details known.
-  },
   [SupportedArea.LM_EVAL]: {
     featureFlags: ['disableLMEval'],
     reliantAreas: [SupportedArea.MODEL_REGISTRY, SupportedArea.MODEL_SERVING],
@@ -207,26 +192,31 @@ export const SupportedAreasStateMap: SupportedAreasState = {
     requiredComponents: [DataScienceStackComponent.FEAST_OPERATOR],
   },
   [SupportedArea.MODEL_TRAINING]: {
-    featureFlags: ['disableModelTraining'],
-    requiredComponents: [
-      DataScienceStackComponent.TRAINING_OPERATOR,
-      DataScienceStackComponent.KUEUE,
-    ],
+    featureFlags: ['trainingJobs'],
+    requiredComponents: [DataScienceStackComponent.TRAINER],
+  },
+  [SupportedArea.MLFLOW]: {
+    featureFlags: ['mlflow'],
+  },
+  [SupportedArea.PROJECT_RBAC_SETTINGS]: {
+    featureFlags: ['projectRBAC'],
+  },
+  [SupportedArea.EMBED_MLFLOW]: {
+    featureFlags: ['embedMLflow'],
   },
 };
 
 /** Maps each DataScienceStackComponent to its human-readable name **/
 export const DataScienceStackComponentMap: Record<string, string> = {
-  [DataScienceStackComponent.CODE_FLARE]: 'CodeFlare',
   [DataScienceStackComponent.DASHBOARD]: 'Dashboard',
   [DataScienceStackComponent.DS_PIPELINES]: 'Pipelines',
   [DataScienceStackComponent.KUEUE]: 'Kueue',
   [DataScienceStackComponent.MODEL_REGISTRY]: 'Model registry',
   [DataScienceStackComponent.FEAST_OPERATOR]: 'Feast operator',
   [DataScienceStackComponent.K_SERVE]: 'Model server and metrics',
-  [DataScienceStackComponent.MODEL_MESH_SERVING]: 'Model server and metrics',
   [DataScienceStackComponent.RAY]: 'Ray',
   [DataScienceStackComponent.TRAINING_OPERATOR]: 'Training operator',
   [DataScienceStackComponent.TRUSTY_AI]: 'TrustyAI',
   [DataScienceStackComponent.WORKBENCHES]: 'Workbenches',
+  [DataScienceStackComponent.TRAINER]: 'Trainer',
 };

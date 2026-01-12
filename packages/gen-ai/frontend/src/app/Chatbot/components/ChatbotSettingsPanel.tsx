@@ -14,7 +14,10 @@ import {
   AlertGroup,
   Flex,
   FlexItem,
+  Icon,
+  Tooltip,
 } from '@patternfly/react-core';
+import { ExclamationTriangleIcon } from '@patternfly/react-icons';
 import { fireMiscTrackingEvent } from '@odh-dashboard/internal/concepts/analyticsTracking/segmentIOUtils';
 import { ChatbotSourceUploadPanel } from '~/app/Chatbot/sourceUpload/ChatbotSourceUploadPanel';
 import { ACCORDION_ITEMS } from '~/app/Chatbot/const';
@@ -22,8 +25,9 @@ import useAccordionState from '~/app/Chatbot/hooks/useAccordionState';
 import { UseSourceManagementReturn } from '~/app/Chatbot/hooks/useSourceManagement';
 import { UseFileManagementReturn } from '~/app/Chatbot/hooks/useFileManagement';
 import useDarkMode from '~/app/Chatbot/hooks/useDarkMode';
-import { useMCPSelectionContext } from '~/app/context/MCPSelectionContext';
-import MCPServersPanelWithContext from '~/app/Chatbot/mcp/MCPServersPanelWithContext';
+import { MCPServerFromAPI, TokenInfo } from '~/app/types';
+import { ServerStatusInfo } from '~/app/hooks/useMCPServerStatuses';
+import MCPServersPanel from '~/app/Chatbot/mcp/MCPServersPanel';
 import UploadedFilesList from './UploadedFilesList';
 import ModelDetailsDropdown from './ModelDetailsDropdown';
 import SystemPromptFormGroup from './SystemInstructionFormGroup';
@@ -45,6 +49,17 @@ interface ChatbotSettingsPanelProps {
   onStreamingToggle: (enabled: boolean) => void;
   temperature: number;
   onTemperatureChange: (value: number) => void;
+  onMcpServersChange?: (serverIds: string[]) => void;
+  initialSelectedServerIds?: string[];
+  initialServerStatuses?: Map<string, ServerStatusInfo>;
+  selectedServersCount: number;
+  // MCP data props
+  mcpServers: MCPServerFromAPI[];
+  mcpServersLoaded: boolean;
+  mcpServersLoadError?: Error | null;
+  mcpServerTokens: Map<string, TokenInfo>;
+  onMcpServerTokensChange: (tokens: Map<string, TokenInfo>) => void;
+  checkMcpServerStatus: (serverUrl: string, mcpBearerToken?: string) => Promise<ServerStatusInfo>;
 }
 
 const ChatbotSettingsPanel: React.FunctionComponent<ChatbotSettingsPanelProps> = ({
@@ -59,10 +74,21 @@ const ChatbotSettingsPanel: React.FunctionComponent<ChatbotSettingsPanelProps> =
   onStreamingToggle,
   temperature,
   onTemperatureChange,
+  onMcpServersChange,
+  initialSelectedServerIds,
+  initialServerStatuses,
+  selectedServersCount,
+  // MCP data props
+  mcpServers,
+  mcpServersLoaded,
+  mcpServersLoadError,
+  mcpServerTokens,
+  onMcpServerTokensChange,
+  checkMcpServerStatus,
 }) => {
   const accordionState = useAccordionState();
-  const { selectedServersCount, saveSelectedServersToPlayground } = useMCPSelectionContext();
   const isDarkMode = useDarkMode();
+  const [showMcpToolsWarning, setShowMcpToolsWarning] = React.useState(false);
 
   const SETTINGS_PANEL_WIDTH = 'chatbot-settings-panel-width';
   const DEFAULT_WIDTH = '460px';
@@ -128,7 +154,11 @@ const ChatbotSettingsPanel: React.FunctionComponent<ChatbotSettingsPanelProps> =
                     onModelChange={onModelChange}
                   />
                 </FormGroup>
-                <FormGroup label="System instructions" fieldId="system-instructions">
+                <FormGroup
+                  label="System instructions"
+                  fieldId="system-instructions"
+                  data-testid="system-instructions-section"
+                >
                   <SystemPromptFormGroup
                     systemInstruction={systemInstruction}
                     onSystemInstructionChange={onSystemInstructionChange}
@@ -183,7 +213,7 @@ const ChatbotSettingsPanel: React.FunctionComponent<ChatbotSettingsPanelProps> =
                 }}
               >
                 <FlexItem>
-                  <Title headingLevel="h2" size="lg">
+                  <Title headingLevel="h2" size="lg" data-testid="rag-section-title">
                     RAG
                   </Title>
                 </FlexItem>
@@ -206,6 +236,7 @@ const ChatbotSettingsPanel: React.FunctionComponent<ChatbotSettingsPanelProps> =
                       id="no-label-switch-on"
                       aria-label="Toggle uploaded mode"
                       isChecked={sourceManagement.isRawUploaded}
+                      data-testid="rag-toggle-switch"
                       onChange={(_, checked) => {
                         sourceManagement.setIsRawUploaded(checked);
                         fireMiscTrackingEvent('Playground RAG Toggle Selected', {
@@ -237,6 +268,7 @@ const ChatbotSettingsPanel: React.FunctionComponent<ChatbotSettingsPanelProps> =
                     filesWithSettings={sourceManagement.filesWithSettings}
                     uploadedFilesCount={fileManagement.files.length}
                     maxFilesAllowed={10}
+                    isFilesLoading={fileManagement.isLoading}
                   />
                 </FormGroup>
                 <FormGroup fieldId="uploaded-files" className="pf-v6-u-mt-md">
@@ -267,9 +299,9 @@ const ChatbotSettingsPanel: React.FunctionComponent<ChatbotSettingsPanelProps> =
                   : 'var(--pf-t--global--background--color--100)',
               }}
             >
-              <Flex alignItems={{ default: 'alignItemsCenter' }}>
+              <Flex alignItems={{ default: 'alignItemsCenter' }} gap={{ default: 'gapSm' }}>
                 <FlexItem>
-                  <Title headingLevel="h2" size="lg">
+                  <Title headingLevel="h2" size="lg" data-testid="mcp-servers-section-title">
                     MCP servers
                   </Title>
                 </FlexItem>
@@ -278,6 +310,15 @@ const ChatbotSettingsPanel: React.FunctionComponent<ChatbotSettingsPanelProps> =
                     <Label key={1} color="blue">
                       {selectedServersCount}
                     </Label>
+                  </FlexItem>
+                )}
+                {showMcpToolsWarning && (
+                  <FlexItem>
+                    <Tooltip content="Performance may be degraded with more than 40 active tools">
+                      <Icon status="warning" data-testid="mcp-tools-warning-icon">
+                        <ExclamationTriangleIcon />
+                      </Icon>
+                    </Tooltip>
                   </FlexItem>
                 )}
               </Flex>
@@ -291,7 +332,18 @@ const ChatbotSettingsPanel: React.FunctionComponent<ChatbotSettingsPanelProps> =
                 margin: '0',
               }}
             >
-              <MCPServersPanelWithContext onSelectionChange={saveSelectedServersToPlayground} />
+              <MCPServersPanel
+                servers={mcpServers}
+                serversLoaded={mcpServersLoaded}
+                serversLoadError={mcpServersLoadError}
+                serverTokens={mcpServerTokens}
+                onServerTokensChange={onMcpServerTokensChange}
+                checkServerStatus={checkMcpServerStatus}
+                onSelectionChange={onMcpServersChange}
+                initialSelectedServerIds={initialSelectedServerIds}
+                initialServerStatuses={initialServerStatuses}
+                onToolsWarningChange={setShowMcpToolsWarning}
+              />
             </AccordionContent>
           </AccordionItem>
         </Accordion>

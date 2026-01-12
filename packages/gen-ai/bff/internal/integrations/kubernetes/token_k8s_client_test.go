@@ -3,8 +3,6 @@ package kubernetes
 import (
 	"context"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,18 +12,9 @@ import (
 	"github.com/opendatahub-io/gen-ai/internal/models"
 	"github.com/opendatahub-io/gen-ai/internal/testutil"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	authv1 "k8s.io/api/authorization/v1"
 	"k8s.io/client-go/rest"
 )
-
-// loadTestData loads test fixture files from the testdata directory
-func loadTestData(t *testing.T, filename string) string {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", filename))
-	require.NoError(t, err, "failed to load test data file: %s", filename)
-	return string(data)
-}
 
 func TestCanListLlamaStackDistributions(t *testing.T) {
 	t.Run("should create proper SAR request for LlamaStackDistribution resources", func(t *testing.T) {
@@ -151,328 +140,6 @@ func TestCanListLlamaStackDistributionsSARStructure(t *testing.T) {
 	})
 }
 
-func TestGetModelProviderInfo(t *testing.T) {
-	// Load test data from testdata directory
-	mockLlamaStackConfigYAML := loadTestData(t, "test_llama_stack_config.yaml")
-
-	tests := []struct {
-		name                 string
-		modelID              string
-		expectedModelID      string // The actual model_id in the config (may differ from input when provider prefix is used)
-		expectedProviderID   string
-		expectedProviderType string
-		expectedURL          string
-		expectError          bool
-	}{
-		{
-			name:                 "Extract vLLM model (non-MaaS)",
-			modelID:              "llama-32-3b-instruct",
-			expectedModelID:      "llama-32-3b-instruct",
-			expectedProviderID:   "vllm-inference-1",
-			expectedProviderType: "remote::vllm",
-			expectedURL:          "http://llama-32-3b-instruct-predictor.crimson-show.svc.cluster.local/v1",
-			expectError:          false,
-		},
-		{
-			name:                 "Extract embedding model",
-			modelID:              "granite-embedding-125m",
-			expectedModelID:      "granite-embedding-125m",
-			expectedProviderID:   "sentence-transformers",
-			expectedProviderType: "inline::sentence-transformers",
-			expectedURL:          "", // No URL in config for this provider
-			expectError:          false,
-		},
-		{
-			name:                 "Extract MaaS model (watsonx)",
-			modelID:              "granite-3.1-8b-instruct",
-			expectedModelID:      "granite-3.1-8b-instruct",
-			expectedProviderID:   "maas-watsonx",
-			expectedProviderType: "remote::watsonx",
-			expectedURL:          "https://us-south.ml.cloud.ibm.com/ml/v1",
-			expectError:          false,
-		},
-		{
-			name:                 "Extract MaaS model with provider prefix (watsonx)",
-			modelID:              "maas-watsonx/granite-3.1-8b-instruct",
-			expectedModelID:      "granite-3.1-8b-instruct",
-			expectedProviderID:   "maas-watsonx",
-			expectedProviderType: "remote::watsonx",
-			expectedURL:          "https://us-south.ml.cloud.ibm.com/ml/v1",
-			expectError:          false,
-		},
-		{
-			name:                 "Extract vLLM model with provider prefix",
-			modelID:              "vllm-inference-1/llama-32-3b-instruct",
-			expectedModelID:      "llama-32-3b-instruct",
-			expectedProviderID:   "vllm-inference-1",
-			expectedProviderType: "remote::vllm",
-			expectedURL:          "http://llama-32-3b-instruct-predictor.crimson-show.svc.cluster.local/v1",
-			expectError:          false,
-		},
-		{
-			name:                 "Extract MaaS model with slash in model ID (facebook/opt-125m)",
-			modelID:              "facebook/opt-125m",
-			expectedModelID:      "facebook/opt-125m",
-			expectedProviderID:   "maas-vllm-inference-1",
-			expectedProviderType: "remote::vllm",
-			expectedURL:          "http://maas.apps.rosa.crimson-demo.g9ax.p3.openshiftapps.com/llm/facebook-opt-125m-simulated/v1",
-			expectError:          false,
-		},
-		{
-			name:                 "Extract MaaS model with provider prefix and slash in model ID (maas-vllm-inference-1/facebook/opt-125m)",
-			modelID:              "maas-vllm-inference-1/facebook/opt-125m",
-			expectedModelID:      "facebook/opt-125m",
-			expectedProviderID:   "maas-vllm-inference-1",
-			expectedProviderType: "remote::vllm",
-			expectedURL:          "http://maas.apps.rosa.crimson-demo.g9ax.p3.openshiftapps.com/llm/facebook-opt-125m-simulated/v1",
-			expectError:          false,
-		},
-		{
-			name:        "Non-existent model",
-			modelID:     "non-existent-model",
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var config constants.LlamaStackConfig
-			err := config.FromYAML(mockLlamaStackConfigYAML)
-			require.NoError(t, err)
-			result, err := config.GetModelProviderInfo(tt.modelID)
-
-			if tt.expectError {
-				assert.Error(t, err)
-				assert.Nil(t, result)
-				return
-			}
-
-			require.NoError(t, err)
-			require.NotNil(t, result)
-
-			// Verify extracted fields
-			assert.Equal(t, tt.expectedModelID, result.ModelID, "ModelID should match the actual model_id from config")
-			assert.Equal(t, tt.expectedProviderID, result.ProviderID, "ProviderID should match")
-			assert.Equal(t, tt.expectedProviderType, result.ProviderType, "ProviderType should match")
-			assert.Equal(t, tt.expectedURL, result.URL, "URL should match")
-		})
-	}
-}
-
-func TestGetModelProviderInfo_EnvVarCleaning(t *testing.T) {
-	// Load test data from testdata directory
-	mockLlamaStackConfigYAML := loadTestData(t, "test_llama_stack_config.yaml")
-
-	// Test that environment variable placeholders are cleaned
-	var config constants.LlamaStackConfig
-	err := config.FromYAML(mockLlamaStackConfigYAML)
-	require.NoError(t, err)
-	result, err := config.GetModelProviderInfo("llama-32-3b-instruct")
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-
-	// URL should have env var cleaned (${env.VLLM_MAX_TOKENS:=4096} should not appear)
-	assert.NotContains(t, result.URL, "${env.", "URL should not contain environment variable placeholders")
-	assert.NotContains(t, result.URL, ":=", "URL should not contain default value syntax")
-}
-
-func TestGetModelProviderInfo_MaaSDetection(t *testing.T) {
-	// Load test data from testdata directory
-	mockLlamaStackConfigYAML := loadTestData(t, "test_llama_stack_config.yaml")
-
-	tests := []struct {
-		name    string
-		modelID string
-		isMaaS  bool
-	}{
-		{
-			name:    "vLLM model is not MaaS",
-			modelID: "llama-32-3b-instruct",
-			isMaaS:  false,
-		},
-		{
-			name:    "Sentence transformers model is not MaaS",
-			modelID: "granite-embedding-125m",
-			isMaaS:  false,
-		},
-		{
-			name:    "Watsonx model is MaaS",
-			modelID: "granite-3.1-8b-instruct",
-			isMaaS:  true,
-		},
-	}
-
-	var config constants.LlamaStackConfig
-	err := config.FromYAML(mockLlamaStackConfigYAML)
-	require.NoError(t, err)
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := config.GetModelProviderInfo(tt.modelID)
-
-			require.NoError(t, err)
-			require.NotNil(t, result)
-
-			// Check if provider_id starts with "maas-"
-			isMaaS := len(result.ProviderID) >= 5 && result.ProviderID[:5] == "maas-"
-			assert.Equal(t, tt.isMaaS, isMaaS, "MaaS detection should match expected value")
-		})
-	}
-}
-
-func TestGetModelProviderInfo_EdgeCases(t *testing.T) {
-	t.Run("should handle invalid YAML", func(t *testing.T) {
-		invalidYAML := "this is not { valid yaml: ["
-		var config constants.LlamaStackConfig
-		err := config.FromYAML(invalidYAML)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to parse YAML")
-		result, err := config.GetModelProviderInfo("any-model")
-		assert.Error(t, err)
-		assert.Nil(t, result)
-	})
-
-	t.Run("should handle empty YAML", func(t *testing.T) {
-		emptyYAML := ""
-		var config constants.LlamaStackConfig
-		err := config.FromYAML(emptyYAML)
-		assert.Error(t, err)
-		result, err := config.GetModelProviderInfo("any-model")
-		assert.Error(t, err)
-		assert.Nil(t, result)
-	})
-
-	t.Run("should handle YAML with no models section", func(t *testing.T) {
-		yamlWithoutModels := `
-version: "2"
-providers:
-  inference:
-    - provider_id: test-provider
-      provider_type: test::type
-      config:
-        url: https://test.com
-`
-		var config constants.LlamaStackConfig
-		err := config.FromYAML(yamlWithoutModels)
-		require.NoError(t, err)
-		result, err := config.GetModelProviderInfo("any-model")
-		assert.Error(t, err)
-		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "provider not found for model")
-	})
-
-	t.Run("should handle YAML with no providers section", func(t *testing.T) {
-		yamlWithoutProviders := `
-version: "2"
-models:
-  - model_id: test-model
-    provider_id: test-provider
-`
-		var config constants.LlamaStackConfig
-		err := config.FromYAML(yamlWithoutProviders)
-		require.NoError(t, err)
-		result, err := config.GetModelProviderInfo("test-model")
-		assert.Error(t, err)
-		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "provider configuration not found")
-	})
-
-	t.Run("should handle model with provider that doesn't exist in providers section", func(t *testing.T) {
-		yamlWithMissingProvider := `
-version: "2"
-models:
-  - model_id: test-model
-    provider_id: non-existent-provider
-providers:
-  inference:
-    - provider_id: different-provider
-      provider_type: test::type
-      config:
-        url: https://test.com
-`
-		var config constants.LlamaStackConfig
-		err := config.FromYAML(yamlWithMissingProvider)
-		require.NoError(t, err)
-		result, err := config.GetModelProviderInfo("test-model")
-		assert.Error(t, err)
-		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "provider configuration not found for provider_id non-existent-provider")
-	})
-}
-
-func TestGetModelProviderInfo_YAMLStructureParsing(t *testing.T) {
-	t.Run("should correctly parse all fields from well-formed YAML", func(t *testing.T) {
-		wellFormedYAML := `
-version: "2"
-models:
-  - model_id: test-model-1
-    provider_id: test-provider-1
-    model_type: llm
-  - model_id: test-model-2
-    provider_id: test-provider-2
-    model_type: embedding
-providers:
-  inference:
-    - provider_id: test-provider-1
-      provider_type: remote::test
-      config:
-        url: https://provider1.test.com/v1/endpoint
-        api_key: fake-key
-    - provider_id: test-provider-2
-      provider_type: inline::local
-      config: {}
-`
-		var config constants.LlamaStackConfig
-		err := config.FromYAML(wellFormedYAML)
-		require.NoError(t, err)
-
-		// Test first model
-		result1, err := config.GetModelProviderInfo("test-model-1")
-		require.NoError(t, err)
-		require.NotNil(t, result1)
-		assert.Equal(t, "test-model-1", result1.ModelID)
-		assert.Equal(t, "test-provider-1", result1.ProviderID)
-		assert.Equal(t, "remote::test", result1.ProviderType)
-		assert.Equal(t, "https://provider1.test.com/v1/endpoint", result1.URL)
-
-		// Test second model
-		result2, err := config.GetModelProviderInfo("test-model-2")
-		require.NoError(t, err)
-		require.NotNil(t, result2)
-		assert.Equal(t, "test-model-2", result2.ModelID)
-		assert.Equal(t, "test-provider-2", result2.ProviderID)
-		assert.Equal(t, "inline::local", result2.ProviderType)
-		assert.Equal(t, "", result2.URL) // No URL in config
-	})
-
-	t.Run("should handle provider without URL in config", func(t *testing.T) {
-		yamlWithoutURL := `
-version: "2"
-models:
-  - model_id: local-model
-    provider_id: local-provider
-providers:
-  inference:
-    - provider_id: local-provider
-      provider_type: inline::local
-      config:
-        some_other_field: value
-`
-		var config constants.LlamaStackConfig
-		err := config.FromYAML(yamlWithoutURL)
-		require.NoError(t, err)
-
-		result, err := config.GetModelProviderInfo("local-model")
-		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.Equal(t, "local-model", result.ModelID)
-		assert.Equal(t, "local-provider", result.ProviderID)
-		assert.Equal(t, "inline::local", result.ProviderType)
-		assert.Equal(t, "", result.URL)
-	})
-}
-
 func TestGenerateLlamaStackConfigWithMaaSModels(t *testing.T) {
 	t.Run("should handle MaaS models correctly", func(t *testing.T) {
 		// Create a mock MaaS client
@@ -502,6 +169,18 @@ func TestGenerateLlamaStackConfigWithMaaSModels(t *testing.T) {
 		assert.Contains(t, result, "llama-2-7b-chat")
 		assert.Contains(t, result, "granite-7b-lab")
 		assert.Contains(t, result, "maas-vllm-inference")
+
+		// Verify models are also added to registered_resources
+		var cfg LlamaStackConfig
+		err = cfg.FromYAML(result)
+		assert.NoError(t, err)
+		registered := map[string]bool{}
+		for _, m := range cfg.RegisteredResources.Models {
+			registered[m.ModelID] = true
+		}
+		assert.True(t, registered[constants.DefaultEmbeddingModel().ModelID], "default embedding model should be registered")
+		assert.True(t, registered["llama-2-7b-chat"], "MaaS model should be registered")
+		assert.True(t, registered["granite-7b-lab"], "MaaS model should be registered")
 	})
 
 	t.Run("should fail when MaaS model is not ready", func(t *testing.T) {
@@ -553,4 +232,199 @@ func TestGenerateLlamaStackConfigWithMaaSModels(t *testing.T) {
 		assert.Empty(t, result)
 		assert.Contains(t, err.Error(), "not found")
 	})
+}
+
+// TestLLMInferenceServiceURLConstruction tests that the URL format for LLMInferenceService
+// remains consistent and doesn't accidentally change
+func TestLLMInferenceServiceURLConstruction(t *testing.T) {
+	tests := []struct {
+		name        string
+		scheme      string
+		serviceName string
+		namespace   string
+		port        int32
+		expected    string
+	}{
+		{
+			name:        "http URL without auth",
+			scheme:      "http",
+			serviceName: "test-service",
+			namespace:   "test-namespace",
+			port:        8080,
+			expected:    "http://test-service.test-namespace.svc.cluster.local:8080/v1",
+		},
+		{
+			name:        "https URL with auth",
+			scheme:      "https",
+			serviceName: "secure-service",
+			namespace:   "prod-namespace",
+			port:        8443,
+			expected:    "https://secure-service.prod-namespace.svc.cluster.local:8443/v1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Call the actual function used in extractEndpointFromLLMInferenceService
+			actual := ConstructLLMInferenceServiceURL(tt.scheme, tt.serviceName, tt.namespace, tt.port)
+
+			assert.Equal(t, tt.expected, actual,
+				"LLMInferenceService URL format must remain: {scheme}://{service}.{namespace}.svc.cluster.local:{port}/v1")
+		})
+	}
+}
+
+// TestInferenceServiceURLSuffixConstruction tests that InferenceService URLs
+// always get the /v1 suffix appended correctly
+func TestInferenceServiceURLSuffixConstruction(t *testing.T) {
+	tests := []struct {
+		name     string
+		inputURL string
+		expected string
+	}{
+		{
+			name:     "URL without /v1 suffix gets it added",
+			inputURL: "http://my-service.namespace.svc.cluster.local",
+			expected: "http://my-service.namespace.svc.cluster.local/v1",
+		},
+		{
+			name:     "URL with /v1 suffix remains unchanged",
+			inputURL: "http://my-service.namespace.svc.cluster.local/v1",
+			expected: "http://my-service.namespace.svc.cluster.local/v1",
+		},
+		{
+			name:     "URL with port without /v1 suffix gets it added",
+			inputURL: "http://my-service.namespace.svc.cluster.local:8080",
+			expected: "http://my-service.namespace.svc.cluster.local:8080/v1",
+		},
+		{
+			name:     "URL with port and /v1 suffix remains unchanged",
+			inputURL: "https://my-service.namespace.svc.cluster.local:8443/v1",
+			expected: "https://my-service.namespace.svc.cluster.local:8443/v1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Call the actual function used for InferenceService URLs
+			actual := EnsureV1Suffix(tt.inputURL)
+
+			assert.Equal(t, tt.expected, actual,
+				"InferenceService URLs must always end with /v1")
+		})
+	}
+}
+
+// TestLLMInferenceServiceSchemeSelection tests that the scheme is correctly
+// determined based on the auth annotation
+func TestLLMInferenceServiceSchemeSelection(t *testing.T) {
+	tests := []struct {
+		name           string
+		authAnnotation string
+		expected       string
+	}{
+		{
+			name:           "no auth annotation defaults to http",
+			authAnnotation: "",
+			expected:       "http",
+		},
+		{
+			name:           "auth annotation set to false uses http",
+			authAnnotation: "false",
+			expected:       "http",
+		},
+		{
+			name:           "auth annotation set to true uses https",
+			authAnnotation: "true",
+			expected:       "https",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Call the actual function used in extractEndpointFromLLMInferenceService
+			actual := DetermineSchemeFromAuth(tt.authAnnotation)
+
+			assert.Equal(t, tt.expected, actual,
+				"Scheme must be 'https' only when security.opendatahub.io/enable-auth annotation is 'true'")
+		})
+	}
+}
+
+// TestKServeServiceConstants tests that the label keys used for finding services
+// remain consistent and don't accidentally change
+func TestKServeServiceConstants(t *testing.T) {
+	t.Run("InferenceService label key must be serving.kserve.io/inferenceservice", func(t *testing.T) {
+		assert.Equal(t, "serving.kserve.io/inferenceservice", InferenceServiceName,
+			"InferenceService label key must not change - this would break service discovery")
+	})
+
+	t.Run("LLMInferenceService name label key must be app.kubernetes.io/name", func(t *testing.T) {
+		assert.Equal(t, "app.kubernetes.io/name", LLMInferenceServiceName,
+			"LLMInferenceService name label key must not change - this would break service discovery")
+	})
+
+	t.Run("LLMInferenceService component label key must be app.kubernetes.io/component", func(t *testing.T) {
+		assert.Equal(t, "app.kubernetes.io/component", LLMInferenceServiceComponent,
+			"LLMInferenceService component label key must not change - this would break service discovery")
+	})
+
+	t.Run("LLMInferenceService workload component value must be llminferenceservice-workload", func(t *testing.T) {
+		assert.Equal(t, "llminferenceservice-workload", LLMInferenceServiceWorkloadComponent,
+			"LLMInferenceService workload component value must not change - this would break service discovery")
+	})
+	t.Run("LLMInferenceService auth annotation key must be security.opendatahub.io/enable-auth", func(t *testing.T) {
+		assert.Equal(t, "security.opendatahub.io/enable-auth", authAnnotationKey,
+			"LLMInferenceService auth annotation key must not change - this would break authentication scheme determination")
+	})
+}
+
+// TestHeadlessServicePortLogic tests that port is added to URL only when
+// the service is headless AND the URL doesn't already have a port
+func TestHeadlessServicePortLogic(t *testing.T) {
+	tests := []struct {
+		name          string
+		isHeadless    bool
+		urlHasPort    bool
+		expectedAdded bool
+		description   string
+	}{
+		{
+			name:          "headless service without port in URL adds port",
+			isHeadless:    true,
+			urlHasPort:    false,
+			expectedAdded: true,
+			description:   "Port should be added when service is headless and URL has no port",
+		},
+		{
+			name:          "headless service with port in URL does not add port",
+			isHeadless:    true,
+			urlHasPort:    true,
+			expectedAdded: false,
+			description:   "Port should NOT be added when service is headless but URL already has port",
+		},
+		{
+			name:          "non-headless service without port in URL does not add port",
+			isHeadless:    false,
+			urlHasPort:    false,
+			expectedAdded: false,
+			description:   "Port should NOT be added when service is not headless",
+		},
+		{
+			name:          "non-headless service with port in URL does not add port",
+			isHeadless:    false,
+			urlHasPort:    true,
+			expectedAdded: false,
+			description:   "Port should NOT be added when service is not headless (even with port already present)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Call the actual function used in getModelDetailsFromServingRuntime
+			shouldAddPort := ShouldAddPortToURL(tt.isHeadless, tt.urlHasPort)
+
+			assert.Equal(t, tt.expectedAdded, shouldAddPort, tt.description)
+		})
+	}
 }

@@ -15,6 +15,7 @@ aliases:
     - YuliaKrimerman
     - manaswinidas
     - jrenee42
+    - ederign
 
   # Backup alias for managers to help with unblocking during PTO
   managers-backup-approvers:
@@ -36,7 +37,6 @@ aliases:
     - Griffin-Sullivan
     - andrewballantyne
   connections-reviewers:
-    - andrewballantyne
     - ashley-o0o
     - emilys314
     - Griffin-Sullivan
@@ -48,11 +48,12 @@ aliases:
     - DaoDaoNoCode
   hardware-profiles-reviewers:
     - srtanish1992
-    - d0w
     - Gkrumbach07
     - jrenee42
     - DaoDaoNoCode
     - nananosirova
+    - rsun19
+    - DaltheCow
 
   # Model Registry & Model Catalog
   model-registry-catalog-approvers:
@@ -63,7 +64,6 @@ aliases:
     - mturley
     - ppadti
     - YuliaKrimerman
-    - rsun19
 
   # Model Serving & Model Metrics
   model-serving-metrics-approvers:
@@ -71,7 +71,6 @@ aliases:
     - Griffin-Sullivan
     - andrewballantyne
   model-serving-metrics-reviewers:
-    - andrewballantyne
     - ashley-o0o
     - emilys314
     - Griffin-Sullivan
@@ -83,9 +82,10 @@ aliases:
     - DaoDaoNoCode
   pipelines-reviewers:
     - srtanish1992
-    - d0w
     - Gkrumbach07
     - jrenee42
+    - rsun19
+    - DaltheCow
 
   # General Dashboard infrastructure
   platform-approvers:
@@ -114,6 +114,37 @@ aliases:
     - jrenee42
   workbenches-reviewers:
     - srtanish1992
-    - d0w
     - Gkrumbach07
     - jrenee42
+    - rsun19
+    - DaltheCow
+
+  # Gen AI
+  gen-ai-approvers:
+    - agagancarczyk
+    - ikeola13
+    - pnaik1
+    - Lucifergene
+    - divyanshiGupta
+    - rohitkrai03
+    - danpierce1
+    - jharan1
+    - NickGagan
+    - mfleader
+    - ederign
+    - rhdedgar
+  gen-ai-reviewers:
+    - agagancarczyk
+    - ikeola13
+    - pnaik1
+    - Lucifergene
+    - divyanshiGupta
+    - rohitkrai03
+    - danpierce1
+    - jharan1
+    - NickGagan
+    - mfleader
+    - ederign
+    - rhdedgar
+    - iamemilio
+    - s-akhtar-baig

@@ -21,7 +21,6 @@ export type MockDashboardConfigType = {
   disableKServeAuth?: boolean;
   disableKServeMetrics?: boolean;
   disableKServeRaw?: boolean;
-  disableModelMesh?: boolean;
   disablePerformanceMetrics?: boolean;
   disableTrustyBiasMetrics?: boolean;
   disableDistributedWorkloads?: boolean;
@@ -33,26 +32,35 @@ export type MockDashboardConfigType = {
   disableAdminConnectionTypes?: boolean;
   disableStorageClasses?: boolean;
   disableNotebookController?: boolean;
-  notebookSizes?: NotebookSize[];
+  notebookSizes?: NotebookSize[]; // deprecated
   disableNIMModelServing?: boolean;
   disableFineTuning?: boolean;
-  disableLlamaStackChatBot?: boolean;
-  modelServerSizes?: ModelServingSize[];
+  modelServerSizes?: ModelServingSize[]; // deprecated
   disableLMEval?: boolean;
   disableKueue?: boolean;
   disableFeatureStore?: boolean;
-  disableModelTraining?: boolean;
-  disableModelAsService?: boolean;
+  genAiStudio?: boolean;
+  modelAsService?: boolean;
+  trainingJobs?: boolean;
   hardwareProfileOrder?: string[];
+  pvcSize?: string;
+  mlflow?: boolean;
+  projectRBAC?: boolean;
+  embedMLflow?: boolean;
 };
 
 export const mockDashboardConfig = ({
+  mlflow = false,
+  projectRBAC = false,
+  embedMLflow = false,
   disableInfo = false,
   disableSupport = false,
   disableClusterManager = false,
   disableTracking = false,
   disableBYONImageStream = false,
   disableISVBadges = false,
+  genAiStudio = false,
+  modelAsService = true,
   disableAppLauncher = false,
   disableUserManagement = false,
   disableHome = false,
@@ -65,7 +73,6 @@ export const mockDashboardConfig = ({
   disableKServeAuth = false,
   disableKServeMetrics = true,
   disableKServeRaw = true,
-  disableModelMesh = false,
   disablePerformanceMetrics = false,
   disableTrustyBiasMetrics = false,
   disableDistributedWorkloads = false,
@@ -76,12 +83,10 @@ export const mockDashboardConfig = ({
   disableStorageClasses = false,
   disableNotebookController = false,
   disableNIMModelServing = false,
-  disableLlamaStackChatBot = false,
   disableLMEval = true,
   disableKueue = true,
   disableFeatureStore = true,
-  disableModelTraining = true,
-  disableModelAsService = true,
+  trainingJobs = true,
   hardwareProfileOrder = ['test-hardware-profile'],
   modelServerSizes = [
     {
@@ -192,6 +197,7 @@ export const mockDashboardConfig = ({
       },
     },
   ],
+  pvcSize = '20Gi',
 }: MockDashboardConfigType): DashboardConfigKind => ({
   apiVersion: 'opendatahub.io/v1alpha',
   kind: 'OdhDashboardConfig',
@@ -204,6 +210,9 @@ export const mockDashboardConfig = ({
   },
   spec: {
     dashboardConfig: {
+      mlflow,
+      projectRBAC,
+      embedMLflow,
       enablement: true,
       disableInfo,
       disableSupport,
@@ -223,10 +232,11 @@ export const mockDashboardConfig = ({
       disableTrustyBiasMetrics,
       disablePerformanceMetrics,
       disableKServe,
+      genAiStudio,
+      modelAsService,
       disableKServeAuth,
       disableKServeMetrics,
       disableKServeRaw,
-      disableModelMesh,
       disableDistributedWorkloads,
       disableModelCatalog,
       disableModelRegistry,
@@ -236,16 +246,14 @@ export const mockDashboardConfig = ({
       disableNIMModelServing,
       disableAdminConnectionTypes: false,
       disableFineTuning,
-      disableLlamaStackChatBot,
       disableLMEval,
       disableKueue,
       disableFeatureStore,
-      disableModelTraining,
-      disableModelAsService,
+      trainingJobs,
     },
     notebookController: {
       enabled: !disableNotebookController,
-      pvcSize: '20Gi',
+      pvcSize,
     },
     groupsConfig: {
       adminGroups: 'openshift-ai-admins',

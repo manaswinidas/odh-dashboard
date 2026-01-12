@@ -9,18 +9,21 @@ import type {
 } from '@odh-dashboard/internal/k8sTypes';
 // eslint-disable-next-line no-restricted-syntax, @typescript-eslint/consistent-type-imports
 import type { ProjectObjectType } from '@odh-dashboard/internal/concepts/design/utils';
-import type { ModelServingPodSpecOptionsState } from '@odh-dashboard/internal/concepts/hardwareProfiles/useModelServingPodSpecOptionsState';
+import type { ModelServingPodSpecOptionsState } from '@odh-dashboard/internal/concepts/hardwareProfiles/deprecated/useModelServingAcceleratorDeprecatedPodSpecOptionsState';
 import type { K8sResourceCommon } from '@openshift/dynamic-plugin-sdk-utils';
 import type { ModelDeploymentState } from '@odh-dashboard/internal/pages/modelServing/screens/types';
 import type { ToggleState } from '@odh-dashboard/internal/components/StateActionToggle';
 import type { ComponentCodeRef } from '@odh-dashboard/plugin-core';
 import type { useHardwareProfileConfig } from '@odh-dashboard/internal/concepts/hardwareProfiles/useHardwareProfileConfig';
+import type { CrPathConfig } from '@odh-dashboard/internal/concepts/hardwareProfiles/types';
 import type {
   WizardFormData,
   DeploymentWizardField,
   ModelLocationData,
   InitialWizardFormData,
+  WizardField,
 } from '../src/components/deploymentWizard/types';
+import type { ModelServerOption } from '../src/components/deploymentWizard/fields/ModelServerTemplateSelectField';
 
 export type DeploymentStatus = {
   state: ModelDeploymentState;
@@ -124,9 +127,9 @@ export type ModelServingPlatformWatchDeploymentsExtension<D extends Deployment =
       platform: D['modelServingPlatformId'];
       watch: CodeRef<
         (
-          project?: ProjectKind,
+          project: ProjectKind,
           labelSelectors?: { [key: string]: string },
-          mrName?: string,
+          filterFn?: (model: D['model']) => boolean,
           opts?: K8sAPIOptions,
         ) => [D[] | undefined, boolean, Error | undefined]
       >;
@@ -141,6 +144,7 @@ export type ModelServingDeploymentFormDataExtension<D extends Deployment = Deplo
   'model-serving.deployment/form-data',
   {
     platform: D['modelServingPlatformId'];
+    hardwareProfilePaths: CodeRef<CrPathConfig>;
     extractHardwareProfileConfig: CodeRef<
       (deployment: D) => Parameters<typeof useHardwareProfileConfig> | null
     >;
@@ -154,6 +158,12 @@ export type ModelServingDeploymentFormDataExtension<D extends Deployment = Deplo
       (deployment: D) => { saveAsAiAsset: boolean; saveAsMaaS?: boolean; useCase?: string } | null
     >;
     extractModelLocationData: CodeRef<(deployment: D) => ModelLocationData | null>;
+    extractDeploymentStrategy?: CodeRef<
+      (deployment: D) => WizardFormData['state']['deploymentStrategy']['data'] | null
+    >;
+    extractModelServerTemplate: CodeRef<
+      (deployment: D, dashboardNamespace?: string) => ModelServerOption | null
+    >;
   }
 >;
 export const isModelServingDeploymentFormDataExtension = <D extends Deployment = Deployment>(
@@ -258,6 +268,12 @@ export const isModelServingPlatformFetchDeploymentStatus = <D extends Deployment
 ): extension is ModelServingPlatformFetchDeploymentStatus<D> =>
   extension.type === 'model-serving.platform/fetch-deployment-status';
 
+/**
+ * A function that applies field data to a deployment during the assembly process.
+ * This is used by WizardFieldApplyExtension to apply field-specific data to deployments.
+ */
+export type DeploymentAssemblyFn<D extends Deployment = Deployment> = (deployment: D) => D;
+
 export type ModelServingDeploy<D extends Deployment = Deployment> = Extension<
   'model-serving.deployment/deploy',
   {
@@ -276,6 +292,7 @@ export type ModelServingDeploy<D extends Deployment = Deployment> = Extension<
         secretName?: string,
         overwrite?: boolean,
         initialWizardData?: InitialWizardFormData,
+        applyFieldData?: DeploymentAssemblyFn<D>,
       ) => Promise<D>
     >;
   }
@@ -297,3 +314,89 @@ export const isDeploymentWizardFieldExtension = <D extends Deployment = Deployme
   extension: Extension,
 ): extension is DeploymentWizardFieldExtension<D> =>
   extension.type === 'model-serving.deployment/wizard-field';
+
+// TODO in same jira update name to WizardFieldExtension
+export type WizardField2Extension<T = unknown, D extends Deployment = Deployment> = Extension<
+  'model-serving.deployment/wizard-field2',
+  {
+    platform?: D['modelServingPlatformId'];
+    field: CodeRef<WizardField<T>>;
+  }
+>;
+export const isWizardField2Extension = <T = unknown, D extends Deployment = Deployment>(
+  extension: Extension,
+): extension is WizardField2Extension<T, D> =>
+  extension.type === 'model-serving.deployment/wizard-field2';
+
+export type ModelServingDeploymentTransformExtension<D extends Deployment = Deployment> = Extension<
+  'model-serving.deployment/transform',
+  {
+    platform: D['modelServingPlatformId'];
+    transform: CodeRef<(deployment: D, initialWizardData: InitialWizardFormData) => D>;
+  }
+>;
+export const isModelServingDeploymentTransformExtension = <D extends Deployment = Deployment>(
+  extension: Extension,
+): extension is ModelServingDeploymentTransformExtension<D> =>
+  extension.type === 'model-serving.deployment/transform';
+
+/**
+ * Extension for applying a wizard field's data to a deployment resource during assembly.
+ * This is executed as part of the deployment assembly process, allowing each field to
+ * contribute its data to the final deployment resource.
+ *
+ * The `fieldId` links this apply extension to a specific WizardField2Extension, ensuring
+ * it is only executed when its associated field is active.
+ */
+export type WizardFieldApplyExtension<T = unknown, D extends Deployment = Deployment> = Extension<
+  'model-serving.deployment/wizard-field-apply',
+  {
+    /** The ID of the WizardField this apply extension is associated with */
+    fieldId: string;
+    /** The platform this apply extension applies to (e.g., 'llmd-serving') */
+    platform: D['modelServingPlatformId'];
+    /**
+     * Apply function that modifies the deployment based on the field's data.
+     * @param deployment - The deployment resource being assembled
+     * @param fieldData - The current data from the associated wizard field
+     * @param wizardState - The full wizard form state for context
+     * @returns The modified deployment
+     */
+    apply: CodeRef<(deployment: D, fieldData: T, wizardState: WizardFormData['state']) => D>;
+  }
+>;
+export const isWizardFieldApplyExtension = <T = unknown, D extends Deployment = Deployment>(
+  extension: Extension,
+): extension is WizardFieldApplyExtension<T, D> =>
+  extension.type === 'model-serving.deployment/wizard-field-apply';
+
+/**
+ * Extension for extracting initial data from a deployment for a dynamic wizard field.
+ * This is used when editing an existing deployment to populate the wizard field with
+ * the current values from the deployment resource.
+ *
+ * The `fieldId` links this extractor to a specific WizardField2Extension, ensuring the
+ * extracted data is provided to the correct field.
+ */
+export type WizardFieldExtractorExtension<
+  T = unknown,
+  D extends Deployment = Deployment,
+> = Extension<
+  'model-serving.deployment/wizard-field-extractor',
+  {
+    /** The ID of the WizardField this extractor is associated with */
+    fieldId: string;
+    /** The platform this extractor applies to (e.g., 'llmd-serving') */
+    platform: D['modelServingPlatformId'];
+    /**
+     * Extract function that retrieves the field's initial data from a deployment.
+     * @param deployment - The deployment resource to extract data from
+     * @returns The extracted field data, or undefined if not present
+     */
+    extract: CodeRef<(deployment: D) => T | undefined>;
+  }
+>;
+export const isWizardFieldExtractorExtension = <T = unknown, D extends Deployment = Deployment>(
+  extension: Extension,
+): extension is WizardFieldExtractorExtension<T, D> =>
+  extension.type === 'model-serving.deployment/wizard-field-extractor';

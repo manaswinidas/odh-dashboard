@@ -9,16 +9,14 @@ import { useCatalogStringFilterState } from '~/app/pages/modelCatalog/utils/mode
 
 const MAX_VISIBLE_FILTERS = 5;
 
-type ArrayFilterKey = Exclude<ModelCatalogStringFilterKey, ModelCatalogStringFilterKey.USE_CASE>;
-
-type ModelCatalogStringFilterProps<K extends ArrayFilterKey> = {
+type ModelCatalogStringFilterProps<K extends ModelCatalogStringFilterKey> = {
   title: string;
   filterKey: K;
   filterToNameMapping: Partial<Record<ModelCatalogStringFilterValueType[K], string>>;
   filters: ModelCatalogStringFilterOptions[K];
 };
 
-const ModelCatalogStringFilter = <K extends ArrayFilterKey>({
+const ModelCatalogStringFilter = <K extends ModelCatalogStringFilterKey>({
   title,
   filterKey,
   filterToNameMapping,
@@ -33,9 +31,11 @@ const ModelCatalogStringFilter = <K extends ArrayFilterKey>({
     [filterToNameMapping],
   );
 
+  const filterValues = React.useMemo(() => filters?.values ?? [], [filters?.values]);
+
   const valuesMatchingSearch = React.useMemo(
     () =>
-      filters.values.filter((value) => {
+      filterValues.filter((value) => {
         const label = getLabel(value).toLowerCase();
         return (
           value.toLowerCase().includes(searchValue.trim().toLowerCase()) ||
@@ -43,7 +43,7 @@ const ModelCatalogStringFilter = <K extends ArrayFilterKey>({
           isSelected(value)
         );
       }),
-    [filters.values, getLabel, isSelected, searchValue],
+    [filterValues, getLabel, isSelected, searchValue],
   );
 
   const onSearchChange = (newValue: string) => {
@@ -57,7 +57,7 @@ const ModelCatalogStringFilter = <K extends ArrayFilterKey>({
   return (
     <Content data-testid={`${title}-filter`}>
       <Content component={ContentVariants.h6}>{title}</Content>
-      {filters.values.length > MAX_VISIBLE_FILTERS && (
+      {filterValues.length > MAX_VISIBLE_FILTERS && (
         <SearchInput
           placeholder={`Search ${title.toLowerCase()}`}
           data-testid={`${title}-filter-search`}

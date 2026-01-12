@@ -82,7 +82,7 @@ func (m *TokenKubernetesClientMock) GetAAModels(ctx context.Context, identity *i
 			{
 				ModelName:      "llm-d-codestral-22b",
 				ModelID:        "llm-d-codestral-22b",
-				ServingRuntime: "Distributed Inference Server with llm-d",
+				ServingRuntime: "Distributed inference with llm-d",
 				APIProtocol:    "REST",
 				Version:        "",
 				Description:    "Mistral Codestral 22B model optimized for code generation with llm-d prefill/decode separation",
@@ -97,7 +97,7 @@ func (m *TokenKubernetesClientMock) GetAAModels(ctx context.Context, identity *i
 			{
 				ModelName:      "llm-d-deepseek-coder-33b",
 				ModelID:        "llm-d-deepseek-coder-33b",
-				ServingRuntime: "Distributed Inference Server with llm-d",
+				ServingRuntime: "Distributed inference with llm-d",
 				APIProtocol:    "REST",
 				Version:        "",
 				Description:    "DeepSeek Coder 33B model with llm-d architecture for high-performance code completion",
@@ -192,7 +192,7 @@ func (m *TokenKubernetesClientMock) GetAAModels(ctx context.Context, identity *i
 			{
 				ModelName:      "llm-d-llama-3.1-70b",
 				ModelID:        "llm-d-llama-3.1-70b",
-				ServingRuntime: "Distributed Inference Server with llm-d",
+				ServingRuntime: "Distributed inference with llm-d",
 				APIProtocol:    "REST",
 				Version:        "",
 				Description:    "Meta Llama 3.1 70B model served with llm-d disaggregated architecture for high throughput",
@@ -207,7 +207,7 @@ func (m *TokenKubernetesClientMock) GetAAModels(ctx context.Context, identity *i
 			{
 				ModelName:      "llm-d-mixtral-8x7b",
 				ModelID:        "llm-d-mixtral-8x7b",
-				ServingRuntime: "Distributed Inference Server with llm-d",
+				ServingRuntime: "Distributed inference with llm-d",
 				APIProtocol:    "REST",
 				Version:        "",
 				Description:    "Mistral Mixtral 8x7B MoE model with llm-d prefill/decode separation for optimal performance",
@@ -222,7 +222,7 @@ func (m *TokenKubernetesClientMock) GetAAModels(ctx context.Context, identity *i
 			{
 				ModelName:      "llm-d-qwen2.5-72b",
 				ModelID:        "llm-d-qwen2.5-72b",
-				ServingRuntime: "Distributed Inference Server with llm-d",
+				ServingRuntime: "Distributed inference with llm-d",
 				APIProtocol:    "REST",
 				Version:        "",
 				Description:    "Alibaba Qwen 2.5 72B model optimized with llm-d architecture for enterprise workloads",
@@ -343,7 +343,7 @@ func (m *TokenKubernetesClientMock) GetLlamaStackDistributions(ctx context.Conte
 	}, nil
 }
 
-func (m *TokenKubernetesClientMock) InstallLlamaStackDistribution(ctx context.Context, identity *integrations.RequestIdentity, namespace string, models []models.InstallModel, maasClient maas.MaaSClientInterface) (*lsdapi.LlamaStackDistribution, error) {
+func (m *TokenKubernetesClientMock) InstallLlamaStackDistribution(ctx context.Context, identity *integrations.RequestIdentity, namespace string, models []models.InstallModel, guardrailModel *models.GuardrailModel, maasClient maas.MaaSClientInterface) (*lsdapi.LlamaStackDistribution, error) {
 	// Check if LSD already exists in the namespace
 	existingLSDList, err := m.GetLlamaStackDistributions(ctx, identity, namespace)
 	if err != nil {
@@ -365,6 +365,57 @@ func (m *TokenKubernetesClientMock) InstallLlamaStackDistribution(ctx context.Co
 		return nil, fmt.Errorf("failed to create namespace %s: %w", namespace, err)
 	}
 
+	// Build safety section based on guardrailModel
+	safetySection := "  safety: []"
+	shieldsSection := "  shields: []"
+
+	if guardrailModel != nil && guardrailModel.ModelName != "" {
+		// GuardrailModel is provided - add TrustyAI safety provider
+		guardrailModelURL := guardrailModel.ModelURL
+		if guardrailModelURL == "" {
+			// Default URL if not provided
+			guardrailModelURL = "http://guardrail-model-predictor." + namespace + ".svc.cluster.local/v1/chat/completions"
+		}
+
+		safetySection = `  safety:
+  - provider_id: trustyai_fms
+    provider_type: remote::trustyai_fms
+    config:
+      shields:
+        trustyai_input:
+          type: content
+          detector_url: "https://custom-guardrails-service:8480"
+          message_types: ["user", "completion"]
+          verify_ssl: false
+          auth_token: "${VLLM_TOKEN}"
+          detector_params:
+            custom:
+              input_guardrail:
+                input_policies: [jailbreak, content-moderation, pii]
+                guardrail_model: ` + guardrailModel.ModelName + `
+                guardrail_model_token: "${VLLM_TOKEN}"
+                guardrail_model_url: "` + guardrailModelURL + `"
+        trustyai_output:
+          type: content
+          detector_url: "https://custom-guardrails-service:8480"
+          message_types: ["user", "completion"]
+          verify_ssl: false
+          auth_token: "${VLLM_TOKEN}"
+          detector_params:
+            custom:
+              output_guardrail:
+                output_policies: [jailbreak, content-moderation, pii]
+                guardrail_model: ` + guardrailModel.ModelName + `
+                guardrail_model_token: "${VLLM_TOKEN}"
+                guardrail_model_url: "` + guardrailModelURL + `"`
+
+		shieldsSection = `  shields:
+    - shield_id: trustyai_input
+      provider_id: trustyai_fms
+    - shield_id: trustyai_output
+      provider_id: trustyai_fms`
+	}
+
 	// Then create the ConfigMap that the LSD will reference
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -379,6 +430,7 @@ apis:
 - datasetio
 - files
 - inference
+- safety
 - scoring
 - telemetry
 - tool_runtime
@@ -400,11 +452,10 @@ providers:
     provider_type: inline::milvus
     config:
       db_path: /opt/app-root/src/.llama/distributions/rh/milvus.db
-      kvstore:
-        type: sqlite
-        namespace: null
-        db_path: /opt/app-root/src/.llama/distributions/rh/milvus_registry.db
-  safety: []
+      persistence:
+        namespace: vector_io::milvus
+        backend: kv_default
+` + safetySection + `
   eval: []
   files:
   - provider_id: meta-reference-files
@@ -412,16 +463,15 @@ providers:
     config:
       storage_dir: /opt/app-root/src/.llama/distributions/rh/files
       metadata_store:
-        type: sqlite
-        db_path: /opt/app-root/src/.llama/distributions/rh/files_metadata.db
+        table_name: files_metadata
+        backend: sql_default
   datasetio:
   - provider_id: huggingface
     provider_type: remote::huggingface
     config:
       kvstore:
-        type: sqlite
-        namespace: null
-        db_path: /opt/app-root/src/.llama/distributions/rh/huggingface_datasetio.db
+        namespace: datasetio::huggingface
+        backend: kv_default
   scoring:
   - provider_id: basic
     provider_type: inline::basic
@@ -449,25 +499,44 @@ metadata_store:
   db_path: /opt/app-root/src/.llama/distributions/rh/registry.db
   type: sqlite
   db_path: /opt/app-root/src/.llama/distributions/rh/inference_store.db
-models:
-  - metadata:
-      embedding_dimension: 768
-    model_id: granite-embedding-125m
-    provider_id: sentence-transformers
-    provider_model_id: ibm-granite/granite-embedding-125m-english
-    model_type: embedding
-  - metadata: {}
-    model_id: mock-model
-    provider_id: vllm-inference-1
-    model_type: llm
-shields: []
-vector_dbs: []
-datasets: []
-scoring_fns: []
-benchmarks: []
-tool_groups:
-- toolgroup_id: builtin::rag
-  provider_id: rag-runtime
+storage:
+  backends:
+    kv_default:
+      type: kv_sqlite
+      db_path: /opt/app-root/src/.llama/distributions/rh/kvstore.db
+    sql_default:
+      type: sql_sqlite
+      db_path: /opt/app-root/src/.llama/distributions/rh/sql_store.db
+  stores:
+    metadata:
+      namespace: registry
+      backend: kv_default
+    inference:
+      table_name: inference_store
+      backend: sql_default
+    conversations:
+      table_name: openai_conversations
+      backend: sql_default
+registered_resources:
+  models:
+    - metadata:
+        embedding_dimension: 768
+      model_id: granite-embedding-125m
+      provider_id: sentence-transformers
+      provider_model_id: ibm-granite/granite-embedding-125m-english
+      model_type: embedding
+    - metadata: {}
+      model_id: mock-model
+      provider_id: vllm-inference-1
+      model_type: llm
+` + shieldsSection + `
+  vector_dbs: []
+  datasets: []
+  scoring_fns: []
+  benchmarks: []
+  tool_groups:
+    - toolgroup_id: builtin::rag
+      provider_id: rag-runtime
 server:
   port: 8321`,
 		},
@@ -609,6 +678,10 @@ func (m *TokenKubernetesClientMock) GetConfigMap(ctx context.Context, identity *
   "description": "GitHub Copilot MCP server with advanced kubectl tools.",
 			"logo": "https://github.com/images/modules/logos_page/GitHub-Mark.png"
 		}`,
+			"high-tools-server": `{
+  "url": "http://localhost:9094/high-tools",
+  "description": "Server with 5 tools for testing"
+}`,
 		},
 	}, nil
 }
@@ -671,4 +744,68 @@ func (m *TokenKubernetesClientMock) CanListNamespaces(ctx context.Context, ident
 	// For testing purposes, always return true to allow namespace listing
 	// In real scenarios, this would perform a SubjectAccessReview for cluster-scoped namespace access
 	return true, nil
+}
+
+// GetGuardrailsOrchestratorStatus returns mock GuardrailsOrchestrator status for testing
+func (m *TokenKubernetesClientMock) GetGuardrailsOrchestratorStatus(ctx context.Context, identity *integrations.RequestIdentity, namespace string) (*models.GuardrailsStatus, error) {
+	// Mock data - simulating the "custom-guardrails" CR status
+	return &models.GuardrailsStatus{
+		Phase: "Ready",
+		Conditions: []models.GuardrailsCondition{
+			{
+				Type:               "Progressing",
+				Status:             "True",
+				Reason:             "ReconcileInit",
+				Message:            "Initializing GuardrailsOrchestrator resource",
+				LastTransitionTime: "2025-12-24T06:40:07Z",
+			},
+			{
+				Type:               "InferenceServiceReady",
+				Status:             "False",
+				Reason:             "InferenceServiceNotReady",
+				Message:            "Inference service is not ready",
+				LastTransitionTime: "2025-12-24T06:40:47Z",
+			},
+			{
+				Type:               "DeploymentReady",
+				Status:             "True",
+				Reason:             "DeploymentReady",
+				Message:            "Deployment is ready",
+				LastTransitionTime: "2025-12-24T06:40:47Z",
+			},
+			{
+				Type:               "RouteReady",
+				Status:             "False",
+				Reason:             "RouteNotReady",
+				Message:            "Route is not ready",
+				LastTransitionTime: "2025-12-24T06:40:47Z",
+			},
+			{
+				Type:               "ReconcileComplete",
+				Status:             "False",
+				Reason:             "ReconcileFailed",
+				Message:            "Reconcile failed",
+				LastTransitionTime: "2025-12-24T06:40:47Z",
+			},
+		},
+	}, nil
+}
+
+// GetSafetyConfig returns mock safety configuration for testing
+// Returns hardcoded mock data simulating guardrails configuration
+func (m *TokenKubernetesClientMock) GetSafetyConfig(ctx context.Context, identity *integrations.RequestIdentity, namespace string) (*models.SafetyConfigResponse, error) {
+	// Return hardcoded mock data for testing
+	return &models.SafetyConfigResponse{
+		Enabled: true,
+		GuardrailModels: []models.GuardrailModelConfig{
+			{
+				ModelName:      "llama-guard-3",
+				DisplayName:    "Llama Guard 3",
+				InputShieldID:  "trustyai_input",
+				OutputShieldID: "trustyai_output",
+				InputPolicies:  []string{"jailbreak", "content-moderation", "pii"},
+				OutputPolicies: []string{"jailbreak", "content-moderation", "pii"},
+			},
+		},
+	}, nil
 }

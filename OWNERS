@@ -1,5 +1,21 @@
 # Most specific is intended to win
 filters:
+  # Allow team approvers to approve changes to their own sections in OWNERS_ALIASES
+  'OWNERS_ALIASES':
+    approvers:
+      - general-approvers
+      - managers-backup-approvers
+      - ai-trusty-approvers
+      - connections-approvers
+      - hardware-profiles-approvers
+      - model-registry-catalog-approvers
+      - model-serving-metrics-approvers
+      - pipelines-approvers
+      - platform-approvers
+      - quality-e2e-testing-approvers
+      - workbenches-approvers
+      - gen-ai-approvers
+
   # Catchall
   '.*':
     approvers:
@@ -28,7 +44,7 @@ filters:
       - area/manifests
 
   # Cypress tests
-  'frontend/src/__tests__/cypress/.*':
+  'packages/cypress/.*':
     approvers:
       - quality-e2e-testing-approvers
     reviewers:
@@ -112,3 +128,12 @@ filters:
       - workbenches-reviewers
     labels:
       - 'area/workbenches'
+
+  # Gen AI
+  'packages/gen-ai/.*':
+    approvers:
+      - gen-ai-approvers
+    reviewers:
+      - gen-ai-reviewers
+    labels:
+      - 'area/gen-ai'

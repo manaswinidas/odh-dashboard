@@ -1,6 +1,6 @@
 import React from 'react';
 import { z } from 'zod';
-import { Bullseye, Form, Spinner } from '@patternfly/react-core';
+import { Form } from '@patternfly/react-core';
 import { useZodFormValidation } from '@odh-dashboard/internal/hooks/useZodFormValidation';
 import { modelTypeSelectFieldSchema, ModelTypeSelectField } from '../fields/ModelTypeSelectField';
 import { UseModelDeploymentWizardState } from '../useDeploymentWizard';
@@ -33,20 +33,13 @@ export const ModelSourceStepContent: React.FC<ModelSourceStepProps> = ({
   wizardState,
   validation,
 }) => {
-  if (wizardState.state.modelLocationData.isLoadingSecretData) {
-    return (
-      <Bullseye>
-        <Spinner />
-      </Bullseye>
-    );
-  }
   return (
     <Form>
       <ModelLocationSelectField
         modelLocation={wizardState.state.modelLocationData.data?.type}
         validationProps={validation.getFieldValidationProps(['modelLocation', 'modelLocationData'])}
         validationIssues={validation.getFieldValidation(['modelLocation', 'modelLocationData'])}
-        project={wizardState.state.modelLocationData.project}
+        projectName={wizardState.state.project.projectName}
         modelLocationData={wizardState.state.modelLocationData.data}
         setModelLocationData={wizardState.state.modelLocationData.setData}
         resetModelLocationData={() => wizardState.state.modelLocationData.setData(undefined)}
@@ -54,7 +47,7 @@ export const ModelSourceStepContent: React.FC<ModelSourceStepProps> = ({
       <CreateConnectionInputFields
         createConnectionData={wizardState.state.createConnectionData.data}
         setCreateConnectionData={wizardState.state.createConnectionData.setData}
-        project={wizardState.state.modelLocationData.project}
+        projectName={wizardState.state.project.projectName}
         modelLocationData={wizardState.state.modelLocationData.data}
       />
       <ModelTypeSelectField
