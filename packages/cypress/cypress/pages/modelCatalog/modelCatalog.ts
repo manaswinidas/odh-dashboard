@@ -12,7 +12,7 @@ class ModelCatalog {
   }
 
   navigate() {
-    appChrome.findNavItem({ name: 'Catalog', rootSection: 'AI hub' }).click();
+    appChrome.findNavItem({ name: 'Catalog', rootSection: 'AI hub', subSection: 'Models' }).click();
     this.wait();
   }
 
@@ -27,12 +27,16 @@ class ModelCatalog {
   }
 
   tabEnabled() {
-    appChrome.findNavItem({ name: 'Catalog', rootSection: 'AI hub' }).should('exist');
+    appChrome
+      .findNavItem({ name: 'Catalog', rootSection: 'AI hub', subSection: 'Models' })
+      .should('exist');
     return this;
   }
 
   tabDisabled() {
-    appChrome.findNavItem({ name: 'Catalog', rootSection: 'AI hub' }).should('not.exist');
+    appChrome
+      .findNavItem({ name: 'Catalog', rootSection: 'AI hub', subSection: 'Models' })
+      .should('not.exist');
     return this;
   }
 
@@ -118,6 +122,57 @@ class ModelCatalog {
     return cy.get('body').then(($body) => {
       return $body.find('[data-testid="model-catalog-card"]').length > 0;
     });
+  }
+
+  findPerformanceViewToggle() {
+    return cy.findByTestId('model-performance-view-toggle');
+  }
+
+  togglePerformanceView() {
+    this.findPerformanceViewToggle().click({ force: true });
+    return this;
+  }
+
+  findWorkloadTypeFilter() {
+    return cy.findByTestId('workload-type-filter');
+  }
+
+  findLatencyFilter() {
+    return cy.findByTestId('latency-filter');
+  }
+
+  findMaxRpsFilter() {
+    return cy.findByTestId('max-rps-filter');
+  }
+
+  findSortDropdown() {
+    return cy.findByTestId('model-catalog-sort');
+  }
+
+  findValidatedModelCard() {
+    return cy
+      .findAllByTestId('model-catalog-card', { timeout: 10000 })
+      .filter(':has([data-testid="validated-model-hardware"])');
+  }
+
+  findValidatedModelCardLink() {
+    return this.findValidatedModelCard().first().findByTestId('model-catalog-detail-link');
+  }
+
+  findValidatedModelHardware() {
+    return cy.findByTestId('validated-model-hardware');
+  }
+
+  findValidatedModelReplicas() {
+    return cy.findByTestId('validated-model-replicas');
+  }
+
+  findValidatedModelLatency() {
+    return cy.findByTestId('validated-model-latency');
+  }
+
+  findValidatedModelBenchmarkLink() {
+    return cy.findByTestId('validated-model-benchmark-link');
   }
 }
 

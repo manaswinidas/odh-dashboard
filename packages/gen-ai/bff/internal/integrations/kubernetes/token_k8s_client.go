@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/opendatahub-io/gen-ai/internal/config"
 	"github.com/opendatahub-io/gen-ai/internal/constants"
@@ -19,6 +23,9 @@ import (
 	authv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 
+	"gopkg.in/yaml.v2"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -35,6 +42,9 @@ import (
 	// Import KServe types
 	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
 	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
+
+	// Import TrustyAI GuardrailsOrchestrator types
+	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 )
 
 const (
@@ -66,6 +76,27 @@ const (
 	// Annotation for authentication
 	authAnnotationKey = "security.opendatahub.io/enable-auth"
 )
+
+type modelProviderInfoEntry struct {
+	providerID  string
+	tokenEnvVar string
+}
+
+type modelDetailsResult struct {
+	modelID     string
+	modelType   string
+	endpointURL string
+	metadata    map[string]interface{}
+}
+
+type externalModelDetailsResult struct {
+	modelID      string
+	modelType    string
+	endpointURL  string
+	metadata     map[string]interface{}
+	providerID   string
+	providerType string
+}
 
 type TokenKubernetesClient struct {
 	// Move this to a common struct, when we decide to support multiple clients.
@@ -380,6 +411,50 @@ func (kc *TokenKubernetesClient) CanListLlamaStackDistributions(ctx context.Cont
 	return resp.Status.Allowed, nil
 }
 
+// CanListGuardrailsOrchestrator performs a SubjectAccessReview to check if the user has permission to list GuardrailsOrchestrator resources
+func (kc *TokenKubernetesClient) CanListGuardrailsOrchestrator(ctx context.Context, identity *integrations.RequestIdentity, namespace string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	// Check for nil identity
+	if identity == nil {
+		kc.Logger.Error("identity is nil")
+		return false, fmt.Errorf("identity cannot be nil")
+	}
+
+	// Create a new config with the token from the request identity
+	config := rest.CopyConfig(kc.Config)
+	config.BearerToken = identity.Token
+	config.BearerTokenFile = ""
+
+	// Create a kubernetes clientset to use the authorization API
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		kc.Logger.Error("failed to create kubernetes clientset for SAR", "error", err)
+		return false, fmt.Errorf("failed to create kubernetes clientset: %w", err)
+	}
+
+	// Create SelfSubjectAccessReview to check if user can list GuardrailsOrchestrator resources
+	sar := &authv1.SelfSubjectAccessReview{
+		Spec: authv1.SelfSubjectAccessReviewSpec{
+			ResourceAttributes: &authv1.ResourceAttributes{
+				Verb:      "list",
+				Group:     "trustyai.opendatahub.io",
+				Resource:  "guardrailsorchestrators",
+				Namespace: namespace,
+			},
+		},
+	}
+
+	resp, err := clientset.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, sar, metav1.CreateOptions{})
+	if err != nil {
+		kc.Logger.Error("failed to perform GuardrailsOrchestrator list SAR", "error", err)
+		return false, wrapK8sSubjectAccessReviewError(err, namespace)
+	}
+
+	return resp.Status.Allowed, nil
+}
+
 func (kc *TokenKubernetesClient) GetLlamaStackDistributions(ctx context.Context, identity *integrations.RequestIdentity, namespace string) (*lsdapi.LlamaStackDistributionList, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -470,12 +545,39 @@ func (kc *TokenKubernetesClient) GetConfigMap(ctx context.Context, identity *int
 	return configMap, nil
 }
 
-// GetGuardrailsOrchestratorStatus fetches the status of the GuardrailsOrchestrator CR
-// Real implementation not yet available - returns error
+// GetGuardrailsOrchestratorStatus lists GuardrailsOrchestrators in the namespace and returns the first one found.
 func (kc *TokenKubernetesClient) GetGuardrailsOrchestratorStatus(ctx context.Context, identity *integrations.RequestIdentity, namespace string) (*models.GuardrailsStatus, error) {
-	// Real implementation not yet available
-	// Use MOCK_K8S_CLIENT=true to test with mock data
-	return nil, fmt.Errorf("guardrailsOrchestrator %q not found in namespace %q", constants.GuardrailsOrchestratorName, namespace)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	guardrailsList := &gorchv1alpha1.GuardrailsOrchestratorList{}
+	listOptions := &client.ListOptions{
+		Namespace: namespace,
+	}
+
+	err := kc.Client.List(ctx, guardrailsList, listOptions)
+	if err != nil {
+		kc.Logger.Error("failed to list GuardrailsOrchestrators", "error", err, "namespace", namespace)
+		return nil, NewK8sErrorWithNamespace(ErrCodeInternalError,
+			fmt.Sprintf("failed to list guardrailsOrchestrators: %v", err), namespace, 500)
+	}
+
+	if len(guardrailsList.Items) == 0 {
+		return nil, NewK8sErrorWithNamespace(ErrCodeNotFound,
+			"guardrailsOrchestrator not found", namespace, 404)
+	}
+
+	guardrailsCR := guardrailsList.Items[0]
+	phase := guardrailsCR.Status.Phase
+	if phase == "" {
+		phase = constants.GuardrailsPhaseProgressing
+	}
+
+	return &models.GuardrailsStatus{
+		Name:       guardrailsCR.Name,
+		Phase:      phase,
+		Conditions: guardrailsCR.Status.Conditions,
+	}, nil
 }
 
 func (kc *TokenKubernetesClient) GetAAModels(ctx context.Context, identity *integrations.RequestIdentity, namespace string) ([]models.AAModel, error) {
@@ -486,24 +588,48 @@ func (kc *TokenKubernetesClient) GetAAModels(ctx context.Context, identity *inte
 		GenAIAssetLabelKey: "true",
 	})
 
-	// Convert InferenceServices to AAModel structs
-	aaModelsFromInfSvc, err := kc.getAAModelsFromInferenceService(ctx, namespace, labelSelector)
-	if err != nil {
+	g, gCtx := errgroup.WithContext(ctx)
+	var aaModelsFromInfSvc, aaModelsFromLLMInfSvc, aaModelsFromExternal []models.AAModel
+
+	g.Go(func() error {
+		var err error
+		aaModelsFromInfSvc, err = kc.getAAModelsFromInferenceService(gCtx, namespace, labelSelector)
+		return err
+	})
+
+	g.Go(func() error {
+		var err error
+		aaModelsFromLLMInfSvc, err = kc.getAAModelsFromLLMInferenceService(gCtx, namespace, labelSelector)
+		return err
+	})
+
+	g.Go(func() error {
+		var err error
+		aaModelsFromExternal, err = kc.GetAAModelsFromExternalModels(gCtx, identity, namespace)
+		if err != nil {
+			kc.Logger.Warn("failed to get external models, continuing with namespace models only",
+				"error", err,
+				"namespace", namespace)
+			aaModelsFromExternal = []models.AAModel{}
+		}
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 
-	// Convert LLMInferenceServices to AAModel structs
-	aaModelsFromLLMInfSvc, err := kc.getAAModelsFromLLMInferenceService(ctx, namespace, labelSelector)
-	if err != nil {
-		return nil, err
-	}
-
-	// Combine both lists
 	var allAAModels []models.AAModel
 	allAAModels = append(allAAModels, aaModelsFromInfSvc...)
 	allAAModels = append(allAAModels, aaModelsFromLLMInfSvc...)
+	allAAModels = append(allAAModels, aaModelsFromExternal...)
 
-	kc.Logger.Info("successfully fetched AAModels", "count", len(allAAModels), "namespace", namespace, "inferenceServices", len(aaModelsFromInfSvc), "llmInferenceServices", len(aaModelsFromLLMInfSvc))
+	kc.Logger.Info("successfully fetched AAModels",
+		"count", len(allAAModels),
+		"namespace", namespace,
+		"inferenceServices", len(aaModelsFromInfSvc),
+		"llmInferenceServices", len(aaModelsFromLLMInfSvc),
+		"externalModels", len(aaModelsFromExternal))
 	return allAAModels, nil
 }
 
@@ -516,23 +642,28 @@ func (kc *TokenKubernetesClient) getAAModelsFromLLMInferenceService(ctx context.
 
 	err := kc.Client.List(ctx, &llmInferenceServiceList, listOptions)
 	if err != nil {
+		// If the CRD is not installed, gracefully return empty list
+		if apierrors.IsNotFound(err) || apimeta.IsNoMatchError(err) {
+			kc.Logger.Debug("LLMInferenceService CRD not installed or not found", "namespace", namespace)
+			return []models.AAModel{}, nil
+		}
 		kc.Logger.Error("failed to list LLMInferenceServices", "error", err, "namespace", namespace)
 		return nil, fmt.Errorf("failed to list LLMInferenceServices: %w", err)
 	}
 
 	var aaModels []models.AAModel
 	for _, llmSvc := range llmInferenceServiceList.Items {
-
 		aaModel := models.AAModel{
-			ModelName:      llmSvc.Name,
-			ModelID:        *llmSvc.Spec.Model.Name,
-			Description:    kc.extractDescriptionFromLLMInferenceService(&llmSvc),
-			ServingRuntime: "Distributed inference with llm-d",
-			APIProtocol:    "REST",
-			Usecase:        kc.extractUseCaseFromLLMInferenceService(&llmSvc),
-			Endpoints:      kc.extractEndpointsFromLLMInferenceService(&llmSvc),
-			Status:         kc.extractStatusFromLLMInferenceService(&llmSvc),
-			DisplayName:    kc.extractDisplayNameFromLLMInferenceService(&llmSvc),
+			ModelName:       llmSvc.Name,
+			ModelID:         *llmSvc.Spec.Model.Name,
+			Description:     kc.extractDescriptionFromLLMInferenceService(&llmSvc),
+			ServingRuntime:  "Distributed inference with llm-d",
+			APIProtocol:     "REST",
+			Usecase:         kc.extractUseCaseFromLLMInferenceService(&llmSvc),
+			Endpoints:       kc.extractEndpointsFromLLMInferenceService(&llmSvc),
+			Status:          kc.extractStatusFromLLMInferenceService(&llmSvc),
+			DisplayName:     kc.extractDisplayNameFromLLMInferenceService(&llmSvc),
+			ModelSourceType: models.ModelSourceTypeNamespace,
 		}
 		aaModels = append(aaModels, aaModel)
 	}
@@ -549,6 +680,11 @@ func (kc *TokenKubernetesClient) getAAModelsFromInferenceService(ctx context.Con
 
 	err := kc.Client.List(ctx, &inferenceServiceList, listOptions)
 	if err != nil {
+		// If the CRD is not installed, gracefully return empty list
+		if apierrors.IsNotFound(err) || apimeta.IsNoMatchError(err) {
+			kc.Logger.Debug("InferenceService CRD not installed or not found", "namespace", namespace)
+			return []models.AAModel{}, nil
+		}
 		kc.Logger.Error("failed to list InferenceServices", "error", err, "namespace", namespace)
 		return nil, fmt.Errorf("failed to list InferenceServices: %w", err)
 	}
@@ -564,16 +700,17 @@ func (kc *TokenKubernetesClient) getAAModelsFromInferenceService(ctx context.Con
 		}
 
 		aaModel := models.AAModel{
-			ModelName:      isvc.Name,
-			ModelID:        isvc.Name,
-			ServingRuntime: kc.extractServingRuntimeFromAnnotations(servingRuntime),
-			APIProtocol:    kc.extractAPIProtocolFromAnnotations(servingRuntime),
-			Version:        kc.extractVersionFromAnnotations(servingRuntime),
-			Description:    kc.extractDescriptionFromInferenceService(&isvc),
-			Usecase:        kc.extractUseCaseFromInferenceService(&isvc),
-			Endpoints:      kc.extractEndpoints(&isvc),
-			Status:         kc.extractStatusFromInferenceService(&isvc),
-			DisplayName:    kc.extractDisplayNameFromInferenceService(&isvc),
+			ModelName:       isvc.Name,
+			ModelID:         isvc.Name,
+			ServingRuntime:  kc.extractServingRuntimeFromAnnotations(servingRuntime),
+			APIProtocol:     kc.extractAPIProtocolFromAnnotations(servingRuntime),
+			Version:         kc.extractVersionFromAnnotations(servingRuntime),
+			Description:     kc.extractDescriptionFromInferenceService(&isvc),
+			Usecase:         kc.extractUseCaseFromInferenceService(&isvc),
+			Endpoints:       kc.extractEndpoints(&isvc),
+			Status:          kc.extractStatusFromInferenceService(&isvc),
+			DisplayName:     kc.extractDisplayNameFromInferenceService(&isvc),
+			ModelSourceType: models.ModelSourceTypeNamespace,
 		}
 		aaModels = append(aaModels, aaModel)
 	}
@@ -818,30 +955,49 @@ func (kc *TokenKubernetesClient) extractUseCaseFromLLMInferenceService(llmSvc *k
 	return llmSvc.Annotations[InferenceServiceUseCaseAnnotation]
 }
 
-// Helper method to extract endpoints from LLMInferenceService
+// Helper method to extract endpoints from LLMInferenceService.
+// Uses Address (singular) and URL as primary sources, falls back to Addresses (plural).
 func (kc *TokenKubernetesClient) extractEndpointsFromLLMInferenceService(llmSvc *kservev1alpha1.LLMInferenceService) []string {
-	endpoints := []string{}
-
 	if llmSvc == nil {
-		return endpoints
+		return []string{}
 	}
 
-	// Extract internal endpoint from Address
+	var internalURL, externalURL string
+
+	// Primary: Address (singular) for internal, URL for external
 	if llmSvc.Status.Address != nil && llmSvc.Status.Address.URL != nil {
-		internal := llmSvc.Status.Address.URL.String()
-		endpoints = append(endpoints, fmt.Sprintf("internal: %s", internal))
+		internalURL = llmSvc.Status.Address.URL.String()
+	}
+	if llmSvc.Status.URL != nil {
+		u := llmSvc.Status.URL.String()
+		if !strings.Contains(u, ".svc.cluster.local") {
+			externalURL = u
+		}
 	}
 
-	// Extract external endpoint from URL
-	if llmSvc.Status.URL != nil {
-		external := llmSvc.Status.URL.String()
-		if strings.Contains(external, ".svc.cluster.local") {
-			return endpoints
+	// Fallback: Addresses (plural) for any missing endpoints
+	if internalURL == "" || externalURL == "" {
+		for _, addr := range llmSvc.Status.Addresses {
+			if addr.URL == nil {
+				continue
+			}
+			u := addr.URL.String()
+			if strings.Contains(u, ".svc.cluster.local") {
+				if internalURL == "" {
+					internalURL = u
+				}
+			} else if externalURL == "" {
+				externalURL = u
+			}
 		}
-		// Only add if it's different from internal and not internal service
-		if len(endpoints) == 0 || !strings.Contains(endpoints[0], external) {
-			endpoints = append(endpoints, fmt.Sprintf("external: %s", external))
-		}
+	}
+
+	var endpoints []string
+	if internalURL != "" {
+		endpoints = append(endpoints, fmt.Sprintf("internal: %s", internalURL))
+	}
+	if externalURL != "" {
+		endpoints = append(endpoints, fmt.Sprintf("external: %s", externalURL))
 	}
 	return endpoints
 }
@@ -870,7 +1026,125 @@ func (kc *TokenKubernetesClient) extractDisplayNameFromLLMInferenceService(llmSv
 	return displayName
 }
 
-func (kc *TokenKubernetesClient) InstallLlamaStackDistribution(ctx context.Context, identity *integrations.RequestIdentity, namespace string, models []models.InstallModel, guardrailModel *models.GuardrailModel, maasClient maas.MaaSClientInterface) (*lsdapi.LlamaStackDistribution, error) {
+// GetAAModelsFromExternalModels converts external models from ConfigMap to AAModel structs
+func (kc *TokenKubernetesClient) GetAAModelsFromExternalModels(ctx context.Context, identity *integrations.RequestIdentity, namespace string) ([]models.AAModel, error) {
+	// Attempt to get the external models ConfigMap
+	configMap, err := kc.GetConfigMap(ctx, identity, namespace, constants.ExternalModelsConfigMapName)
+	if err != nil {
+		// If ConfigMap doesn't exist, that's fine - just return empty list
+		if apierrors.IsNotFound(err) {
+			kc.Logger.Debug("no external models ConfigMap found", "namespace", namespace)
+			return []models.AAModel{}, nil
+		}
+		// For other errors, log and return them
+		kc.Logger.Error("failed to get external models ConfigMap", "error", err, "namespace", namespace)
+		return nil, fmt.Errorf("failed to get external models ConfigMap: %w", err)
+	}
+
+	// Parse the config.yaml data
+	if configMap.Data == nil {
+		kc.Logger.Debug("external models ConfigMap has no data", "namespace", namespace)
+		return []models.AAModel{}, nil
+	}
+
+	configYAML, exists := configMap.Data["config.yaml"]
+	if !exists {
+		kc.Logger.Debug("external models ConfigMap missing config.yaml key", "namespace", namespace)
+		return []models.AAModel{}, nil
+	}
+
+	var config models.ExternalModelsConfig
+	if err := yaml.Unmarshal([]byte(configYAML), &config); err != nil {
+		kc.Logger.Error("failed to unmarshal external models config", "error", err, "namespace", namespace)
+		return nil, fmt.Errorf("failed to unmarshal external models config: %w", err)
+	}
+
+	// Build a map of provider ID to provider for quick lookup
+	providerMap := make(map[string]models.InferenceProvider)
+	for _, provider := range config.Providers.Inference {
+		providerMap[provider.ProviderID] = provider
+	}
+
+	// Convert registered models to AAModel structs
+	var aaModels []models.AAModel
+	for _, model := range config.RegisteredResources.Models {
+		// Find the corresponding provider
+		provider, exists := providerMap[model.ProviderID]
+		if !exists {
+			kc.Logger.Warn("registered model references non-existent provider",
+				"modelID", model.ModelID,
+				"providerID", model.ProviderID)
+			continue
+		}
+
+		// Extract use cases from metadata if available
+		useCases := ""
+		if model.Metadata.CustomGenAI != nil {
+			useCases = model.Metadata.CustomGenAI.UseCases
+		}
+
+		aaModel := models.AAModel{
+			ModelName:       model.ModelID,
+			ModelID:         model.ModelID,
+			DisplayName:     model.Metadata.DisplayName,
+			ServingRuntime:  string(provider.ProviderType),
+			APIProtocol:     "REST",
+			Version:         "",
+			Usecase:         useCases,
+			Description:     "",
+			Endpoints:       []string{provider.Config.BaseURL},
+			Status:          models.ModelStatusUnknown,
+			SAToken:         models.SAToken{},
+			ModelSourceType: models.ModelSourceTypeCustomEndpoint,
+			ModelType:       model.ModelType,
+		}
+		aaModels = append(aaModels, aaModel)
+	}
+
+	kc.Logger.Info("fetched external models from ConfigMap",
+		"count", len(aaModels),
+		"namespace", namespace)
+	return aaModels, nil
+}
+
+// findGuardrailsServiceAccountTokenSecret finds the token secret for the guardrails service account
+// This follows the same pattern as VLLM token discovery - finding SA token secrets by type and annotation
+func (kc *TokenKubernetesClient) findGuardrailsServiceAccountTokenSecret(ctx context.Context, namespace string) (string, error) {
+	// Look for the guardrails service account
+	saName := constants.DefaultGuardrailsServiceAccountName
+
+	// Check if the service account exists
+	var sa corev1.ServiceAccount
+	err := kc.Client.Get(ctx, types.NamespacedName{Name: saName, Namespace: namespace}, &sa)
+	if err != nil {
+		kc.Logger.Debug("guardrails service account not found", "name", saName, "namespace", namespace, "error", err)
+		return "", fmt.Errorf("guardrails service account '%s' not found in namespace '%s': %w", saName, namespace, err)
+	}
+
+	// Find the token secret for this service account (same pattern as findSecretForServiceAccount)
+	secretName := kc.findSecretForServiceAccount(ctx, namespace, saName)
+	if secretName == "" {
+		// Fallback: Search for any secret starting with "guardrails-service" that is a service account token
+		var secretList corev1.SecretList
+		err := kc.Client.List(ctx, &secretList, client.InNamespace(namespace))
+		if err == nil {
+			for _, secret := range secretList.Items {
+				if secret.Type == corev1.SecretTypeServiceAccountToken &&
+					strings.HasPrefix(secret.Name, "guardrails-service") {
+					kc.Logger.Debug("found guardrails token secret by prefix matching", "secretName", secret.Name)
+					return secret.Name, nil
+				}
+			}
+		}
+		kc.Logger.Debug("no token secret found for guardrails service account", "serviceAccount", saName)
+		return "", fmt.Errorf("no token secret found for guardrails service account '%s'", saName)
+	}
+
+	kc.Logger.Debug("found guardrails service account token secret", "serviceAccount", saName, "secretName", secretName)
+	return secretName, nil
+}
+
+func (kc *TokenKubernetesClient) InstallLlamaStackDistribution(ctx context.Context, identity *integrations.RequestIdentity, namespace string, models []models.InstallModel, guardrailsFeatureEnabled bool, maasClient maas.MaaSClientInterface) (*lsdapi.LlamaStackDistribution, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
@@ -916,12 +1190,12 @@ func (kc *TokenKubernetesClient) InstallLlamaStackDistribution(ctx context.Conte
 				hasToken:   secretName != "",
 			}
 			if secretName != "" {
-				kc.Logger.Debug("found existing "+foundType+" service account token secret", "model", model.ModelName, "isMaaSModel", model.IsMaaSModel, "secretName", secretName, "hasToken", true)
+				kc.Logger.Debug("found existing "+foundType+" service account token secret", "model", model.ModelName, "secretName", secretName, "hasToken", true)
 			} else {
-				kc.Logger.Debug("found "+foundType+" but no service account token secret", "model", model.ModelName, "isMaaSModel", model.IsMaaSModel, "hasToken", false)
+				kc.Logger.Debug("found "+foundType+" but no service account token secret", "model", model.ModelName, "hasToken", false)
 			}
 		} else {
-			kc.Logger.Debug("could not find InferenceService or LLMInferenceService for model, will use default", "model", model.ModelName, "isMaaSModel", model.IsMaaSModel)
+			kc.Logger.Debug("could not find InferenceService or LLMInferenceService for model, will use default", "model", model.ModelName)
 		}
 	}
 
@@ -986,8 +1260,71 @@ func (kc *TokenKubernetesClient) InstallLlamaStackDistribution(ctx context.Conte
 		}
 	}
 
-	// Step 2: Create LlamaStackDistribution resource first
+	// Step 1b: If the guardrails feature is enabled, find the guardrails service account token secret
+	// This follows the same pattern as VLLM token discovery
+	// Fail fast if the guardrails feature is enabled but the token is missing - this is a security feature
+	// and users should not have a false sense of protection from a non-functional guardrail setup
+	// The guardrailsReady variable tracks whether guardrails were successfully configured
+	// with a valid token. If guardrailsFeatureEnabled is true and the orchestrator is ready but the token
+	// cannot be found, we return an error instead of silently setting guardrailsReady to false.
+	guardrailsReady := false
+
+	// Only auto-detect infrastructure if feature flag is enabled
+	if guardrailsFeatureEnabled {
+		guardrailStatus, err := kc.GetGuardrailsOrchestratorStatus(ctx, identity, namespace)
+		if err == nil && guardrailStatus.Phase == constants.GuardrailsPhaseReady {
+			guardrailsTokenSecret, tokenErr := kc.findGuardrailsServiceAccountTokenSecret(ctx, namespace)
+			if tokenErr != nil {
+				return nil, fmt.Errorf("guardrails are enabled but token secret could not be found: %w", tokenErr)
+			}
+			envVars = append(envVars, corev1.EnvVar{
+				Name: constants.GuardrailAuthTokenEnvName,
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: guardrailsTokenSecret,
+						},
+						Key: "token",
+					},
+				},
+			})
+			guardrailsReady = true
+			kc.Logger.Debug("Added guardrails auth token from secret", "secretName", guardrailsTokenSecret, "envVar", constants.GuardrailAuthTokenEnvName)
+		}
+	}
+
+	// Step 2: Generate ConfigMap content first (before creating LSD)
 	configMapName := "llama-stack-config"
+	runYAML, err := kc.generateLlamaStackConfig(ctx, namespace, models, guardrailsReady, maasClient)
+	if err != nil {
+		kc.Logger.Error("failed to generate Llama Stack configuration", "error", err, "namespace", namespace)
+		return nil, fmt.Errorf("failed to generate Llama Stack configuration: %w", err)
+	}
+
+	// Step 3: Create ConfigMap BEFORE creating LSD (without owner reference yet)
+	// This prevents the LSD from failing with "ConfigMap not found" during initial reconciliation
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMapName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				OpenDataHubDashboardLabelKey: "true",
+				"llamastack.io/distribution": lsdName,
+			},
+		},
+		Data: map[string]string{
+			constants.LlamaStackConfigYAMLKey: runYAML,
+		},
+	}
+
+	if err := kc.Client.Create(ctx, configMap); err != nil {
+		kc.Logger.Error("failed to create ConfigMap", "error", err, "namespace", namespace, "configMapName", configMapName)
+		return nil, fmt.Errorf("failed to create ConfigMap: %w", err)
+	}
+
+	kc.Logger.Info("ConfigMap created successfully (before LSD creation)", "namespace", namespace, "configMapName", configMapName)
+
+	// Step 4: Create LlamaStackDistribution
 	lsd := &lsdapi.LlamaStackDistribution{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      lsdName,
@@ -1001,9 +1338,14 @@ func (kc *TokenKubernetesClient) InstallLlamaStackDistribution(ctx context.Conte
 		},
 		Spec: lsdapi.LlamaStackDistributionSpec{
 			Replicas: 1,
+			Network: &lsdapi.NetworkSpec{
+				AllowedFrom: &lsdapi.AllowedFromSpec{
+					Namespaces: []string{namespace},
+				},
+			},
 			Server: lsdapi.ServerSpec{
 				ContainerSpec: lsdapi.ContainerSpec{
-					Command: []string{"/bin/sh", "-c", "llama stack run /etc/llama-stack/run.yaml"},
+					Command: []string{"/bin/sh", "-c", "llama stack run /etc/llama-stack/config.yaml"},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceCPU:    resource.MustParse("250m"),
@@ -1043,55 +1385,21 @@ func (kc *TokenKubernetesClient) InstallLlamaStackDistribution(ctx context.Conte
 	// Create the LlamaStackDistribution
 	if err := kc.Client.Create(ctx, lsd); err != nil {
 		kc.Logger.Error("failed to create LlamaStackDistribution", "error", err, "namespace", namespace, "lsdName", lsdName)
+
+		// Clean up the ConfigMap we just created since LSD creation failed
+		if deleteErr := kc.Client.Delete(ctx, configMap); deleteErr != nil {
+			kc.Logger.Error("failed to clean up ConfigMap after LSD creation failure", "error", deleteErr, "namespace", namespace, "configMapName", configMapName)
+		} else {
+			kc.Logger.Info("ConfigMap cleaned up after LSD creation failure", "namespace", namespace, "configMapName", configMapName)
+		}
+
 		return nil, fmt.Errorf("failed to create LlamaStackDistribution: %w", err)
 	}
 
 	kc.Logger.Info("LlamaStackDistribution created successfully", "namespace", namespace, "lsdName", lsdName, "models", models)
 
-	// Step 3: Create ConfigMap with owner reference to the LSD
-	if err := kc.createConfigMapWithOwnerReference(ctx, namespace, configMapName, lsdName, models, lsd, maasClient); err != nil {
-		// If ConfigMap creation fails, we should clean up the LSD
-		kc.Logger.Error("failed to create ConfigMap with owner reference", "error", err)
-		// Note: In a production environment, you might want to delete the LSD here
-		// For now, we'll return the error but keep the LSD
-		return nil, fmt.Errorf("failed to create ConfigMap: %w", err)
-	}
-
-	return lsd, nil
-}
-
-// createConfigMapWithOwnerReference creates a ConfigMap and sets up owner reference to LSD
-func (kc *TokenKubernetesClient) createConfigMapWithOwnerReference(ctx context.Context, namespace, configMapName, lsdName string, models []models.InstallModel, lsd *lsdapi.LlamaStackDistribution, maasClient maas.MaaSClientInterface) error {
-	// Step 1: Create ConfigMap with models configuration
-	runYAML, err := kc.generateLlamaStackConfig(ctx, namespace, models, maasClient)
-	if err != nil {
-		kc.Logger.Error("failed to generate Llama Stack configuration", "error", err, "namespace", namespace)
-		return fmt.Errorf("failed to generate Llama Stack configuration: %w", err)
-	}
-
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      configMapName,
-			Namespace: namespace,
-			Labels: map[string]string{
-				OpenDataHubDashboardLabelKey: "true",
-				"llamastack.io/distribution": lsdName,
-			},
-		},
-		Data: map[string]string{
-			"run.yaml": runYAML,
-		},
-	}
-
-	// Create the ConfigMap
-	if err := kc.Client.Create(ctx, configMap); err != nil {
-		kc.Logger.Error("failed to create ConfigMap", "error", err, "namespace", namespace, "configMapName", configMapName)
-		return fmt.Errorf("failed to create ConfigMap: %w", err)
-	}
-
-	kc.Logger.Info("ConfigMap created successfully", "namespace", namespace, "configMapName", configMapName)
-
-	// Step 2: Update ConfigMap with owner reference to the LSD
+	// Step 5: Update ConfigMap to add owner reference to the LSD
+	// This ensures the ConfigMap is garbage collected when the LSD is deleted
 	configMap.OwnerReferences = []metav1.OwnerReference{
 		{
 			APIVersion:         "llamastack.io/v1alpha1",
@@ -1107,11 +1415,12 @@ func (kc *TokenKubernetesClient) createConfigMapWithOwnerReference(ctx context.C
 		kc.Logger.Error("failed to update ConfigMap with owner reference", "error", err, "namespace", namespace, "configMapName", configMapName)
 		// Don't fail the entire operation, just log the warning
 		kc.Logger.Warn("ConfigMap will not be automatically garbage collected when LSD is deleted")
-		return fmt.Errorf("failed to update ConfigMap with owner reference: %w", err)
+		// Continue without failing - the LSD is created successfully
+	} else {
+		kc.Logger.Info("ConfigMap updated with owner reference", "namespace", namespace, "configMapName", configMapName, "owner", lsdName)
 	}
 
-	kc.Logger.Info("ConfigMap updated with owner reference", "namespace", namespace, "configMapName", configMapName, "owner", lsdName)
-	return nil
+	return lsd, nil
 }
 
 // ensureVLLMCompatibleURL ensures the URL has /v1 suffix for vLLM provider compatibility
@@ -1127,7 +1436,7 @@ func ensureVLLMCompatibleURL(url string) string {
 }
 
 // generateLlamaStackConfig generates the Llama Stack configuration YAML
-func (kc *TokenKubernetesClient) generateLlamaStackConfig(ctx context.Context, namespace string, installModels []models.InstallModel, maasClient maas.MaaSClientInterface) (string, error) {
+func (kc *TokenKubernetesClient) generateLlamaStackConfig(ctx context.Context, namespace string, installModels []models.InstallModel, enableGuardrails bool, maasClient maas.MaaSClientInterface) (string, error) {
 	// Create a new config to build
 	config := NewDefaultLlamaStackConfig()
 
@@ -1137,15 +1446,21 @@ func (kc *TokenKubernetesClient) generateLlamaStackConfig(ctx context.Context, n
 		// Check if we have any MaaS models first
 		hasMaaSModels := false
 		for _, model := range installModels {
-			if model.IsMaaSModel {
+			if model.ModelSourceType == models.ModelSourceTypeMaaS {
 				hasMaaSModels = true
 				break
 			}
 		}
 
 		if hasMaaSModels {
+			// Obtain a MaaS API key to authenticate the ListModels request
+			apiKeyResp, err := maasClient.IssueToken(ctx, models.MaaSTokenRequest{})
+			if err != nil {
+				kc.Logger.Error("failed to obtain MaaS API key for model listing", "error", err)
+				return "", fmt.Errorf("failed to obtain MaaS API key: %w", err)
+			}
 			// Get all MaaS models once
-			maasModels, err := maasClient.ListModels(ctx)
+			maasModels, err := maasClient.ListModels(ctx, apiKeyResp.Key)
 			if err != nil {
 				kc.Logger.Error("failed to list MaaS models", "error", err)
 				return "", fmt.Errorf("failed to list MaaS models: %w", err)
@@ -1171,8 +1486,29 @@ func (kc *TokenKubernetesClient) generateLlamaStackConfig(ctx context.Context, n
 	)
 	config.AddModel(embeddingModel)
 
+	// Pre-fetch the external models ConfigMap once if any external models are present
+	var externalModelsConfig *models.ExternalModelsConfig
+	for _, model := range installModels {
+		if models.IsExternalModelSource(model.ModelSourceType) {
+			cfg, err := kc.GetExternalModelsConfig(ctx, namespace)
+			if err != nil {
+				if apierrors.IsNotFound(err) {
+					return "", fmt.Errorf("external models ConfigMap not found in namespace %s", namespace)
+				}
+				return "", fmt.Errorf("failed to get external models ConfigMap: %w", err)
+			}
+			externalModelsConfig = cfg
+			kc.Logger.Debug("loaded external models ConfigMap", "namespace", namespace)
+			break
+		}
+	}
+
+	// Track provider IDs and token env vars for guardrails configuration
+	modelProviderInfo := make(map[string]modelProviderInfoEntry, len(installModels))
+
 	for i, model := range installModels {
-		if model.IsMaaSModel {
+		kc.Logger.Debug("Processing model for installation", "model", model.ModelName, "modelSourceType", model.ModelSourceType)
+		if model.ModelSourceType == models.ModelSourceTypeMaaS {
 			// Handle MaaS models using the pre-loaded map
 			maasModel, exists := maasModelsMap[model.ModelName]
 			if !exists {
@@ -1188,29 +1524,99 @@ func (kc *TokenKubernetesClient) generateLlamaStackConfig(ctx context.Context, n
 
 			// Create provider and model for MaaS model
 			providerID := fmt.Sprintf("maas-vllm-inference-%d", i+1)
+			tokenEnvVar := fmt.Sprintf("${env.VLLM_API_TOKEN_%d:=fake}", i+1)
 			endpointURL := ensureVLLMCompatibleURL(maasModel.URL)
-			config.AddVLLMProviderAndModel(providerID, endpointURL, i, maasModel.ID, "llm", nil)
-			kc.Logger.Debug("Added MaaS model to configuration", "model", maasModel.ID, "endpoint", endpointURL)
-		} else {
-			// Handle regular models
-			modelDetails, err := kc.getModelDetailsFromServingRuntime(ctx, namespace, model.ModelName)
+			config.AddVLLMProviderAndModel(providerID, endpointURL, i, maasModel.ID, "llm", nil, model.MaxTokens)
+			kc.Logger.Info("Added MaaS model to configuration", "model", maasModel.ID, "endpoint", endpointURL, "maxTokens", model.MaxTokens)
+
+			// Track provider info for guardrails
+			modelProviderInfo[model.ModelName] = modelProviderInfoEntry{providerID: providerID, tokenEnvVar: tokenEnvVar}
+		} else if models.IsExternalModelSource(model.ModelSourceType) {
+			// Handle external models from ConfigMap
+			kc.Logger.Debug("Handling as external model", "model", model.ModelName, "modelSourceType", model.ModelSourceType)
+			extDetails, err := kc.getExternalModelDetails(externalModelsConfig, model.ModelName)
 			if err != nil {
-				kc.Logger.Error("failed to get model details from serving runtime", "model", model.ModelName, "isMaaSModel", model.IsMaaSModel, "error", err)
+				kc.Logger.Error("failed to get external model details", "model", model.ModelName, "error", err)
+				return "", fmt.Errorf("cannot find external model '%s': %w", model.ModelName, err)
+			}
+
+			// Custom endpoint models don't use env vars - secrets fetched at runtime by Llama Stack
+			config.AddCustomEndpointProviderAndModel(extDetails.providerID, extDetails.endpointURL, i, extDetails.modelID, extDetails.modelType, extDetails.metadata, model.MaxTokens)
+			kc.Logger.Info("Added custom endpoint model to configuration", "model", extDetails.modelID, "providerID", extDetails.providerID, "endpoint", extDetails.endpointURL, "maxTokens", model.MaxTokens)
+
+			// Track provider info for guardrails
+			modelProviderInfo[model.ModelName] = modelProviderInfoEntry{providerID: extDetails.providerID, tokenEnvVar: ""}
+
+		} else {
+			// Handle regular cluster models (InferenceService/LLMInferenceService)
+			kc.Logger.Debug("Handling as cluster model", "model", model.ModelName, "modelSourceType", model.ModelSourceType)
+			details, err := kc.getModelDetailsFromServingRuntime(ctx, namespace, model.ModelName)
+			if err != nil {
+				kc.Logger.Error("failed to get model details from serving runtime", "model", model.ModelName, "error", err)
 				return "", fmt.Errorf("cannot determine endpoint for model '%s': %w", model.ModelName, err)
 			}
 
-			// Extract details from the model configuration
-			modelID := modelDetails["model_id"].(string)
 			providerID := fmt.Sprintf("vllm-inference-%d", i+1)
-			modelType := modelDetails["model_type"].(string)
-			endpointURL := modelDetails["endpoint_url"].(string)
-			metadata := modelDetails["metadata"].(map[string]interface{})
+			tokenEnvVar := fmt.Sprintf("${env.VLLM_API_TOKEN_%d:=fake}", i+1)
 
-			// Create provider and model for regular model
-			config.AddVLLMProviderAndModel(providerID, endpointURL, i, modelID, modelType, metadata)
-			kc.Logger.Debug("Added regular LLM model to configuration", "model", modelID, "endpoint", endpointURL)
+			config.AddVLLMProviderAndModel(providerID, details.endpointURL, i, details.modelID, details.modelType, details.metadata, model.MaxTokens)
+			kc.Logger.Info("Added cluster model to configuration", "model", details.modelID, "providerID", providerID, "endpoint", details.endpointURL, "maxTokens", model.MaxTokens)
 
+			// Track provider info for guardrails
+			modelProviderInfo[model.ModelName] = modelProviderInfoEntry{providerID: providerID, tokenEnvVar: tokenEnvVar}
 		}
+	}
+
+	// Ensure storage field is present before serialization (defensive check)
+	config.EnsureStorageField()
+
+	// Optionally enable RBAC authentication using Kubernetes auth provider.
+	// Gated behind ENABLE_LLAMASTACK_RBAC env var / --enable-llamastack-rbac flag
+	// to avoid breaking existing deployments that may not have the expected
+	// OpenShift group memberships or token forwarding configured.
+	// When enabled, this configures the LlamaStack server to validate tokens against
+	// the Kubernetes API server and enforce access policies based on OpenShift roles:
+	//   - admin group: full access (create, read, delete)
+	//   - system:authenticated: read-only access
+	if kc.EnvConfig.EnableLlamaStackRBAC {
+		config.EnableRBACAuth("", "")
+		kc.Logger.Debug("Enabled RBAC auth with Kubernetes provider for LlamaStack config")
+	} else {
+		kc.Logger.Debug("RBAC auth is disabled for LlamaStack config (set ENABLE_LLAMASTACK_RBAC=true to enable)")
+	}
+
+	// Add guardrails configuration if enabled
+	// When enableGuardrails is true, automatically add safety shields for all selected models
+	if enableGuardrails && len(installModels) > 0 {
+		guardrailConfigs := make([]models.GuardrailInput, len(installModels))
+
+		// Default policies for guardrails (input includes jailbreak, output does not)
+		defaultInputPolicies := models.DefaultInputGuardrailPolicies()
+		defaultOutputPolicies := models.DefaultOutputGuardrailPolicies()
+		lsdServiceURL := fmt.Sprintf("http://%s-service.%s.svc.cluster.local:8321/v1/chat/completions", lsdName, namespace)
+		kc.Logger.Debug("Using Llama Stack service URL for guardrails", "url", lsdServiceURL)
+
+		for i, model := range installModels {
+			// Get provider info from the tracking map
+			providerInfo, exists := modelProviderInfo[model.ModelName]
+			if !exists {
+				kc.Logger.Error("Provider info not found for model in guardrails config", "model", model.ModelName)
+				return "", fmt.Errorf("provider info not found for model '%s' when configuring guardrails", model.ModelName)
+			}
+
+			guardrailConfigs[i] = models.GuardrailInput{
+				ModelName:      model.ModelName,
+				ProviderID:     providerInfo.providerID,
+				TokenEnvVar:    providerInfo.tokenEnvVar,
+				ModelURL:       lsdServiceURL,
+				DetectorURL:    constants.DefaultDetectorURL, // Always use constant default
+				InputPolicies:  defaultInputPolicies,
+				OutputPolicies: defaultOutputPolicies,
+			}
+		}
+
+		config.AddGuardrailsToConfig(guardrailConfigs)
+		kc.Logger.Debug("Added guardrails to configuration for all models", "count", len(installModels))
 	}
 
 	// Convert the config to YAML
@@ -1224,9 +1630,173 @@ func (kc *TokenKubernetesClient) generateLlamaStackConfig(ctx context.Context, n
 	return configYAML, nil
 }
 
+// GetExternalModelsConfig retrieves and parses the gen-ai-aa-external-models ConfigMap
+func (kc *TokenKubernetesClient) GetExternalModelsConfig(ctx context.Context, namespace string) (*models.ExternalModelsConfig, error) {
+	// Get the ConfigMap
+	configMap := &corev1.ConfigMap{}
+	configMapName := types.NamespacedName{
+		Name:      constants.ExternalModelsConfigMapName,
+		Namespace: namespace,
+	}
+
+	if err := kc.Client.Get(ctx, configMapName, configMap); err != nil {
+		return nil, err
+	}
+
+	// Parse the ConfigMap YAML
+	configYAML, ok := configMap.Data["config.yaml"]
+	if !ok || configYAML == "" {
+		return nil, fmt.Errorf("ConfigMap %s has no config.yaml data", constants.ExternalModelsConfigMapName)
+	}
+
+	var config models.ExternalModelsConfig
+	if err := yaml.Unmarshal([]byte(configYAML), &config); err != nil {
+		return nil, fmt.Errorf("failed to parse external models ConfigMap YAML: %w", err)
+	}
+
+	// Validate the config before returning
+	if err := kc.validateExternalModelsConfig(&config); err != nil {
+		return nil, fmt.Errorf("invalid external models ConfigMap: %w", err)
+	}
+
+	return &config, nil
+}
+
+// validateExternalModelsConfig validates the external models configuration
+func (kc *TokenKubernetesClient) validateExternalModelsConfig(config *models.ExternalModelsConfig) error {
+	// Validate inference providers
+	for i, provider := range config.Providers.Inference {
+		// Validate ProviderID is non-empty
+		if provider.ProviderID == "" {
+			return fmt.Errorf("provider at index %d has empty provider_id", i)
+		}
+
+		// Validate ProviderType is remote::openai
+		if provider.ProviderType != models.ProviderTypeOpenAI {
+			return fmt.Errorf("provider '%s' has invalid provider_type '%s', must be remote::openai", provider.ProviderID, provider.ProviderType)
+		}
+
+		// Validate BaseURL is a well-formed URL with scheme and host
+		if provider.Config.BaseURL == "" {
+			return fmt.Errorf("provider '%s' has empty base_url", provider.ProviderID)
+		}
+
+		// TODO: Add feature flag check for externalModel and respect it here
+		parsedURL, err := url.Parse(provider.Config.BaseURL)
+		if err != nil {
+			return fmt.Errorf("provider '%s' has malformed base_url '%s': %w", provider.ProviderID, provider.Config.BaseURL, err)
+		}
+
+		if parsedURL.Scheme == "" {
+			return fmt.Errorf("provider '%s' base_url '%s' is missing scheme (http/https)", provider.ProviderID, provider.Config.BaseURL)
+		}
+
+		if parsedURL.Host == "" {
+			return fmt.Errorf("provider '%s' base_url '%s' is missing host", provider.ProviderID, provider.Config.BaseURL)
+		}
+	}
+
+	// Build provider lookup map for model validation
+	providerIDMap := make(map[string]bool)
+	for _, provider := range config.Providers.Inference {
+		providerIDMap[provider.ProviderID] = true
+	}
+
+	// Validate registered models
+	for i, model := range config.RegisteredResources.Models {
+		// Validate ModelID is non-empty
+		if model.ModelID == "" {
+			return fmt.Errorf("model at index %d has empty model_id", i)
+		}
+
+		// Validate ProviderID is non-empty
+		if model.ProviderID == "" {
+			return fmt.Errorf("model '%s' has empty provider_id", model.ModelID)
+		}
+
+		// Validate ProviderID exists in config.Providers.Inference
+		if !providerIDMap[model.ProviderID] {
+			return fmt.Errorf("model '%s' references non-existent provider_id '%s'", model.ModelID, model.ProviderID)
+		}
+
+		// Validate ModelType matches the allowlist
+		validModelTypes := map[models.ModelTypeEnum]bool{
+			models.ModelTypeLLM:       true,
+			models.ModelTypeEmbedding: true,
+		}
+		if !validModelTypes[model.ModelType] {
+			return fmt.Errorf("model '%s' has invalid model_type '%s', must be 'llm' or 'embedding'", model.ModelID, model.ModelType)
+		}
+
+		// Validate EmbeddingDimension if present
+		if model.Metadata.EmbeddingDimension != nil {
+			dim := *model.Metadata.EmbeddingDimension
+			if dim <= 0 {
+				return fmt.Errorf("model '%s' has invalid embedding_dimension %d, must be > 0", model.ModelID, dim)
+			}
+			if dim > 100000 {
+				return fmt.Errorf("model '%s' has unreasonably large embedding_dimension %d, must be <= 100000", model.ModelID, dim)
+			}
+		}
+	}
+
+	return nil
+}
+
+// getExternalModelDetails retrieves external model details from a pre-fetched ExternalModelsConfig.
+func (kc *TokenKubernetesClient) getExternalModelDetails(config *models.ExternalModelsConfig, modelID string) (externalModelDetailsResult, error) {
+	// Find the model by model_id
+	var foundModel *models.RegisteredModel
+	for i := range config.RegisteredResources.Models {
+		if config.RegisteredResources.Models[i].ModelID == modelID {
+			foundModel = &config.RegisteredResources.Models[i]
+			break
+		}
+	}
+
+	if foundModel == nil {
+		return externalModelDetailsResult{}, fmt.Errorf("external model with model_id '%s' not found in ConfigMap", modelID)
+	}
+
+	// Find the provider for this model
+	var foundProvider *models.InferenceProvider
+	for i := range config.Providers.Inference {
+		if config.Providers.Inference[i].ProviderID == foundModel.ProviderID {
+			foundProvider = &config.Providers.Inference[i]
+			break
+		}
+	}
+
+	if foundProvider == nil {
+		return externalModelDetailsResult{}, fmt.Errorf("provider '%s' for external model '%s' not found in ConfigMap", foundModel.ProviderID, modelID)
+	}
+
+	// Build metadata
+	// Note: secret_ref is NOT included - secrets are fetched at runtime from the ConfigMap by Llama Stack
+	metadata := map[string]interface{}{}
+	if foundModel.Metadata.DisplayName != "" {
+		metadata["display_name"] = foundModel.Metadata.DisplayName
+	}
+	if foundModel.Metadata.CustomGenAI != nil && foundModel.Metadata.CustomGenAI.UseCases != "" {
+		metadata["use_cases"] = foundModel.Metadata.CustomGenAI.UseCases
+	}
+	if foundModel.Metadata.EmbeddingDimension != nil {
+		metadata["embedding_dimension"] = *foundModel.Metadata.EmbeddingDimension
+	}
+
+	return externalModelDetailsResult{
+		modelID:      foundModel.ModelID,
+		modelType:    string(foundModel.ModelType),
+		metadata:     metadata,
+		endpointURL:  foundProvider.Config.BaseURL,
+		providerType: string(foundProvider.ProviderType),
+		providerID:   foundModel.ProviderID,
+	}, nil
+}
+
 // getModelDetailsFromServingRuntime queries the serving runtime and inference service
 // to get detailed model configuration information
-func (kc *TokenKubernetesClient) getModelDetailsFromServingRuntime(ctx context.Context, namespace string, modelID string) (map[string]interface{}, error) {
+func (kc *TokenKubernetesClient) getModelDetailsFromServingRuntime(ctx context.Context, namespace string, modelID string) (modelDetailsResult, error) {
 	// First try to find InferenceService by name
 	targetISVC, err := kc.findInferenceServiceByModelName(ctx, namespace, modelID)
 	if err != nil {
@@ -1236,14 +1806,14 @@ func (kc *TokenKubernetesClient) getModelDetailsFromServingRuntime(ctx context.C
 		targetLLMSVC, llmErr := kc.findLLMInferenceServiceByModelName(ctx, namespace, modelID)
 		if llmErr != nil {
 			kc.Logger.Error("failed to find both InferenceService and LLMInferenceService for model", "modelID", modelID, "inferenceServiceError", err, "llmInferenceServiceError", llmErr)
-			return nil, fmt.Errorf("neither InferenceService nor LLMInferenceService for model '%s' found: InferenceService error: %w, LLMInferenceService error: %w", modelID, err, llmErr)
+			return modelDetailsResult{}, fmt.Errorf("neither InferenceService nor LLMInferenceService for model '%s' found: InferenceService error: %w, LLMInferenceService error: %w", modelID, err, llmErr)
 		}
 
 		// Extract endpoint from LLMInferenceService
 		endpointURL, extractErr := kc.extractEndpointFromLLMInferenceService(ctx, targetLLMSVC)
 		if extractErr != nil {
 			kc.Logger.Error("failed to extract endpoint from LLMInferenceService", "modelID", modelID, "error", extractErr)
-			return nil, fmt.Errorf("failed to extract endpoint from LLMInferenceService for model '%s': %w", modelID, extractErr)
+			return modelDetailsResult{}, fmt.Errorf("failed to extract endpoint from LLMInferenceService for model '%s': %w", modelID, extractErr)
 		}
 
 		// Extract additional metadata from the LLMInferenceService
@@ -1257,17 +1827,14 @@ func (kc *TokenKubernetesClient) getModelDetailsFromServingRuntime(ctx context.C
 			}
 		}
 
-		// All models are LLM models using vllm-inference
-		modelType := "llm"
-
 		// Use the actual model name from LLMInferenceService spec instead of service name
 		actualModelName := *targetLLMSVC.Spec.Model.Name
 		kc.Logger.Debug("using LLMInferenceService for model", "serviceName", modelID, "actualModelName", actualModelName, "endpoint", endpointURL)
-		return map[string]interface{}{
-			"model_id":     actualModelName, // Use the actual model name from spec.model.name
-			"model_type":   modelType,
-			"metadata":     metadata,
-			"endpoint_url": endpointURL,
+		return modelDetailsResult{
+			modelID:     actualModelName,
+			modelType:   "llm",
+			metadata:    metadata,
+			endpointURL: endpointURL,
 		}, nil
 	}
 
@@ -1275,7 +1842,7 @@ func (kc *TokenKubernetesClient) getModelDetailsFromServingRuntime(ctx context.C
 	// Use Status.URL which is already the internal HTTP address
 	if targetISVC.Status.Address.URL == nil {
 		kc.Logger.Error("InferenceService has no internal URL", "name", targetISVC.Name, "namespace", namespace)
-		return nil, fmt.Errorf("InferenceService '%s' has no internal URL - service may not be ready", targetISVC.Name)
+		return modelDetailsResult{}, fmt.Errorf("InferenceService '%s' has no internal URL - service may not be ready", targetISVC.Name)
 	}
 
 	// When routes are enabled, the Status.URL is the route URL, not the internal URL so we use the Address.URL
@@ -1322,15 +1889,12 @@ func (kc *TokenKubernetesClient) getModelDetailsFromServingRuntime(ctx context.C
 		}
 	}
 
-	// All models are LLM models using vllm-inference
-	modelType := "llm"
-
 	kc.Logger.Debug("Using InferenceService for model", "modelID", modelID, "endpoint", internalURLStr)
-	return map[string]interface{}{
-		"model_id":     strings.ReplaceAll(modelID, ":", "-"),
-		"model_type":   modelType,
-		"metadata":     metadata,
-		"endpoint_url": internalURLStr,
+	return modelDetailsResult{
+		modelID:     strings.ReplaceAll(modelID, ":", "-"),
+		modelType:   "llm",
+		metadata:    metadata,
+		endpointURL: internalURLStr,
 	}, nil
 }
 
@@ -1569,22 +2133,462 @@ func (kc *TokenKubernetesClient) loadLlamaStackConfig(ctx context.Context, ident
 		return nil, fmt.Errorf("failed to get configmap: %w", err)
 	}
 
-	runYAML, ok := configMap.Data[constants.LlamaStackRunYAMLKey]
+	// Read config.yaml (llama-stack v0.4.0+)
+	configYAML, ok := configMap.Data[constants.LlamaStackConfigYAMLKey]
 	if !ok {
-		return nil, fmt.Errorf("run.yaml not found in configmap")
+		return nil, fmt.Errorf("config.yaml not found in configmap")
 	}
 
 	// Parse YAML into config
 	var config LlamaStackConfig
-	if err := config.FromYAML(runYAML); err != nil {
+	if err := config.FromYAML(configYAML); err != nil {
 		return nil, fmt.Errorf("failed to parse YAML: %w", err)
 	}
+
+	config.EnsureStorageField()
+
 	return &config, nil
 }
 
 // GetSafetyConfig parses the llama-stack-config ConfigMap and returns guardrail models/shields
-// TODO: Real implementation pending - backend not yet completed
-// For now, returns error indicating not implemented
 func (kc *TokenKubernetesClient) GetSafetyConfig(ctx context.Context, identity *integrations.RequestIdentity, namespace string) (*models.SafetyConfigResponse, error) {
-	return nil, fmt.Errorf("getSafetyConfig not implemented - use mock mode (MOCK_K8S_CLIENT=true)")
+	// Load the llama stack config from ConfigMap
+	config, err := kc.loadLlamaStackConfig(ctx, identity, namespace)
+	if err != nil {
+		// If no LSD found, return empty array
+		kc.Logger.Debug("no llama stack config found", "namespace", namespace, "error", err)
+		return &models.SafetyConfigResponse{
+			GuardrailModels: []models.GuardrailModelConfig{},
+		}, nil
+	}
+
+	// Check if safety providers exist
+	if len(config.Providers.Safety) == 0 {
+		return &models.SafetyConfigResponse{
+			GuardrailModels: []models.GuardrailModelConfig{},
+		}, nil
+	}
+
+	// Extract shields from safety provider config (only trustyai_fms provider)
+	guardrailModels := kc.extractGuardrailModelsFromSafetyProviders(config, namespace)
+
+	return &models.SafetyConfigResponse{
+		GuardrailModels: guardrailModels,
+	}, nil
+}
+
+// extractGuardrailModelsFromSafetyProviders extracts guardrail models from safety provider config
+func (kc *TokenKubernetesClient) extractGuardrailModelsFromSafetyProviders(config *LlamaStackConfig, namespace string) []models.GuardrailModelConfig {
+	var guardrailModels []models.GuardrailModelConfig
+
+	for _, provider := range config.Providers.Safety {
+		// Only process trustyai_fms provider
+		if provider.ProviderID != "trustyai_fms" {
+			continue
+		}
+
+		// Extract shields from provider config
+		shields, ok := provider.Config["shields"].(map[interface{}]interface{})
+		if !ok {
+			kc.Logger.Debug("No shields found in provider config", "provider_id", provider.ProviderID)
+			continue
+		}
+
+		// Map to group shields by model name
+		modelShields := make(map[string]*models.GuardrailModelConfig)
+
+		for shieldID, shieldConfig := range shields {
+			shieldIDStr, ok := shieldID.(string)
+			if !ok {
+				continue
+			}
+
+			shieldMap, ok := shieldConfig.(map[interface{}]interface{})
+			if !ok {
+				continue
+			}
+
+			// Extract model name from detector_params
+			if detectorParams, ok := shieldMap["detector_params"].(map[interface{}]interface{}); ok {
+				if custom, ok := detectorParams["custom"].(map[interface{}]interface{}); ok {
+					for guardrailKey, guardrailConfig := range custom {
+						guardrailKeyStr, _ := guardrailKey.(string)
+						gc, ok := guardrailConfig.(map[interface{}]interface{})
+						if !ok {
+							continue
+						}
+
+						modelName, ok := gc["guardrail_model"].(string)
+						if !ok || modelName == "" {
+							continue
+						}
+
+						// Get or create the config for this model
+						if _, exists := modelShields[modelName]; !exists {
+							modelShields[modelName] = &models.GuardrailModelConfig{
+								ModelName: modelName,
+							}
+						}
+
+						// Determine if this is input or output shield
+						if strings.Contains(guardrailKeyStr, "input") {
+							modelShields[modelName].InputShieldID = shieldIDStr
+						} else if strings.Contains(guardrailKeyStr, "output") {
+							modelShields[modelName].OutputShieldID = shieldIDStr
+						}
+					}
+				}
+			}
+		}
+
+		// Add all discovered model configs
+		for _, config := range modelShields {
+			if config.InputShieldID != "" || config.OutputShieldID != "" {
+				guardrailModels = append(guardrailModels, *config)
+			}
+		}
+	}
+
+	return guardrailModels
+}
+
+// GenerateProviderID generates a unique provider ID for external models
+func (kc *TokenKubernetesClient) GenerateProviderID(ctx context.Context, identity *integrations.RequestIdentity, namespace string) (string, error) {
+	configMap, err := kc.GetConfigMap(ctx, identity, namespace, constants.ExternalModelsConfigMapName)
+	if err != nil {
+		// If ConfigMap doesn't exist, start with ID 1
+		if apierrors.IsNotFound(err) {
+			return "1", nil
+		}
+		return "", fmt.Errorf("failed to get ConfigMap: %w", err)
+	}
+
+	// Parse existing config to count providers
+	configYAML, ok := configMap.Data["config.yaml"]
+	if !ok || configYAML == "" {
+		return "1", nil
+	}
+
+	var config models.ExternalModelsConfig
+	if err := yaml.Unmarshal([]byte(configYAML), &config); err != nil {
+		return "", fmt.Errorf("failed to parse ConfigMap YAML: %w", err)
+	}
+
+	// Generate next ID by finding the maximum existing ID
+	// This prevents collisions when providers are deleted or reordered
+	maxID := 0
+	for _, provider := range config.Providers.Inference {
+		// Provider IDs are in format "endpoint-{id}"
+		// Extract the numeric ID part
+		idStr := strings.TrimPrefix(provider.ProviderID, "endpoint-")
+		if id, err := strconv.Atoi(idStr); err == nil {
+			if id > maxID {
+				maxID = id
+			}
+		} else {
+			// Log non-numeric IDs but continue
+			kc.Logger.Warn("skipping non-numeric provider ID", "providerID", provider.ProviderID, "error", err)
+		}
+	}
+
+	nextID := maxID + 1
+	return fmt.Sprintf("%d", nextID), nil
+}
+
+// CreateExternalModelSecret creates a Kubernetes Secret for the external model API key
+func (kc *TokenKubernetesClient) CreateExternalModelSecret(ctx context.Context, identity *integrations.RequestIdentity, namespace string, secretName string, secretValue string) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: namespace,
+		},
+		Type: corev1.SecretTypeOpaque,
+		StringData: map[string]string{
+			"api_key": secretValue,
+		},
+	}
+
+	if err := kc.Client.Create(ctx, secret); err != nil {
+		kc.Logger.Error("failed to create secret", "error", err, "namespace", namespace, "secretName", secretName)
+		return fmt.Errorf("failed to create secret: %w", err)
+	}
+
+	kc.Logger.Info("successfully created secret", "namespace", namespace, "secretName", secretName)
+	return nil
+}
+
+// CreateOrUpdateExternalModelConfigMap creates or updates the gen-ai-aa-external-models ConfigMap
+func (kc *TokenKubernetesClient) CreateOrUpdateExternalModelConfigMap(ctx context.Context, identity *integrations.RequestIdentity, namespace string, providerID string, secretName string, req models.ExternalModelRequest) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	// Try to get existing ConfigMap
+	configMap, err := kc.GetConfigMap(ctx, identity, namespace, constants.ExternalModelsConfigMapName)
+
+	var config models.ExternalModelsConfig
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get ConfigMap: %w", err)
+		}
+		// ConfigMap doesn't exist, initialize empty config
+		config = models.ExternalModelsConfig{
+			Providers: models.ProvidersConfig{
+				Inference: []models.InferenceProvider{},
+			},
+			RegisteredResources: models.RegisteredResourcesConfig{
+				Models: []models.RegisteredModel{},
+			},
+		}
+	} else {
+		// ConfigMap exists, parse it
+		configYAML, ok := configMap.Data["config.yaml"]
+		if !ok || configYAML == "" {
+			// Initialize empty config if data is missing
+			config = models.ExternalModelsConfig{
+				Providers: models.ProvidersConfig{
+					Inference: []models.InferenceProvider{},
+				},
+				RegisteredResources: models.RegisteredResourcesConfig{
+					Models: []models.RegisteredModel{},
+				},
+			}
+		} else {
+			if err := yaml.Unmarshal([]byte(configYAML), &config); err != nil {
+				return fmt.Errorf("failed to parse ConfigMap YAML: %w", err)
+			}
+		}
+	}
+
+	// Add new provider (hardcoded to remote::openai)
+	newProvider := models.InferenceProvider{
+		ProviderID:   fmt.Sprintf("endpoint-%s", providerID),
+		ProviderType: models.ProviderTypeOpenAI,
+		Config: models.ProviderConfig{
+			BaseURL: req.BaseURL,
+			CustomGenAI: models.CustomGenAI{
+				APIKey: models.APIKeyConfig{
+					SecretRef: models.SecretRef{
+						Name: secretName,
+						Key:  "api_key",
+					},
+				},
+			},
+		},
+	}
+
+	// For OpenAI provider, add allowed_models
+	newProvider.Config.AllowedModels = []string{req.ModelID}
+
+	config.Providers.Inference = append(config.Providers.Inference, newProvider)
+
+	// Add new registered model
+	newModel := models.RegisteredModel{
+		ProviderID: fmt.Sprintf("endpoint-%s", providerID),
+		ModelID:    req.ModelID,
+		ModelType:  req.ModelType,
+		Metadata: models.RegisteredModelMetadata{
+			DisplayName:        req.ModelDisplayName,
+			EmbeddingDimension: req.EmbeddingDimension,
+		},
+	}
+
+	// Add custom_gen_ai metadata if use_cases is provided
+	if req.UseCases != "" {
+		newModel.Metadata.CustomGenAI = &models.RegisteredModelCustomGenAI{
+			UseCases: req.UseCases,
+		}
+	}
+
+	config.RegisteredResources.Models = append(config.RegisteredResources.Models, newModel)
+
+	// Convert to YAML
+	configYAML, err := yaml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config to YAML: %w", err)
+	}
+
+	// Create or update ConfigMap
+	if configMap == nil {
+		// Create new ConfigMap
+		newConfigMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      constants.ExternalModelsConfigMapName,
+				Namespace: namespace,
+			},
+			Data: map[string]string{
+				"config.yaml": string(configYAML),
+			},
+		}
+
+		if err := kc.Client.Create(ctx, newConfigMap); err != nil {
+			kc.Logger.Error("failed to create ConfigMap", "error", err, "namespace", namespace)
+			return fmt.Errorf("failed to create ConfigMap: %w", err)
+		}
+		kc.Logger.Info("successfully created ConfigMap", "namespace", namespace, "configMapName", constants.ExternalModelsConfigMapName)
+	} else {
+		// Update existing ConfigMap
+		// Initialize Data map if nil to prevent panic
+		if configMap.Data == nil {
+			configMap.Data = map[string]string{}
+		}
+		configMap.Data["config.yaml"] = string(configYAML)
+		if err := kc.Client.Update(ctx, configMap); err != nil {
+			kc.Logger.Error("failed to update ConfigMap", "error", err, "namespace", namespace)
+			return fmt.Errorf("failed to update ConfigMap: %w", err)
+		}
+		kc.Logger.Info("successfully updated ConfigMap", "namespace", namespace, "configMapName", constants.ExternalModelsConfigMapName)
+	}
+
+	return nil
+}
+
+// DeleteExternalModel deletes an external model by removing its entry from the ConfigMap and deleting its Secret
+func (kc *TokenKubernetesClient) DeleteExternalModel(ctx context.Context, identity *integrations.RequestIdentity, namespace string, modelID string) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	// Get existing ConfigMap
+	configMap, err := kc.GetConfigMap(ctx, identity, namespace, constants.ExternalModelsConfigMapName)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return fmt.Errorf("external models ConfigMap not found in namespace %s: %w", namespace, ErrExternalModelNotFound)
+		}
+		return fmt.Errorf("failed to get ConfigMap: %w", err)
+	}
+
+	// Parse the ConfigMap
+	configYAML, ok := configMap.Data["config.yaml"]
+	if !ok || configYAML == "" {
+		kc.Logger.Warn("ConfigMap exists but has no config.yaml data", "namespace", namespace, "configMapName", constants.ExternalModelsConfigMapName)
+		return fmt.Errorf("ConfigMap has no config.yaml data")
+	}
+
+	var config models.ExternalModelsConfig
+	if err := yaml.Unmarshal([]byte(configYAML), &config); err != nil {
+		kc.Logger.Warn("ConfigMap exists but config.yaml data is invalid", "namespace", namespace, "configMapName", constants.ExternalModelsConfigMapName)
+		return fmt.Errorf("failed to parse ConfigMap YAML: %w", err)
+	}
+
+	// Find the provider that contains this model ID
+	var providerIDToDelete string
+	var secretNameToDelete string
+	modelFound := false
+
+	for i, model := range config.RegisteredResources.Models {
+		if model.ModelID == modelID {
+			modelFound = true
+			providerIDToDelete = model.ProviderID
+
+			// Remove the model from the list
+			config.RegisteredResources.Models = append(
+				config.RegisteredResources.Models[:i],
+				config.RegisteredResources.Models[i+1:]...,
+			)
+			break
+		}
+	}
+
+	if !modelFound {
+		return fmt.Errorf("model %s: %w", modelID, ErrExternalModelNotFound)
+	}
+
+	// Find and remove the provider, and get the secret name
+	providerFound := false
+	for i, provider := range config.Providers.Inference {
+		if provider.ProviderID == providerIDToDelete {
+			secretNameToDelete = provider.Config.CustomGenAI.APIKey.SecretRef.Name
+			providerFound = true
+
+			// Remove the provider from the list
+			config.Providers.Inference = append(
+				config.Providers.Inference[:i],
+				config.Providers.Inference[i+1:]...,
+			)
+			break
+		}
+	}
+
+	if !providerFound {
+		return fmt.Errorf("provider %s not found in ConfigMap (model exists but provider is missing)", providerIDToDelete)
+	}
+
+	// Update the ConfigMap with the modified config
+	updatedConfigYAML, err := yaml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal updated config to YAML: %w", err)
+	}
+
+	configMap.Data["config.yaml"] = string(updatedConfigYAML)
+	if err := kc.Client.Update(ctx, configMap); err != nil {
+		kc.Logger.Error("failed to update ConfigMap", "error", err, "namespace", namespace)
+		return fmt.Errorf("failed to update ConfigMap: %w", err)
+	}
+
+	kc.Logger.Info("successfully removed model from ConfigMap", "namespace", namespace, "modelID", modelID)
+
+	// Delete the associated Secret
+	if secretNameToDelete != "" {
+		if err := kc.DeleteSecret(ctx, identity, namespace, secretNameToDelete); err != nil {
+			// If the secret is already gone, that's fine (idempotent)
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to delete associated secret %s: %w", secretNameToDelete, err)
+			}
+			kc.Logger.Info("secret already deleted or not found", "secretName", secretNameToDelete)
+		} else {
+			kc.Logger.Info("successfully deleted associated secret", "secretName", secretNameToDelete)
+		}
+	}
+
+	return nil
+}
+
+// DeleteSecret deletes a Kubernetes Secret
+func (kc *TokenKubernetesClient) DeleteSecret(ctx context.Context, identity *integrations.RequestIdentity, namespace string, secretName string) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: namespace,
+		},
+	}
+
+	if err := kc.Client.Delete(ctx, secret); err != nil {
+		kc.Logger.Error("failed to delete Secret", "error", err, "namespace", namespace, "secretName", secretName)
+		return fmt.Errorf("failed to delete Secret: %w", err)
+	}
+
+	kc.Logger.Info("successfully deleted Secret", "namespace", namespace, "secretName", secretName)
+	return nil
+}
+
+// GetSecretValue retrieves a specific value from a Kubernetes Secret
+func (kc *TokenKubernetesClient) GetSecretValue(ctx context.Context, identity *integrations.RequestIdentity, namespace string, secretName string, secretKey string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	secret := &corev1.Secret{}
+	secretNamespacedName := types.NamespacedName{
+		Name:      secretName,
+		Namespace: namespace,
+	}
+
+	if err := kc.Client.Get(ctx, secretNamespacedName, secret); err != nil {
+		kc.Logger.Error("failed to get Secret", "error", err, "namespace", namespace, "secretName", secretName)
+		return "", fmt.Errorf("failed to get Secret: %w", err)
+	}
+
+	// Get the value from the secret
+	value, ok := secret.Data[secretKey]
+	if !ok {
+		kc.Logger.Warn("secret key not found in Secret", "namespace", namespace, "secretName", secretName, "secretKey", secretKey)
+		return "", fmt.Errorf("key '%s' not found in Secret '%s'", secretKey, secretName)
+	}
+
+	kc.Logger.Debug("successfully retrieved secret value", "namespace", namespace, "secretName", secretName, "secretKey", secretKey)
+	return string(value), nil
 }

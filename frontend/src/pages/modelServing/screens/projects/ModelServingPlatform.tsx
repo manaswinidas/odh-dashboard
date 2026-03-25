@@ -32,14 +32,13 @@ import EmptyDetailsView from '#~/components/EmptyDetailsView';
 import EmptySingleModelServingCard from '#~/pages/modelServing/screens/projects/EmptySingleModelServingCard';
 import { ProjectObjectType, typedEmptyImage } from '#~/concepts/design/utils';
 import EmptyModelServingPlatform from '#~/pages/modelServing/screens/projects/EmptyModelServingPlatform';
-import EmptyNIMModelServingCard from '#~/pages/modelServing/screens/projects/EmptyNIMModelServingCard';
-import { isProjectNIMSupported } from '#~/pages/modelServing/screens/projects/nimUtils';
-import ManageNIMServingModal from '#~/pages/modelServing/screens/projects/NIMServiceModal/ManageNIMServingModal';
+import EmptyNIMModelServingCard from '#~/pages/modelServing/screens/projects/nim/EmptyNIMModelServingCard';
+import { isProjectNIMSupported } from '#~/pages/modelServing/screens/projects/nim/nimUtils';
+import ManageNIMServingModal from '#~/pages/modelServing/screens/projects/nim/NIMServiceModal/ManageNIMServingModal';
 import { NamespaceApplicationCase } from '#~/pages/projects/types';
 import ModelServingPlatformSelectButton from '#~/pages/modelServing/screens/projects/ModelServingPlatformSelectButton';
 import ModelServingPlatformSelectErrorAlert from '#~/concepts/modelServing/Platforms/ModelServingPlatformSelectErrorAlert';
 import useServingPlatformStatuses from '#~/pages/modelServing/useServingPlatformStatuses';
-import { NavigateBackToRegistryButton } from '#~/concepts/modelServing/NavigateBackToRegistryButton.tsx';
 import ModelServingPlatformButtonAction from './ModelServingPlatformButtonAction';
 import ManageKServeModal from './kServeModal/ManageKServeModal';
 
@@ -132,7 +131,6 @@ const ModelServingPlatform: React.FC = () => {
               }}
             />
           }
-          footerExtraChildren={<NavigateBackToRegistryButton isEmptyStateAction />}
         />
       );
     }

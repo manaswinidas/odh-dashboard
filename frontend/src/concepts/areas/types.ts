@@ -59,6 +59,9 @@ export enum SupportedArea {
   NIM_MODEL = 'nim-model',
   SERVING_RUNTIME_PARAMS = 'serving-runtime-params',
   MODEL_AS_SERVICE = 'model-as-service',
+  LLMD_SERVING = 'llmd-serving',
+  YAML_VIEWER = 'yaml-viewer',
+  VLLM_ON_MAAS = 'vllm-on-maas',
 
   /* Distributed Workloads areas */
   DISTRIBUTED_WORKLOADS = 'distributed-workloads',
@@ -67,9 +70,11 @@ export enum SupportedArea {
   /* Model Registry areas */
   MODEL_REGISTRY = 'model-registry',
   MODEL_REGISTRY_SECURE_DB = 'model-registry-secure-db',
-
   /* Model catalog areas */
   MODEL_CATALOG = 'model-catalog',
+
+  /* MCP catalog areas */
+  MCP_CATALOG = 'mcp-catalog',
 
   /* Plugins */
   PLUGIN_MODEL_SERVING = 'plugin-model-serving',
@@ -85,15 +90,13 @@ export enum SupportedArea {
 
   /* Model Training */
   MODEL_TRAINING = 'model-training',
+  RAY_JOBS = 'ray-jobs',
 
   /* MLflow */
-  MLFLOW = 'mlflow-application',
+  MLFLOW = 'mlflow',
 
   /* Project RBAC Settings */
   PROJECT_RBAC_SETTINGS = 'project-rbac-settings',
-
-  /* Embed MLflow */
-  EMBED_MLFLOW = 'embed-mlflow',
 }
 
 export type SupportedAreaType = SupportedArea | string;

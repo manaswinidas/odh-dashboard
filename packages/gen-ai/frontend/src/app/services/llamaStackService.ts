@@ -7,6 +7,7 @@ import {
   restDELETE,
   restGET,
 } from 'mod-arch-core';
+import { fireMiscTrackingEvent } from '@odh-dashboard/internal/concepts/analyticsTracking/segmentIOUtils';
 import {
   BackendResponseData,
   BFFConfig,
@@ -15,15 +16,19 @@ import {
   FileCitationAnnotation,
   FileUploadJobResponse,
   FileUploadStatusResponse,
+  GuardrailsStatus,
   LlamaModel,
   LlamaStackDistributionModel,
-  MaaSModel,
-  MaaSTokenRequest,
-  MaaSTokenResponse,
   MCPConnectionStatus,
   MCPServersResponse,
   MCPToolsStatus,
+  MLflowPromptsResponse,
+  MLflowPromptVersion,
+  MLflowPromptVersionsResponse,
+  MLflowRegisterPromptRequest,
   OutputItem,
+  ResponseMetrics,
+  SafetyConfigResponse,
   SimplifiedResponseData,
   SourceItem,
   VectorStore,
@@ -36,11 +41,29 @@ import {
   ModArchRestDELETE,
   ModArchRestCREATE,
   ModArchRestGET,
+  ExternalModelRequest,
+  ExternalModelResponse,
+  ExternalVectorStoreSummary,
+  VerifyExternalModelRequest,
+  VerifyExternalModelResponse,
+  MaaSModel,
+  MaaSTokenRequest,
+  MaaSTokenResponse,
 } from '~/app/types';
 import { URL_PREFIX, extractMCPToolCallData } from '~/app/utilities';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
+
+/**
+ * Type guard to validate ResponseMetrics from streaming data
+ */
+const isResponseMetrics = (value: unknown): value is ResponseMetrics => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return typeof value.latency_ms === 'number';
+};
 
 const getStatusCodeFromError = (error: unknown): number | undefined => {
   if (isRecord(error) && 'status' in error) {
@@ -181,6 +204,8 @@ const extractContentFromOutput = (output?: OutputItem[]): string => {
       for (const contentItem of item.content) {
         if (contentItem.type === 'output_text' && contentItem.text) {
           content += contentItem.text;
+        } else if (contentItem.type === 'refusal' && contentItem.refusal) {
+          content += contentItem.refusal;
         }
       }
     }
@@ -209,6 +234,7 @@ const transformBackendResponse = (backendResponse: BackendResponseData): Simplif
     usage: backendResponse.usage,
     ...(toolCallData && { toolCallData }),
     ...(sources.length > 0 && { sources }),
+    ...(backendResponse.metrics && { metrics: backendResponse.metrics }),
   };
 };
 
@@ -222,6 +248,8 @@ const toCreateResponseRecord = (r: CreateResponseRequest): Record<string, unknow
   instructions: r.instructions,
   stream: r.stream,
   mcp_servers: r.mcp_servers,
+  input_shield_id: r.input_shield_id,
+  output_shield_id: r.output_shield_id,
 });
 
 const postCreateResponse = (
@@ -242,7 +270,7 @@ const postCreateResponse = (
 const streamCreateResponse = (
   url: string,
   request: CreateResponseRequest,
-  onStreamData: (chunk: string) => void,
+  onStreamData: (chunk: string, clearPrevious?: boolean) => void,
   abortSignal?: AbortSignal,
 ): Promise<SimplifiedResponseData> =>
   new Promise((resolve, reject) => {
@@ -275,6 +303,8 @@ const streamCreateResponse = (
 
         let fullContent = '';
         let completeResponseData: BackendResponseData | null = null;
+        let metricsData: ResponseMetrics | null = null;
+        let receivedRefusal = false;
         const decoder = new TextDecoder();
 
         try {
@@ -302,8 +332,30 @@ const streamCreateResponse = (
                     if (data.delta && data.type === 'response.output_text.delta') {
                       fullContent += data.delta;
                       onStreamData(data.delta);
+                    } else if (data.type === 'response.refusal.delta') {
+                      // Check event type first, then guard content appending on non-empty data.delta
+                      // This ensures receivedRefusal flag and tracking fire on first non-empty delta
+                      if (data.delta) {
+                        const isFirstRefusal = !receivedRefusal;
+                        if (isFirstRefusal) {
+                          receivedRefusal = true;
+                          fullContent = '';
+                          // Track guardrail violation on first non-empty refusal delta
+                          fireMiscTrackingEvent('Guardrail Activated', {
+                            violationDetected: true,
+                          });
+                        }
+                        fullContent += data.delta;
+                        onStreamData(data.delta, isFirstRefusal);
+                      }
                     } else if (data.type === 'response.completed' && data.response) {
                       completeResponseData = data.response;
+                    } else if (
+                      data.type === 'response.metrics' &&
+                      isResponseMetrics(data.metrics)
+                    ) {
+                      // Capture metrics from the BFF response.metrics event
+                      metricsData = data.metrics;
                     }
                   } catch {
                     // ignore malformed lines
@@ -337,6 +389,7 @@ const streamCreateResponse = (
           content: processedContent,
           ...(toolCallData && { toolCallData }),
           ...(sources.length > 0 && { sources }),
+          ...(metricsData && { metrics: metricsData }),
         });
       })
       .catch((error) => {
@@ -355,7 +408,7 @@ const streamCreateResponse = (
  * Request to generate AI responses with RAG and conversation context.
  * @param request - CreateResponseRequest payload for /gen-ai/api/v1/lsd/responses.
  * @param namespace - The namespace to generate responses in
- * @param onStreamData - Optional callback for streaming data chunks
+ * @param onStreamData - Optional callback for streaming data chunks. Second param clearPrevious signals to clear previous content (e.g., on refusal violation)
  * @param abortSignal - Optional AbortSignal to cancel the streaming request
  * @returns Promise<SimplifiedResponseData> - The generated response object.
  * @throws Error - When the API request fails or returns an error response.
@@ -364,7 +417,10 @@ export const createResponse =
   (hostPath: string, baseQueryParams: Record<string, unknown> = {}) =>
   (
     data: CreateResponseRequest,
-    opts: APIOptions & { onStreamData?: (chunk: string) => void; abortSignal?: AbortSignal } = {},
+    opts: APIOptions & {
+      onStreamData?: (chunk: string, clearPrevious?: boolean) => void;
+      abortSignal?: AbortSignal;
+    } = {},
   ): Promise<SimplifiedResponseData> => {
     if (data.stream && opts.onStreamData) {
       const url = buildApiUrl(hostPath, '/lsd/responses', baseQueryParams);
@@ -483,6 +539,51 @@ export const exportCode = modArchRestCREATE<CodeExportData, CodeExportRequest>('
 
 /** AI Assets Endpoints */
 export const getAAModels = modArchRestGET<AAModelResponse[]>('/aaa/models');
+export const getAAVectorStores = modArchRestGET<ExternalVectorStoreSummary[]>('/aaa/vectorstores');
+export const createExternalModel = modArchRestCREATE<ExternalModelResponse, ExternalModelRequest>(
+  '/models/external',
+);
+/**
+ * Verify external model endpoint
+ *
+ * Validates and normalizes the response from the BFF to ensure the UI can safely consume it:
+ * - Ensures success is a boolean (defaults to false if missing/invalid)
+ * - Ensures message is a non-empty string (defaults to 'Verification completed' if missing/invalid)
+ * - Ensures response_time_ms is a non-negative number or undefined
+ *
+ * Errors are already normalized by mod-arch-core to { error: { code?, message } }
+ */
+export const verifyExternalModel = (
+  hostPath: string,
+  baseQueryParams: Record<string, unknown> = {},
+): ModArchRestCREATE<VerifyExternalModelResponse, VerifyExternalModelRequest> => {
+  const baseCreate = modArchRestCREATE<VerifyExternalModelResponse, VerifyExternalModelRequest>(
+    '/models/external/verify',
+  )(hostPath, baseQueryParams);
+
+  return async (data: VerifyExternalModelRequest, opts: APIOptions = {}) => {
+    const response = await baseCreate(data, opts);
+
+    // Validate and normalize response fields to prevent runtime errors in UI
+    const normalized: VerifyExternalModelResponse = {
+      success: typeof response.success === 'boolean' ? response.success : false,
+      message:
+        typeof response.message === 'string' && response.message.trim()
+          ? response.message
+          : 'Verification completed',
+      response_time_ms:
+        typeof response.response_time_ms === 'number' && response.response_time_ms >= 0
+          ? response.response_time_ms
+          : undefined,
+    };
+
+    return normalized;
+  };
+};
+
+export const deleteExternalModel = modArchRestDELETE<string, Record<string, never>>(
+  '/models/external',
+);
 
 export const getMCPServers = (
   hostPath: string,
@@ -555,3 +656,60 @@ export const getMaaSModels = modArchRestGET<MaaSModel[]>('/maas/models');
 export const generateMaaSToken = modArchRestCREATE<MaaSTokenResponse, MaaSTokenRequest>(
   '/maas/tokens',
 );
+
+export const getGuardrailsStatus = modArchRestGET<GuardrailsStatus>('/guardrails/status');
+export const getSafetyConfig = modArchRestGET<SafetyConfigResponse>('/lsd/safety');
+
+/** MLflow Prompt Registry Endpoints */
+export const listMLflowPrompts = modArchRestGET<MLflowPromptsResponse>('/mlflow/prompts');
+export const registerMLflowPrompt = modArchRestCREATE<
+  MLflowPromptVersion,
+  MLflowRegisterPromptRequest
+>('/mlflow/prompts');
+
+export const getMLflowPrompt =
+  (
+    hostPath: string,
+    baseQueryParams: Record<string, unknown> = {},
+  ): ModArchRestGET<MLflowPromptVersion> =>
+  (queryParams: Record<string, unknown> = {}, opts: APIOptions = {}) => {
+    const { name, ...restParams } = queryParams;
+    if (!name || typeof name !== 'string') {
+      return Promise.reject(new Error('name parameter is required'));
+    }
+    const path = `/mlflow/prompts/${encodeURIComponent(name)}`;
+    return handleRestFailures(
+      restGET<MLflowPromptVersion>(hostPath, path, { ...baseQueryParams, ...restParams }, opts),
+    ).then((response) => {
+      if (isModArchResponse<MLflowPromptVersion>(response)) {
+        return response.data;
+      }
+      throw new Error('Invalid response format');
+    });
+  };
+
+export const listMLflowPromptVersions =
+  (
+    hostPath: string,
+    baseQueryParams: Record<string, unknown> = {},
+  ): ModArchRestGET<MLflowPromptVersionsResponse> =>
+  (queryParams: Record<string, unknown> = {}, opts: APIOptions = {}) => {
+    const { name, ...restParams } = queryParams;
+    if (!name || typeof name !== 'string') {
+      return Promise.reject(new Error('name parameter is required'));
+    }
+    const path = `/mlflow/prompts/${encodeURIComponent(name)}/versions`;
+    return handleRestFailures(
+      restGET<MLflowPromptVersionsResponse>(
+        hostPath,
+        path,
+        { ...baseQueryParams, ...restParams },
+        opts,
+      ),
+    ).then((response) => {
+      if (isModArchResponse<MLflowPromptVersionsResponse>(response)) {
+        return response.data;
+      }
+      throw new Error('Invalid response format');
+    });
+  };

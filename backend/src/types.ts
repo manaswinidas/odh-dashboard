@@ -51,8 +51,16 @@ export type DashboardConfig = K8sResourceCommon & {
       disableFeatureStore: boolean;
       trainingJobs: boolean;
       genAiStudio: boolean;
+      automl: boolean;
+      autorag: boolean;
       modelAsService: boolean;
       mlflow: boolean;
+      mcpCatalog: boolean;
+      aiAssetCustomEndpoints: boolean;
+      disableLLMd: boolean;
+      projectRBAC: boolean;
+      deploymentWizardYAMLViewer: boolean;
+      vLLMDeploymentOnMaaS: boolean;
     };
     // Intentionally disjointed from the CRD, we should move away from this code-wise now; CRD later
     // groupsConfig?: {
@@ -71,6 +79,12 @@ export type DashboardConfig = K8sResourceCommon & {
     modelServing?: {
       deploymentStrategy?: string;
       isLLMdDefault?: boolean;
+    };
+    genAiStudioConfig?: {
+      aiAssetCustomEndpoints?: {
+        externalProviders?: boolean;
+        clusterDomains?: string[];
+      };
     };
   };
 };
@@ -103,7 +117,10 @@ export type ClusterSettings = {
   userTrackingEnabled: boolean;
   modelServingPlatformEnabled: {
     kServe: boolean;
+    LLMd: boolean;
   };
+  isDistributedInferencingDefault?: boolean;
+  defaultDeploymentStrategy?: string;
 };
 
 // Add a minimal QuickStart type here as there is no way to get types without pulling in frontend (React) modules
@@ -992,10 +1009,17 @@ export type DataScienceClusterList = {
 export type DataScienceClusterInitializationKindStatus = {
   conditions: K8sCondition[];
   phase?: string;
+  monitoring?: {
+    namespace?: string;
+  };
 };
 
 export type DataScienceClusterInitializationKind = K8sResourceCommon & {
-  spec: unknown; // we should never need to look into this
+  spec: {
+    monitoring?: {
+      namespace?: string;
+    };
+  };
   status: DataScienceClusterInitializationKindStatus;
 };
 
@@ -1319,3 +1343,12 @@ export enum OdhPlatformType {
   SELF_MANAGED_RHOAI = 'OpenShift AI Self-Managed',
   MANAGED_RHOAI = 'OpenShift AI Cloud Service',
 } // Reference: https://github.com/red-hat-data-services/rhods-operator/blob/main/pkg/cluster/const.go
+
+export type KubeResponseBody<T> = {
+  kind: string;
+  apiVersion: string;
+  metadata?: {
+    resourceVersion?: string;
+  };
+  items?: T[];
+};

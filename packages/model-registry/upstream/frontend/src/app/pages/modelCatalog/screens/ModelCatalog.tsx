@@ -6,12 +6,8 @@ import { isModelCatalogBannerExtension } from '~/odh/extension-points';
 import ScrollViewOnMount from '~/app/shared/components/ScrollViewOnMount';
 import ModelCatalogFilters from '~/app/pages/modelCatalog/components/ModelCatalogFilters';
 import { ModelCatalogContext } from '~/app/context/modelCatalog/ModelCatalogContext';
-import { hasFiltersApplied } from '~/app/pages/modelCatalog/utils/modelCatalogUtils';
-import {
-  ModelCatalogNumberFilterKey,
-  ModelCatalogStringFilterKey,
-} from '~/concepts/modelCatalog/const';
 import { CategoryName } from '~/app/modelCatalogTypes';
+import { useHasVisibleFiltersApplied } from '~/app/hooks/modelCatalog/useHasVisibleFiltersApplied';
 import ModelCatalogSourceLabelSelectorNavigator from './ModelCatalogSourceLabelSelectorNavigator';
 import ModelCatalogAllModelsView from './ModelCatalogAllModelsView';
 import ModelCatalogGalleryView from './ModelCatalogGalleryView';
@@ -19,8 +15,9 @@ import { useSearchParams } from 'react-router-dom';
 
 const ModelCatalog: React.FC = () => {
   const [searchTerm, setSearchTerm] = React.useState('');
-  const { selectedSourceLabel, filterData, setFilterData, updateSelectedSourceLabel } = React.useContext(ModelCatalogContext);
-  const filtersApplied = hasFiltersApplied(filterData);
+  const { selectedSourceLabel, updateSelectedSourceLabel, clearAllFilters } =
+    React.useContext(ModelCatalogContext);
+  const filtersApplied = useHasVisibleFiltersApplied();
   const isAllModelsView =
     selectedSourceLabel === CategoryName.allModels && !searchTerm && !filtersApplied;
 
@@ -43,20 +40,11 @@ const ModelCatalog: React.FC = () => {
     setSearchTerm('');
   }, []);
 
-  const resetAllFilters = React.useCallback(() => {
-    Object.values(ModelCatalogStringFilterKey).forEach((filterKey) => {
-      setFilterData(filterKey, []);
-    });
-
-    Object.values(ModelCatalogNumberFilterKey).forEach((filterKey) => {
-      setFilterData(filterKey, undefined);
-    });
-  }, [setFilterData]);
-
   const handleFilterReset = React.useCallback(() => {
     setSearchTerm('');
-    resetAllFilters();
-  }, [resetAllFilters]);
+    // clearAllFilters clears basic filters to empty and resets performance filters to defaults
+    clearAllFilters();
+  }, [clearAllFilters]);
 
   return (
     <>

@@ -15,10 +15,12 @@ type MockLLMInferenceServiceConfigType = {
   lastTransitionTime?: string;
   isReady?: boolean;
   url?: string;
+  addresses?: { name?: string; url?: string }[];
   additionalLabels?: Record<string, string>;
   isNonDashboardItem?: boolean;
   modelType?: ServingRuntimeModelType;
   isStopped?: boolean;
+  baseRefs?: { name?: string }[];
 };
 
 export const mockLLMInferenceServiceK8sResource = ({
@@ -33,7 +35,9 @@ export const mockLLMInferenceServiceK8sResource = ({
   lastTransitionTime = '2023-03-17T16:12:41Z',
   isReady = true,
   url,
+  addresses,
   isStopped = false,
+  baseRefs,
 }: MockLLMInferenceServiceConfigType): LLMInferenceServiceKind => ({
   apiVersion: 'serving.kserve.io/v1alpha1',
   kind: 'LLMInferenceService',
@@ -57,6 +61,7 @@ export const mockLLMInferenceServiceK8sResource = ({
     uid: genUID('llm-service'),
   },
   spec: {
+    ...(baseRefs && { baseRefs }),
     model: {
       name: modelName,
       uri: modelUri,
@@ -124,6 +129,7 @@ export const mockLLMInferenceServiceK8sResource = ({
       },
     ],
     url: url || `http://us-east-1.elb.amazonaws.com/${namespace}/${name}`,
+    ...(addresses ? { addresses } : {}),
     observedGeneration: 1,
   },
 });

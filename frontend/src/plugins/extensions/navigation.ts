@@ -44,6 +44,24 @@ const extensions: NavExtension[] = [
       iconRef: () => import('#~/images/icons/AiHubNavIcon'),
     },
   },
+  {
+    type: 'app.navigation/section',
+    properties: {
+      id: 'models',
+      title: 'Models',
+      group: '1_models',
+      section: 'ai-hub',
+    },
+  },
+  {
+    type: 'app.navigation/section',
+    properties: {
+      id: 'mcp-servers',
+      title: 'MCP servers',
+      group: '2_mcp_servers',
+      section: 'ai-hub',
+    },
+  },
   // This is being replaced by the upstream extension for model registry and will be removed along with the old MR UI code as part of https://issues.redhat.com/browse/RHOAIENG-34088
   // {
   //   type: 'app.navigation/href',
@@ -168,20 +186,6 @@ const extensions: NavExtension[] = [
       path: '/develop-train/experiments/*',
     },
   },
-  {
-    type: 'app.navigation/href',
-    flags: {
-      required: [SupportedArea.DS_PIPELINES, SupportedArea.MLFLOW, SupportedArea.EMBED_MLFLOW],
-    },
-    properties: {
-      id: 'experiments-mlflow',
-      title: 'Experiments (MLflow)',
-      href: '/develop-train/experiments-mlflow',
-      section: 'develop-and-train',
-      path: '/develop-train/experiments-mlflow/*',
-    },
-  },
-
   {
     type: 'app.navigation/section',
     properties: {

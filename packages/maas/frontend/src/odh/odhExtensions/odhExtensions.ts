@@ -1,0 +1,90 @@
+import {
+  AreaExtension,
+  RouteExtension,
+  NavExtension,
+} from '@odh-dashboard/plugin-core/extension-points';
+
+export const MODEL_AS_SERVICE_ID = 'modelAsService';
+
+export type ODHExtensions = NavExtension | RouteExtension | AreaExtension;
+const ADMIN_USER = 'ADMIN_USER';
+
+const ODH_EXTENSIONS: ODHExtensions[] = [
+  {
+    type: 'app.area',
+    properties: {
+      id: MODEL_AS_SERVICE_ID,
+      featureFlags: ['modelAsService'],
+    },
+  },
+  {
+    type: 'app.navigation/href',
+    flags: {
+      required: [MODEL_AS_SERVICE_ID, ADMIN_USER],
+    },
+    properties: {
+      id: 'maas-subscriptions-view',
+      title: 'Subscriptions',
+      href: '/maas/subscriptions',
+      section: 'settings',
+      path: '/maas/subscriptions/*',
+    },
+  },
+  {
+    type: 'app.navigation/section',
+    flags: {
+      required: [MODEL_AS_SERVICE_ID],
+    },
+    properties: {
+      id: 'gen-ai-studio',
+      title: 'Gen AI studio',
+      group: '4_gen_ai_studio',
+      iconRef: () => import('./GenAiStudioNavIcon'),
+    },
+  },
+  {
+    type: 'app.navigation/href',
+    flags: {
+      required: [MODEL_AS_SERVICE_ID],
+    },
+    properties: {
+      id: 'maas-tokens-view',
+      title: 'API keys',
+      href: '/maas/tokens',
+      section: 'gen-ai-studio',
+      path: '/maas/tokens/*',
+    },
+  },
+  {
+    type: 'app.route',
+    flags: {
+      required: [MODEL_AS_SERVICE_ID, ADMIN_USER],
+    },
+    properties: {
+      path: '/maas/subscriptions/*',
+      component: () => import('./MaaSWrapper'),
+    },
+  },
+  {
+    type: 'app.route',
+    flags: {
+      required: [MODEL_AS_SERVICE_ID],
+    },
+    properties: {
+      path: '/maas/tokens/*',
+      component: () => import('./MaaSWrapper'),
+    },
+  },
+  {
+    type: 'app.route',
+    flags: {
+      required: [MODEL_AS_SERVICE_ID],
+    },
+    properties: {
+      path: '/maas',
+      component: () => import('./MaaSRedirect'),
+    },
+  },
+];
+
+export default ODH_EXTENSIONS;

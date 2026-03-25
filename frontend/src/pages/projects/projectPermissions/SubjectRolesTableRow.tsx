@@ -1,42 +1,42 @@
 import * as React from 'react';
-import {
-  Button,
-  Split,
-  SplitItem,
-  Timestamp,
-  TimestampTooltipVariant,
-} from '@patternfly/react-core';
+import { Timestamp, TimestampTooltipVariant } from '@patternfly/react-core';
 import { ActionsColumn, Td, Tr } from '@patternfly/react-table';
-import { getRoleDisplayName, getRoleLabelType } from '#~/concepts/permissions/utils';
-import { RoleRef } from '#~/concepts/permissions/types';
+import { formatDateForLocalTooltip, relativeTime } from '#~/utilities/time';
+import { fireMiscTrackingEvent } from '#~/concepts/analyticsTracking/segmentIOUtils';
 import { SubjectRoleRow } from './types';
-import RoleLabel from './components/RoleLabel';
+import RoleDetailsLink from './components/RoleDetailsLink';
 
 type SubjectRolesTableRowProps = {
   row: SubjectRoleRow;
   subjectNameRowSpan: number;
-  onRoleClick?: (roleRef: RoleRef) => void;
-};
-
-const formatDate = (timestamp?: string): string => {
-  if (!timestamp) {
-    return '-';
-  }
-  const d = new Date(timestamp);
-  if (Number.isNaN(d.getTime())) {
-    return '-';
-  }
-  return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+  onManageRoles: () => void;
+  onRemove: () => void;
 };
 
 const SubjectRolesTableRow: React.FC<SubjectRolesTableRowProps> = ({
   row,
   subjectNameRowSpan,
-  onRoleClick,
+  onManageRoles,
+  onRemove,
 }) => {
   const createdDate = row.roleBindingCreationTimestamp
     ? new Date(row.roleBindingCreationTimestamp)
     : undefined;
+
+  const actionItems = [
+    {
+      title: 'Manage permissions',
+      onClick: () => {
+        /* eslint-disable camelcase */
+        fireMiscTrackingEvent('RBAC Role Management Opened', {
+          manage_permissions_button: 'table row',
+        });
+        /* eslint-enable camelcase */
+        onManageRoles();
+      },
+    },
+    { title: 'Unassign', onClick: onRemove },
+  ];
 
   return (
     <Tr>
@@ -51,39 +51,25 @@ const SubjectRolesTableRow: React.FC<SubjectRolesTableRowProps> = ({
           paddingInlineStart: 'var(--pf-v6-c-table--cell--Padding--base)',
         }}
       >
-        <Split hasGutter>
-          <SplitItem>
-            <Button
-              variant="link"
-              isInline
-              onClick={() => onRoleClick?.(row.roleRef)}
-              data-testid="role-link"
-            >
-              {getRoleDisplayName(row.roleRef, row.role)}
-            </Button>
-          </SplitItem>
-          <SplitItem>
-            <RoleLabel type={row.role ? getRoleLabelType(row.role) : undefined} />
-          </SplitItem>
-        </Split>
+        <RoleDetailsLink roleRef={row.roleRef} role={row.role} />
       </Td>
       <Td dataLabel="Date created">
         {createdDate ? (
-          <Timestamp date={createdDate} tooltip={{ variant: TimestampTooltipVariant.default }}>
-            {formatDate(row.roleBindingCreationTimestamp)}
+          <Timestamp
+            date={createdDate}
+            tooltip={{
+              variant: TimestampTooltipVariant.custom,
+              content: formatDateForLocalTooltip(createdDate),
+            }}
+          >
+            {relativeTime(Date.now(), createdDate.getTime())}
           </Timestamp>
         ) : (
           '-'
         )}
       </Td>
       <Td isActionCell modifier="nowrap" style={{ textAlign: 'right' }}>
-        <ActionsColumn
-          items={[
-            { title: 'Edit', onClick: () => undefined },
-            { isSeparator: true },
-            { title: 'Delete', onClick: () => undefined },
-          ]}
-        />
+        <ActionsColumn items={actionItems} />
       </Td>
     </Tr>
   );

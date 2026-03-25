@@ -214,6 +214,52 @@ paths:
       summary: Get LSD Status
       description: Gets the status of LlamaStack Distribution in the specified namespace.
 
+  /gen-ai/api/v1/lsd/safety:
+    summary: Get safety configuration
+    description: >-
+      Retrieves the safety configuration (guardrail models and shields) from the llama-stack-config ConfigMap.
+      Returns configured guardrail models with their input and output shield IDs.
+      Only returns data if trustyai_fms provider is configured.
+      Requires valid Kubernetes authentication token and namespace parameter.
+    get:
+      tags:
+        - LlamaStackDistribution
+      security:
+        - Bearer: []
+      parameters:
+        - name: namespace
+          in: query
+          description: Kubernetes namespace to get safety config from
+          required: true
+          schema:
+            type: string
+            example: 'default'
+      responses:
+        '200':
+          description: Safety configuration retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SafetyConfigResponse'
+              example:
+                data:
+                  guardrail_models:
+                    - model_name: 'llama-guard-3'
+                      input_shield_id: 'trustyai_input_llama_guard_3'
+                      output_shield_id: 'trustyai_output_llama_guard_3'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      operationId: getSafetyConfig
+      summary: Get Safety Config
+      description: Gets the safety configuration with guardrail models and shields.
+
   /gen-ai/api/v1/lsd/install:
     summary: Install LlamaStack Distribution
     description: >-
@@ -244,9 +290,9 @@ paths:
             example:
               models:
                 - model_name: 'llama-3-2-3b-instruct'
-                  is_maas_model: false
+                  model_source_type: 'namespace'
                 - model_name: 'granite-embedding-125m'
-                  is_maas_model: false
+                  model_source_type: 'maas'
       responses:
         '200':
           $ref: '#/components/responses/LlamaStackDistributionInstallResponse'
@@ -259,6 +305,44 @@ paths:
       operationId: installLlamaStackDistribution
       summary: Install LSD
       description: Installs a new LlamaStack Distribution with the specified models.
+
+  # =============================================================================
+  # GUARDRAILS ENDPOINTS
+  # =============================================================================
+
+  /gen-ai/api/v1/guardrails/status:
+    summary: Get GuardrailsOrchestrator status
+    description: >-
+      Retrieves the status of GuardrailsOrchestrator CR in the specified namespace.
+      Returns information including name, phase, and conditions.
+      Requires valid Kubernetes authentication token and namespace parameter.
+    get:
+      tags:
+        - Guardrails
+      security:
+        - Bearer: []
+      parameters:
+        - name: namespace
+          in: query
+          description: Kubernetes namespace to query for GuardrailsOrchestrator resources
+          required: true
+          schema:
+            type: string
+            example: 'default'
+      responses:
+        '200':
+          $ref: '#/components/responses/GuardrailsStatusResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      operationId: getGuardrailsStatus
+      summary: Get Guardrails Status
+      description: Gets the status of GuardrailsOrchestrator in the specified namespace.
 
   # =============================================================================
   # AI AVAILABLE ASSETS (AAA) ENDPOINTS
@@ -295,6 +379,198 @@ paths:
       operationId: listAAModels
       summary: List AI Available Assets Models
       description: Gets a list of all available AI Available Assets models from Kubernetes InferenceServices.
+
+  /gen-ai/api/v1/models/external:
+    summary: Manage external model endpoints
+    description: >-
+      Register and manage OpenAI-compatible external model endpoints for use in Gen AI Studio.
+      Creates a ConfigMap entry and Kubernetes Secret for secure API key storage.
+      Supports custom endpoints, including public external APIs and cluster-local URLs.
+      Requires namespace parameter for proper multi-tenant isolation.
+    post:
+      tags:
+        - ExternalModels
+      security:
+        - Bearer: []
+      parameters:
+        - name: namespace
+          in: query
+          description: Kubernetes namespace where the external model will be registered
+          required: true
+          schema:
+            type: string
+            example: 'llm'
+      requestBody:
+        required: true
+        description: External model configuration
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalModelRequest'
+            example:
+              model_id: 'gpt-4o'
+              model_display_name: 'GPT-4 Optimized'
+              base_url: 'https://api.openai.com/v1'
+              secret_value: 'sk-your-api-key-here'
+              use_cases: 'Classification, Text Generation'
+              model_type: 'llm'
+      responses:
+        '201':
+          $ref: '#/components/responses/ExternalModelCreatedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Access denied - user does not have permission to create models in this namespace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      operationId: createExternalModel
+    delete:
+      summary: Delete an external model endpoint
+      description: >-
+        Deletes an external model endpoint by removing its entry from the ConfigMap and deleting its associated Secret.
+        This operation permanently removes the external model registration.
+        Requires namespace parameter for proper multi-tenant isolation.
+      tags:
+        - ExternalModels
+      security:
+        - Bearer: []
+      parameters:
+        - name: model_id
+          in: query
+          description: Model ID to delete (supports slashes, e.g. 'openai/gpt-4o' or 'ollama/llama3.2:3b')
+          required: true
+          schema:
+            type: string
+            example: 'gpt-4o'
+        - name: namespace
+          in: query
+          description: Kubernetes namespace where the external model is registered
+          required: true
+          schema:
+            type: string
+            example: 'llm'
+      responses:
+        '204':
+          description: External model successfully deleted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Access denied - user does not have permission to delete models in this namespace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: External model not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      operationId: deleteExternalModel
+
+  /gen-ai/api/v1/models/external/verify:
+    summary: Verify external model endpoint
+    description: >-
+      Verifies that an external model endpoint is accessible, properly authenticated, and OpenAI-compatible.
+      Tests the connection by sending a minimal request to the endpoint and validating the response format.
+      This is a stateless operation that does not create any resources.
+    post:
+      tags:
+        - ExternalModels
+      security:
+        - Bearer: []
+      requestBody:
+        required: true
+        description: External model verification request
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyExternalModelRequest'
+            example:
+              model_id: 'gpt-4o'
+              base_url: 'https://api.openai.com/v1'
+              secret_value: 'sk-test-key'
+              model_type: 'llm'
+      responses:
+        '200':
+          description: External model verified successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/VerifyExternalModelResponse'
+              example:
+                data:
+                  success: true
+                  message: 'External model verified successfully'
+                  response_time_ms: 523
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid credentials - API key is incorrect or unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        example: 'UNAUTHORIZED'
+                      message:
+                        type: string
+                        example: 'API key is invalid or unauthorized'
+        '408':
+          description: Request timeout - endpoint did not respond in time
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        example: 'TIMEOUT'
+                      message:
+                        type: string
+                        example: 'Request timed out connecting to external model'
+        '503':
+          description: Connection failed - could not reach the endpoint
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        example: 'CONNECTION_FAILED'
+                      message:
+                        type: string
+                        example: 'Request to https://api.example.com/v1/chat/completions returned HTTP 404. The endpoint may not exist or the base URL may be incorrect.'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      operationId: verifyExternalModel
+      summary: Verify External Model
+      description: Tests external model endpoint connectivity, authentication, and OpenAI compatibility.
 
   # =============================================================================
   # MODEL AS A SERVICE (MAAS) ENDPOINTS
@@ -353,7 +629,26 @@ paths:
                           example: true
                         url:
                           type: string
-                          example: 'http://llama-2-7b-chat.openshift-ai-inference-tier-premium.svc.cluster.local'
+                          example: 'https://llama-2-7b-chat.apps.example.openshift.com/v1'
+                        display_name:
+                          type: string
+                          description: Human-readable display name for the model
+                          example: 'Llama 2 7B Chat'
+                        description:
+                          type: string
+                          description: Detailed description of the model and its capabilities
+                          example: 'Meta Llama 2 7B model fine-tuned for conversational AI and chat applications'
+                        usecase:
+                          type: string
+                          description: Primary use cases for the model
+                          example: 'Chat, Question answering'
+                        model_type:
+                          type: string
+                          description: Type of the model
+                          enum:
+                            - llm
+                            - embedding
+                          example: 'llm'
                       required:
                         - id
                         - object
@@ -462,6 +757,334 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
       operationId: revokeAllMaaSTokens
+
+  # =============================================================================
+  # MLFLOW ENDPOINTS
+  # =============================================================================
+
+  /gen-ai/api/v1/mlflow/prompts:
+    summary: List and register MLflow prompts
+    description: >-
+      Lists all registered prompts or registers a new prompt in the MLflow Prompt Registry.
+      Requires namespace parameter for proper multi-tenant isolation.
+    get:
+      tags:
+        - MLflow
+      security:
+        - Bearer: []
+      parameters:
+        - name: namespace
+          in: query
+          description: Kubernetes namespace for MLflow operations
+          required: true
+          schema:
+            type: string
+            example: 'default'
+        - name: page_token
+          in: query
+          description: Token for fetching the next page of results
+          required: false
+          schema:
+            type: string
+        - name: max_results
+          in: query
+          description: Maximum number of prompts to return per page
+          required: false
+          schema:
+            type: integer
+            example: 10
+        - name: filter_name
+          in: query
+          description: Filter prompts by name prefix (e.g. "pet" matches "pet-health-bella", "pet-adoption-letter")
+          required: false
+          schema:
+            type: string
+            example: pet
+      responses:
+        '200':
+          description: Successful response with MLflow prompts list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      prompts:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/MLflowPrompt'
+                      next_page_token:
+                        type: string
+                        description: Token for fetching the next page of results
+                    required:
+                      - prompts
+                  metadata:
+                    type: object
+                    nullable: true
+                required:
+                  - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      operationId: listMLflowPrompts
+      summary: List All MLflow Prompts
+      description: Gets a paginated list of all registered prompts from the MLflow Prompt Registry.
+    post:
+      tags:
+        - MLflow
+      security:
+        - Bearer: []
+      parameters:
+        - name: namespace
+          in: query
+          description: Kubernetes namespace for MLflow operations
+          required: true
+          schema:
+            type: string
+            example: 'default'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MLflowRegisterPromptRequest'
+      responses:
+        '201':
+          description: Prompt version created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MLflowPromptVersion'
+                  metadata:
+                    type: object
+                    nullable: true
+                required:
+                  - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      operationId: registerMLflowPrompt
+      summary: Register or Update MLflow Prompt
+      description: >-
+        Creates a new prompt or adds a new version to an existing prompt.
+        Either messages (for chat prompts) or template (for text prompts) must be provided, but not both.
+
+  /gen-ai/api/v1/mlflow/prompts/{name}:
+    summary: Load or delete an MLflow prompt
+    description: >-
+      Load the full content of a specific prompt version or delete an entire prompt.
+    get:
+      tags:
+        - MLflow
+      security:
+        - Bearer: []
+      parameters:
+        - name: name
+          in: path
+          description: Prompt name
+          required: true
+          schema:
+            type: string
+            example: 'vet-appointment-dora'
+        - name: namespace
+          in: query
+          description: Kubernetes namespace for MLflow operations
+          required: true
+          schema:
+            type: string
+            example: 'default'
+        - name: version
+          in: query
+          description: Specific version number to load (defaults to latest)
+          required: false
+          schema:
+            type: integer
+            example: 1
+      responses:
+        '200':
+          description: Prompt version loaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MLflowPromptVersion'
+                  metadata:
+                    type: object
+                    nullable: true
+                required:
+                  - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      operationId: loadMLflowPrompt
+      summary: Load MLflow Prompt
+      description: Loads a specific prompt version with full template or message content.
+    delete:
+      tags:
+        - MLflow
+      security:
+        - Bearer: []
+      parameters:
+        - name: name
+          in: path
+          description: Prompt name to delete
+          required: true
+          schema:
+            type: string
+            example: 'my-prompt'
+        - name: namespace
+          in: query
+          description: Kubernetes namespace for MLflow operations
+          required: true
+          schema:
+            type: string
+            example: 'default'
+      responses:
+        '204':
+          description: Prompt deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      operationId: deleteMLflowPrompt
+      summary: Delete MLflow Prompt
+      description: Deletes an entire prompt and all its versions.
+
+  /gen-ai/api/v1/mlflow/prompts/{name}/versions:
+    summary: List versions of an MLflow prompt
+    description: >-
+      Lists all versions of a specific prompt with metadata (no template content).
+    get:
+      tags:
+        - MLflow
+      security:
+        - Bearer: []
+      parameters:
+        - name: name
+          in: path
+          description: Prompt name
+          required: true
+          schema:
+            type: string
+            example: 'vet-appointment-dora'
+        - name: namespace
+          in: query
+          description: Kubernetes namespace for MLflow operations
+          required: true
+          schema:
+            type: string
+            example: 'default'
+        - name: page_token
+          in: query
+          description: Token for fetching the next page of results
+          required: false
+          schema:
+            type: string
+        - name: max_results
+          in: query
+          description: Maximum number of versions to return per page
+          required: false
+          schema:
+            type: integer
+            example: 10
+      responses:
+        '200':
+          description: Successful response with prompt versions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      versions:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/MLflowPromptVersionMeta'
+                      next_page_token:
+                        type: string
+                        description: Token for fetching the next page of results
+                    required:
+                      - versions
+                  metadata:
+                    type: object
+                    nullable: true
+                required:
+                  - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      operationId: listMLflowPromptVersions
+      summary: List Prompt Versions
+      description: Gets a list of all versions for a specific prompt.
+
+  /gen-ai/api/v1/mlflow/prompts/{name}/versions/{version}:
+    summary: Delete a specific version of an MLflow prompt
+    delete:
+      tags:
+        - MLflow
+      security:
+        - Bearer: []
+      parameters:
+        - name: name
+          in: path
+          description: Prompt name
+          required: true
+          schema:
+            type: string
+            example: 'my-prompt'
+        - name: version
+          in: path
+          description: Version number to delete
+          required: true
+          schema:
+            type: integer
+            example: 1
+        - name: namespace
+          in: query
+          description: Kubernetes namespace for MLflow operations
+          required: true
+          schema:
+            type: string
+            example: 'default'
+      responses:
+        '204':
+          description: Prompt version deleted successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      operationId: deleteMLflowPromptVersion
+      summary: Delete Prompt Version
+      description: Deletes a specific version of a prompt.
 
   /gen-ai/api/v1/lsd/vectorstores:
     summary: Manage vector stores for RAG
@@ -1046,6 +1669,78 @@ paths:
       summary: Get MCP Server Status by URL
       description: Gets the connection status of the MCP server specified by URL.
 
+  /gen-ai/api/v1/aaa/vectorstores:
+    get:
+      tags:
+        - AIAssets
+      operationId: listAAVectorStores
+      summary: List External Vector Stores from AI Available Assets
+      description: >-
+        Lists external vector stores configured in the gen-ai-aa-vector-stores ConfigMap.
+        Returns a flat array of vector store summaries with embedding model availability.
+        Sensitive fields (credentials, TLS secrets, provider config) are stripped.
+      security:
+        - Bearer: []
+      parameters:
+        - $ref: '#/components/parameters/NamespaceParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/AAVectorStoresResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Access denied to ConfigMap
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: ConfigMap not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /gen-ai/api/v1/vectorstores/external:
+    get:
+      tags:
+        - VectorStores
+      operationId: listExternalVectorStores
+      summary: List External Vector Stores with ConfigMap Metadata
+      description: >-
+        Lists external vector stores with full operational metadata including
+        ConfigMap source info and total count. Used by the vector stores management page.
+        Sensitive fields (credentials, TLS secrets, provider config) are stripped.
+      security:
+        - Bearer: []
+      parameters:
+        - $ref: '#/components/parameters/NamespaceParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/ExternalVectorStoresListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Access denied to ConfigMap
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: ConfigMap not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /gen-ai/api/v1/aaa/mcps:
     get:
       tags:
@@ -1146,6 +1841,197 @@ components:
           example: '1.0.0'
           description: BFF service version
 
+    SafetyConfigResponse:
+      type: object
+      required:
+        - guardrail_models
+      properties:
+        guardrail_models:
+          type: array
+          items:
+            $ref: '#/components/schemas/GuardrailModelConfig'
+          description: List of configured guardrail models with their shields
+
+    GuardrailModelConfig:
+      type: object
+      required:
+        - model_name
+        - input_shield_id
+        - output_shield_id
+      properties:
+        model_name:
+          type: string
+          example: 'llama-guard-3'
+          description: Name of the guardrail model
+        input_shield_id:
+          type: string
+          example: 'trustyai_input_llama_guard_3'
+          description: Shield ID for input content moderation
+        output_shield_id:
+          type: string
+          example: 'trustyai_output_llama_guard_3'
+          description: Shield ID for output content moderation
+
+    # MLflow Schemas
+    MLflowPrompt:
+      type: object
+      required:
+        - name
+        - description
+        - latest_version
+        - creation_timestamp
+      properties:
+        name:
+          type: string
+          description: Unique name identifying the prompt
+          example: 'vet-appointment-dora'
+        description:
+          type: string
+          description: Human-readable description of the prompt
+          example: 'Schedule a veterinary appointment for Dora'
+        latest_version:
+          type: integer
+          description: Latest version number of the prompt
+          example: 2
+        tags:
+          type: object
+          additionalProperties:
+            type: string
+          description: User-defined metadata tags
+          example:
+            pet: 'dora'
+            category: 'health'
+        creation_timestamp:
+          type: string
+          format: date-time
+          description: When the prompt was first created
+          example: '2025-01-15T10:30:00Z'
+
+    MLflowMessage:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          description: Message role (system, user, assistant)
+          example: 'user'
+        content:
+          type: string
+          description: Message content, may contain {{variable}} placeholders
+          example: 'Hello {{name}}'
+
+    MLflowRegisterPromptRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Prompt name (creates new or adds version to existing)
+          example: 'my-prompt'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/MLflowMessage'
+          description: Chat messages (for chat prompts, mutually exclusive with template)
+        template:
+          type: string
+          description: Text template (for text prompts, mutually exclusive with messages)
+          example: 'Hello {{name}}, welcome to {{place}}!'
+        commit_message:
+          type: string
+          description: Version commit message
+          example: 'initial version'
+        tags:
+          type: object
+          additionalProperties:
+            type: string
+          description: Metadata tags
+          example:
+            env: 'production'
+
+    MLflowPromptVersion:
+      type: object
+      required:
+        - name
+        - version
+        - created_at
+        - updated_at
+      properties:
+        name:
+          type: string
+          description: Prompt name
+          example: 'vet-appointment-dora'
+        version:
+          type: integer
+          description: Version number
+          example: 2
+        template:
+          type: string
+          description: Text template content (for text prompts)
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/MLflowMessage'
+          description: Chat messages (for chat prompts)
+        commit_message:
+          type: string
+          description: Version commit message
+          example: 'Detailed appointment request with anxiety note'
+        aliases:
+          type: array
+          items:
+            type: string
+          description: Aliases pointing to this version
+        tags:
+          type: object
+          additionalProperties:
+            type: string
+          description: Metadata tags
+        created_at:
+          type: string
+          format: date-time
+          description: When this version was created
+        updated_at:
+          type: string
+          format: date-time
+          description: When this version was last updated
+
+    MLflowPromptVersionMeta:
+      type: object
+      required:
+        - version
+        - created_at
+        - updated_at
+      properties:
+        version:
+          type: integer
+          description: Version number
+          example: 1
+        commit_message:
+          type: string
+          description: Version commit message
+        aliases:
+          type: array
+          items:
+            type: string
+          description: Aliases pointing to this version
+        tags:
+          type: object
+          additionalProperties:
+            type: string
+          description: Metadata tags
+        created_at:
+          type: string
+          format: date-time
+          description: When this version was created
+        updated_at:
+          type: string
+          format: date-time
+          description: When this version was last updated
+
     Error:
       type: object
       required:
@@ -1196,6 +2082,129 @@ components:
           example: 'llama_stack'
           description: Model owner/provider
 
+    # External Model Request Schema
+    ExternalModelRequest:
+      type: object
+      required:
+        - model_id
+        - model_display_name
+        - base_url
+        - secret_value
+        - model_type
+      properties:
+        model_id:
+          type: string
+          example: 'gpt-4o'
+          description: Unique identifier for the model from the OpenAI-compatible provider
+        model_display_name:
+          type: string
+          example: 'GPT-4 Optimized'
+          description: Human-readable display name for the model
+        base_url:
+          type: string
+          example: 'https://api.openai.com/v1'
+          description: Base URL of the OpenAI-compatible model endpoint
+        secret_value:
+          type: string
+          example: 'sk-your-api-key-here'
+          description: API key or authentication token for the model endpoint
+        use_cases:
+          type: string
+          example: 'Classification, Text Generation'
+          description: Optional use cases or capabilities of the model
+        model_type:
+          type: string
+          enum:
+            - 'llm'
+            - 'embedding'
+          example: 'llm'
+          description: Type of model (LLM or embedding)
+        embedding_dimension:
+          type: integer
+          example: 1536
+          description: Output vector size for embedding models (required for embedding models)
+
+    # Verify External Model Request Schema
+    # Uses oneOf to enforce conditional requirements based on model_type
+    VerifyExternalModelRequest:
+      oneOf:
+        # LLM model verification request
+        - type: object
+          required:
+            - model_id
+            - base_url
+            - secret_value
+            - model_type
+          properties:
+            model_id:
+              type: string
+              example: 'gpt-4o'
+              description: Model identifier to test
+            base_url:
+              type: string
+              example: 'https://api.openai.com/v1'
+              description: Base URL of the API endpoint
+            secret_value:
+              type: string
+              example: 'sk-test-key'
+              description: API key or authentication token
+            model_type:
+              type: string
+              enum:
+                - 'llm'
+              description: Type of model to verify (LLM models use /chat/completions endpoint)
+        # Embedding model verification request
+        - type: object
+          required:
+            - model_id
+            - base_url
+            - secret_value
+            - model_type
+            - embedding_dimension
+          properties:
+            model_id:
+              type: string
+              example: 'text-embedding-3-small'
+              description: Model identifier to test
+            base_url:
+              type: string
+              example: 'https://api.openai.com/v1'
+              description: Base URL of the API endpoint
+            secret_value:
+              type: string
+              example: 'sk-test-key'
+              description: API key or authentication token
+            model_type:
+              type: string
+              enum:
+                - 'embedding'
+              description: Type of model to verify (embedding models use /embeddings endpoint)
+            embedding_dimension:
+              type: integer
+              minimum: 1
+              example: 1536
+              description: Output vector size for embedding models (must be positive integer)
+
+    # Verify External Model Response Schema
+    VerifyExternalModelResponse:
+      type: object
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          example: true
+          description: Whether verification succeeded
+        message:
+          type: string
+          example: 'External model verified successfully'
+          description: Human-readable verification result message
+        response_time_ms:
+          type: integer
+          example: 523
+          description: Time taken for verification request in milliseconds
+
     # AI Assets Model Schema
     AAModel:
       type: object
@@ -1207,6 +2216,7 @@ components:
         - version
         - endpoints
         - status
+        - model_source_type
       properties:
         model_name:
           type: string
@@ -1228,6 +2238,28 @@ components:
           type: string
           example: 'v2025.1'
           description: Version of the model
+        model_source_type:
+          type: string
+          enum:
+            - namespace
+            - custom_endpoint
+            - maas
+          example: 'namespace'
+          description: >-
+            Source type of the model:
+            'namespace' for models in user's namespace (InferenceService/LLMInferenceService),
+            'custom_endpoint' for external model endpoints (user-provided URL),
+            'maas' for Models as a Service
+        model_type:
+          type: string
+          enum:
+            - llm
+            - embedding
+          example: 'llm'
+          description: >-
+            Type of the model:
+            'llm' for large language models,
+            'embedding' for embedding models
         description:
           type: string
           nullable: true
@@ -1249,6 +2281,10 @@ components:
           enum: ['Running', 'Stop']
           example: 'Running'
           description: Current status of the model (Running or Stop)
+        display_name:
+          type: string
+          example: 'Llama 3.2 3B Instruct'
+          description: Human-readable display name for the model
         sa_token:
           $ref: '#/components/schemas/SAToken'
 
@@ -1735,13 +2771,10 @@ components:
           format: uri
           example: 'http://127.0.0.1:13080/sse'
           description: URL endpoint for the MCP server
-        headers:
-          type: object
-          additionalProperties:
-            type: string
-          example:
-            Authorization: 'Bearer slack_token_123'
-          description: Custom headers for MCP server authentication
+        authorization:
+          type: string
+          example: 'slack_token_123'
+          description: OAuth access token for MCP server authentication
         allowed_tools:
           type: array
           items:
@@ -1759,8 +2792,7 @@ components:
       example:
         server_label: 'slack'
         server_url: 'http://127.0.0.1:13080/sse'
-        headers:
-          Authorization: 'Bearer slack_token_123'
+        authorization: 'slack_token_123'
         allowed_tools: ['send_message', 'get_channel_history']
 
     # Response Creation Schema
@@ -1844,16 +2876,13 @@ components:
             - server_label: 'slack'
               server_url: 'http://127.0.0.1:13080/sse'
               allowed_tools: ['send_message', 'get_channel_history']
-              headers:
-                Authorization: 'Bearer slack_token_123'
+              authorization: 'slack_token_123'
             - server_label: 'github'
               server_url: 'http://127.0.0.1:14080/sse'
               allowed_tools: ['get_latest_release']
-              headers:
-                Authorization: 'Bearer github_token_456'
-                X-API-Version: 'v1'
+              authorization: 'github_token_456'
           description: >-
-            MCP server configurations for external tool access. Each server can have its own authentication headers and provides multiple tools.
+            MCP server configurations for external tool access. Each server can have its own authorization token and provides multiple tools.
             Use the allowed_tools field within each MCP server config to restrict which tools can be used from that server.
         previous_response_id:
           type: string
@@ -1905,6 +2934,12 @@ components:
             Reference to the previous response ID in the conversation thread.
             Only present when the request included a previous_response_id parameter.
             Enables conversation continuity and thread tracking.
+        metrics:
+          $ref: '#/components/schemas/ResponseMetrics'
+          description: >-
+            Response metrics including latency and token usage.
+            Present in non-streaming responses. For streaming responses,
+            metrics are sent as a separate response.metrics event.
 
     OutputItem:
       type: object
@@ -2012,6 +3047,65 @@ components:
           type: string
           example: 'document.pdf'
           description: Source filename (if available)
+
+    # Response Metrics Schemas
+    ResponseMetrics:
+      type: object
+      required:
+        - latency_ms
+      properties:
+        latency_ms:
+          type: integer
+          format: int64
+          example: 1523
+          description: Total response time in milliseconds from request start to completion
+        time_to_first_token_ms:
+          type: integer
+          format: int64
+          example: 892
+          description: >-
+            Time to first token in milliseconds (streaming responses only).
+            Measures time from request start to the first text delta received.
+            Not present for non-streaming responses.
+        usage:
+          $ref: '#/components/schemas/UsageData'
+          description: Token usage information from the model
+
+    UsageData:
+      type: object
+      required:
+        - input_tokens
+        - output_tokens
+        - total_tokens
+      properties:
+        input_tokens:
+          type: integer
+          example: 150
+          description: Number of tokens in the input/prompt
+        output_tokens:
+          type: integer
+          example: 500
+          description: Number of tokens in the generated output
+        total_tokens:
+          type: integer
+          example: 650
+          description: Total tokens used (input + output)
+
+    # Metrics Event Schema (for streaming responses)
+    MetricsEvent:
+      type: object
+      required:
+        - type
+        - metrics
+      properties:
+        type:
+          type: string
+          enum: [response.metrics]
+          example: 'response.metrics'
+          description: Event type identifier
+        metrics:
+          $ref: '#/components/schemas/ResponseMetrics'
+          description: Response metrics data
 
     # Streaming Event Schema
     StreamingEvent:
@@ -2156,8 +3250,7 @@ components:
           example:
             - server_label: 'slack'
               server_url: 'http://127.0.0.1:13080/sse'
-              headers:
-                Authorization: 'Bearer slack_token_123'
+              authorization: 'slack_token_123'
           description: MCP server configurations for tool integration
         tools:
           type: array
@@ -2301,6 +3394,55 @@ components:
         distributionConfig:
           $ref: '#/components/schemas/DistributionConfig'
 
+    # GuardrailsOrchestrator Schema
+    GuardrailsStatus:
+      type: object
+      required:
+        - name
+        - phase
+      properties:
+        name:
+          type: string
+          example: 'guardrails-orchestrator'
+          description: Name of the GuardrailsOrchestrator resource
+        phase:
+          type: string
+          example: 'Ready'
+          description: Current phase of the GuardrailsOrchestrator (e.g., Ready, Progressing, Failed)
+        conditions:
+          type: array
+          items:
+            $ref: '#/components/schemas/GuardrailsCondition'
+          description: List of conditions for the GuardrailsOrchestrator
+
+    GuardrailsCondition:
+      type: object
+      required:
+        - type
+        - status
+      properties:
+        type:
+          type: string
+          example: 'Progressing'
+          description: Type of the condition (e.g., Progressing, DeploymentReady, RouteReady, ReconcileComplete)
+        status:
+          type: string
+          example: 'True'
+          description: Status of the condition (True, False, Unknown)
+        reason:
+          type: string
+          example: 'ReconcileInit'
+          description: Machine-readable reason for the condition
+        message:
+          type: string
+          example: 'Initializing GuardrailsOrchestrator resource'
+          description: Human-readable message explaining the condition
+        lastTransitionTime:
+          type: string
+          format: date-time
+          example: '2024-01-15T10:30:00Z'
+          description: Last time the condition transitioned
+
     BFFConfigModel:
       type: object
       required:
@@ -2323,27 +3465,52 @@ components:
           description: List of models to include in the LSD installation
           example:
             - model_name: 'llama-3-2-3b-instruct'
-              is_maas_model: false
+              model_source_type: 'namespace'
             - model_name: 'facebook/opt-125m'
-              is_maas_model: true
+              model_source_type: 'maas'
           minItems: 1
+        enable_guardrails:
+          type: boolean
+          description: |
+            If true, adds safety configuration with guardrail input and output shields
+            for all selected models. Input shields include jailbreak, content-moderation, and pii.
+            Output shields include content-moderation and pii.
+          example: true
+          default: false
 
     InstallModel:
       type: object
       required:
         - model_name
-        - is_maas_model
+        - model_source_type
       properties:
         model_name:
           type: string
           description: |
             Name of the model to install. For MaaS models, this must be the exact MaaS model ID
-            (e.g., 'facebook/opt-125m'). For regular models, this is the Kubernetes resource name.
+            (e.g., 'facebook/opt-125m'). For namespace models, this is the Kubernetes resource name.
+            For external models, this is the model identifier from the external provider.
           example: 'llama-3-2-3b-instruct'
-        is_maas_model:
-          type: boolean
-          description: Whether this is a MaaS (Model as a Service) model
-          example: false
+        model_source_type:
+          type: string
+          enum:
+            - namespace
+            - custom_endpoint
+            - maas
+          description: |
+            Source type of the model (required):
+            - namespace: Model deployed in the same Kubernetes namespace
+            - custom_endpoint: External model endpoint (user-provided URL)
+            - maas: Model from Model as a Service (MaaS) platform
+          example: 'namespace'
+        max_tokens:
+          type: integer
+          description: |
+            Optional maximum token limit for this model's context window.
+            Must be between 128 and 128,000 tokens. If not specified, a default value will be used.
+          minimum: 128
+          maximum: 128000
+          example: 8192
 
     LlamaStackDistributionInstallModel:
       type: object
@@ -2714,7 +3881,7 @@ components:
           example: 2
           description: Total number of MCP servers in the ConfigMap
         config_map_info:
-          $ref: '#/components/schemas/MCPConfigMapInfo'
+          $ref: '#/components/schemas/ConfigMapInfo'
           description: Metadata about the source ConfigMap
 
     MCPServerSummary:
@@ -2756,7 +3923,7 @@ components:
           example: 'healthy'
           description: Server status based on ConfigMap data only (no MCP calls made)
 
-    MCPConfigMapInfo:
+    ConfigMapInfo:
       type: object
       required:
         - name
@@ -2765,17 +3932,77 @@ components:
       properties:
         name:
           type: string
-          example: 'gen-ai-aa-mcp-servers-e'
-          description: Name of the ConfigMap containing MCP server configurations
+          example: 'gen-ai-aa-vector-stores'
+          description: Name of the source ConfigMap
         namespace:
           type: string
-          example: 'mcp-servers'
+          example: 'llama-stack'
           description: Kubernetes namespace containing the ConfigMap
         last_updated:
           type: string
           format: date-time
           example: '2024-01-15T10:30:00Z'
           description: ISO 8601 timestamp when the ConfigMap was last updated
+
+    ExternalVectorStoreSummary:
+      type: object
+      required:
+        - vector_store_id
+        - vector_store_name
+        - provider_id
+        - provider_type
+        - embedding_model
+        - embedding_dimension
+      properties:
+        vector_store_id:
+          type: string
+          example: 'vs_282695f8-7e3e-48da-abac-d81a0aa225a4'
+          description: Unique identifier of the vector store collection
+        vector_store_name:
+          type: string
+          example: 'Product Docs RAG Store'
+          description: Human-readable name of the vector store
+        provider_id:
+          type: string
+          example: 'pgvector-provider-1'
+          description: Provider ID from the providers section of the ConfigMap
+        provider_type:
+          type: string
+          example: 'remote::pgvector'
+          description: Vector store provider type resolved from the providers section (e.g., remote::pgvector, remote::qdrant, remote::milvus)
+        embedding_model:
+          type: string
+          example: 'ibm-granite/granite-embedding-125m-english'
+          description: Embedding model identifier used for ingestion
+        embedding_dimension:
+          type: integer
+          example: 768
+          description: Embedding vector dimension
+        description:
+          type: string
+          example: 'Vector store for product documentation'
+          description: Description of the vector store purpose
+
+
+    ExternalVectorStoresListData:
+      type: object
+      required:
+        - vector_stores
+        - total_count
+        - config_map_info
+      properties:
+        vector_stores:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalVectorStoreSummary'
+          description: Array of external vector store summaries
+        total_count:
+          type: integer
+          example: 3
+          description: Total number of external vector stores
+        config_map_info:
+          $ref: '#/components/schemas/ConfigMapInfo'
+          description: Metadata about the source ConfigMap
 
     MCPServerStatus:
       type: object
@@ -2889,6 +4116,100 @@ components:
             properties:
               data:
                 $ref: '#/components/schemas/AAModelsData'
+
+    ExternalModelCreatedResponse:
+      description: External model created successfully
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: '#/components/schemas/AAModel'
+          example:
+            data:
+              model_name: 'gpt-4o'
+              model_id: 'gpt-4o'
+              serving_runtime: 'remote::openai'
+              api_protocol: 'REST'
+              version: ''
+              model_source_type: 'custom_endpoint'
+              model_type: 'llm'
+              usecase: 'Classification, Text Generation'
+              description: ''
+              endpoints:
+                - 'https://api.openai.com/v1'
+              status: 'Running'
+              display_name: 'GPT-4 Optimized'
+              sa_token:
+                name: ''
+                token_name: ''
+                token: ''
+
+    AAVectorStoresResponse:
+      description: List of external vector stores as a flat array
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ExternalVectorStoreSummary'
+          example:
+            data:
+              - vector_store_id: 'vs_282695f8-7e3e-48da-abac-d81a0aa225a4'
+                vector_store_name: 'Product Docs RAG Store'
+                provider_id: 'pgvector-provider-1'
+                provider_type: 'remote::pgvector'
+                embedding_model: 'ibm-granite/granite-embedding-125m-english'
+                embedding_dimension: 768
+                description: 'Vector store for product documentation'
+
+    ExternalVectorStoresListResponse:
+      description: List of external vector stores with ConfigMap metadata
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: '#/components/schemas/ExternalVectorStoresListData'
+          examples:
+            success_response:
+              summary: Successful External Vector Stores List
+              value:
+                data:
+                  vector_stores:
+                    - vector_store_id: 'vs_282695f8-7e3e-48da-abac-d81a0aa225a4'
+                      vector_store_name: 'Product Docs RAG Store'
+                      provider_id: 'pgvector-provider-1'
+                      provider_type: 'remote::pgvector'
+                      embedding_model: 'ibm-granite/granite-embedding-125m-english'
+                      embedding_dimension: 768
+                      description: 'Vector store for product documentation'
+                  total_count: 1
+                  config_map_info:
+                    name: 'gen-ai-aa-vector-stores'
+                    namespace: 'llama-stack'
+                    last_updated: '2026-02-19T07:32:38Z'
+            empty_response:
+              summary: Empty ConfigMap
+              value:
+                data:
+                  vector_stores: []
+                  total_count: 0
+                  config_map_info:
+                    name: 'gen-ai-aa-vector-stores'
+                    namespace: 'llama-stack'
+                    last_updated: '2026-02-19T07:32:38Z'
 
     VectorStoresResponse:
       description: List of vector stores with pagination support
@@ -3158,6 +4479,33 @@ components:
                         status: 'healthy'
                         message: 'Provider is responding normally'
 
+    GuardrailsStatusResponse:
+      description: GuardrailsOrchestrator status information
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: '#/components/schemas/GuardrailsStatus'
+            example:
+              data:
+                name: 'guardrails-orchestrator'
+                phase: 'Ready'
+                conditions:
+                  - type: 'Progressing'
+                    status: 'True'
+                    reason: 'ReconcileInit'
+                    message: 'Initializing GuardrailsOrchestrator resource'
+                    lastTransitionTime: '2024-01-15T10:30:00Z'
+                  - type: 'DeploymentReady'
+                    status: 'True'
+                    reason: 'DeploymentReady'
+                    message: 'Deployment is ready'
+                    lastTransitionTime: '2024-01-15T10:31:00Z'
+
     LlamaStackDistributionInstallResponse:
       description: LlamaStack Distribution installation result
       content:
@@ -3424,6 +4772,7 @@ components:
         When RAG (vector stores) are used, file search tool calls appear as separate events in the stream.
         When MCP tools are configured, mcp_list_tools and mcp_call events appear in the stream showing real-time tool execution.
         Stream format follows LlamaStack SSE specification with 'data:' prefix for each event.
+        After stream completion, a response.metrics event is sent with timing and usage data.
       content:
         text/event-stream:
           schema:
@@ -3438,6 +4787,7 @@ components:
               - response.output_text.delta: Individual token streaming with delta text
               - response.content_part.done: Content part completion
               - response.completed: Final clean response with complete output array (messages, tool calls, MCP interactions)
+              - response.metrics: Final metrics event with latency_ms, time_to_first_token_ms, and usage data
               All events use the same ResponseData structure as non-streaming responses.
           example: |
             data: {"delta":"","sequence_number":0,"type":"response.created","item_id":"","output_index":0,"response":{"id":"resp-635179f7-9f1a-4c58-8196-5ee4c41d00da","model":"ollama/llama3.2:latest","status":"in_progress","created_at":1758128692}}
@@ -3455,6 +4805,8 @@ components:
             data: {"delta":"","sequence_number":6,"type":"response.content_part.done","item_id":"msg_23003d3c-bff4-4f47-a06e-befb4d95b7d4","output_index":0}
 
             data: {"delta":"","sequence_number":0,"type":"response.completed","item_id":"","output_index":0,"response":{"id":"resp-635179f7-9f1a-4c58-8196-5ee4c41d00da","model":"ollama/llama3.2:latest","status":"completed","created_at":1758128692,"output":[{"id":"mcp_list_76f81e82-3142-41af-8462-8d7ef3975517","type":"mcp_list_tools","role":"assistant","server_label":"github","output":""},{"id":"call_stl5xt0s","type":"mcp_call","role":"assistant","server_label":"github","arguments":"{\"owner\":\"llamastack\",\"repo\":\"llama-stack\"}","name":"get_latest_release","output":"{\"tag_name\":\"1.104.0\"}"},{"id":"msg_6cb0269f-0cec-405d-af61-4e5ac01ea2b5","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"The latest release is version 1.104.0"}]}]}}
+
+            data: {"type":"response.metrics","metrics":{"latency_ms":2341,"time_to_first_token_ms":892,"usage":{"input_tokens":150,"output_tokens":500,"total_tokens":650}}}
 
     BadRequest:
       description: Bad Request - Invalid parameters, missing required fields, or malformed MCP Bearer token
@@ -3547,6 +4899,13 @@ tags:
       AI response generation with comprehensive parameter support
 
   # =============================================================================
+  # GUARDRAILS OPERATIONS
+  # =============================================================================
+  - name: Guardrails
+    description: |
+      GuardrailsOrchestrator status and management operations for AI safety
+
+  # =============================================================================
   # VECTOR STORE OPERATIONS
   # =============================================================================
   - name: VectorStores
@@ -3579,3 +4938,5 @@ tags:
   # =============================================================================
   - name: MCP
     description: Model Context Protocol (MCP) server management and tool discovery
+  - name: MLflow
+    description: MLflow Prompt Registry operations for listing and discovering registered prompts

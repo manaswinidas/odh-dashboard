@@ -4,16 +4,21 @@ import { SupportedArea, SupportedAreasState, DataScienceStackComponent } from '.
 export const techPreviewFlags = {
   disableModelRegistry: true,
   genAiStudio: false,
+  automl: false,
+  autorag: false,
   modelAsService: false,
+  aiAssetCustomEndpoints: false,
   mlflow: false,
-  projectRBAC: false,
+  mcpCatalog: false,
+  projectRBAC: true,
   observabilityDashboard: false,
+  deploymentWizardYAMLViewer: false,
+  vLLMDeploymentOnMaaS: false,
 } satisfies Partial<DashboardCommonConfig>;
 
 export const devTemporaryFeatureFlags = {
   disableKueue: true,
   disableProjectScoped: true,
-  embedMLflow: false,
 } satisfies Partial<DashboardCommonConfig>;
 
 // Group 1: Core Dashboard Features
@@ -50,6 +55,7 @@ export const modelServingFlags = {
   disableNIMModelServing: false,
   disablePerformanceMetrics: false,
   disableTrustyBiasMetrics: false,
+  disableLLMd: false,
 } satisfies Partial<DashboardCommonConfig>;
 
 // Group 4: Advanced AI/ML Features & Pipelines
@@ -120,6 +126,10 @@ export const SupportedAreasStateMap: SupportedAreasState = {
     featureFlags: ['disableKServeRaw'],
     reliantAreas: [SupportedArea.K_SERVE, SupportedArea.MODEL_SERVING],
   },
+  [SupportedArea.LLMD_SERVING]: {
+    featureFlags: ['disableLLMd'],
+    reliantAreas: [SupportedArea.K_SERVE, SupportedArea.MODEL_SERVING],
+  },
   [SupportedArea.MODEL_SERVING]: {
     featureFlags: ['disableModelServing'],
   },
@@ -154,6 +164,10 @@ export const SupportedAreasStateMap: SupportedAreasState = {
   },
   [SupportedArea.MODEL_CATALOG]: {
     featureFlags: ['disableModelCatalog'],
+    reliantAreas: [SupportedArea.MODEL_REGISTRY],
+  },
+  [SupportedArea.MCP_CATALOG]: {
+    featureFlags: ['mcpCatalog'],
     reliantAreas: [SupportedArea.MODEL_REGISTRY],
   },
   [SupportedArea.MODEL_REGISTRY]: {
@@ -195,14 +209,22 @@ export const SupportedAreasStateMap: SupportedAreasState = {
     featureFlags: ['trainingJobs'],
     requiredComponents: [DataScienceStackComponent.TRAINER],
   },
+  [SupportedArea.RAY_JOBS]: {
+    featureFlags: ['trainingJobs'],
+    requiredComponents: [DataScienceStackComponent.RAY],
+  },
   [SupportedArea.MLFLOW]: {
     featureFlags: ['mlflow'],
   },
   [SupportedArea.PROJECT_RBAC_SETTINGS]: {
     featureFlags: ['projectRBAC'],
   },
-  [SupportedArea.EMBED_MLFLOW]: {
-    featureFlags: ['embedMLflow'],
+  [SupportedArea.YAML_VIEWER]: {
+    featureFlags: ['deploymentWizardYAMLViewer'],
+    reliantAreas: [SupportedArea.LLMD_SERVING],
+  },
+  [SupportedArea.VLLM_ON_MAAS]: {
+    featureFlags: ['vLLMDeploymentOnMaaS'],
   },
 };
 

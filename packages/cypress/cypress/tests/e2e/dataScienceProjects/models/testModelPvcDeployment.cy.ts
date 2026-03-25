@@ -1,4 +1,7 @@
-import { ModelTypeLabel } from '@odh-dashboard/model-serving/components/deploymentWizard/types';
+import {
+  ModelLocationSelectOption,
+  ModelTypeLabel,
+} from '@odh-dashboard/model-serving/types/form-data';
 import {
   modelServingGlobal,
   modelServingSection,
@@ -10,9 +13,9 @@ import {
   provisionProjectForModelServing,
   verifyS3CopyCompleted,
 } from '../../../../utils/oc_commands/modelServing';
-import { deleteOpenShiftProject } from '../../../../utils/oc_commands/project';
+import { addUserToProject, deleteOpenShiftProject } from '../../../../utils/oc_commands/project';
 import { loadDSPFixture } from '../../../../utils/dataLoader';
-import { HTPASSWD_CLUSTER_ADMIN_USER } from '../../../../utils/e2eUsers';
+import { HTPASSWD_CLUSTER_ADMIN_USER, LDAP_CONTRIBUTOR_USER } from '../../../../utils/e2eUsers';
 import { retryableBefore } from '../../../../utils/retryableHooks';
 import { projectListPage, projectDetails } from '../../../../pages/projects';
 import { generateTestUUID } from '../../../../utils/uuidGenerator';
@@ -20,12 +23,17 @@ import type { DataScienceProjectData, PVCLoaderPodReplacements } from '../../../
 import { clusterStorage, addClusterStorageModal } from '../../../../pages/clusterStorage';
 import { createS3LoaderPod } from '../../../../utils/oc_commands/pvcLoaderPod';
 import { waitForPodCompletion } from '../../../../utils/oc_commands/baseCommands';
+import { skipSuiteIfBYOIDC, isBYOIDCCluster } from '../../../../utils/skipUtils';
+import { attemptToClickTooltip } from '../../../../utils/models';
 
 let testData: DataScienceProjectData;
 let projectName: string;
 let modelName: string;
 let modelFilePath: string;
 let pvStorageName: string;
+let modelFormat: string;
+let servingRuntime: string;
+let contributor: string;
 const awsBucket = 'BUCKET_1' as const;
 const awsAccessKeyId = AWS_BUCKETS.AWS_ACCESS_KEY_ID;
 const awsSecretAccessKey = AWS_BUCKETS.AWS_SECRET_ACCESS_KEY;
@@ -35,7 +43,9 @@ const awsBucketRegion = AWS_BUCKETS.BUCKET_1.REGION;
 const podName = 'pvc-loader-pod';
 const uuid = generateTestUUID();
 
-describe('[Product Bug: RHOAIENG-41827] Verify a model can be deployed from a PVC', () => {
+describe('Verify a contributor can deploy a model from a PVC', () => {
+  skipSuiteIfBYOIDC('PVC loader pod creation not supported on BYOIDC clusters');
+
   retryableBefore(() => {
     Cypress.on('uncaught:exception', (err) => {
       if (err.message.includes('Error: secrets "ds-pipeline-config" already exists')) {
@@ -50,28 +60,36 @@ describe('[Product Bug: RHOAIENG-41827] Verify a model can be deployed from a PV
         modelName = testData.singleModelName;
         modelFilePath = testData.modelOpenVinoExamplePath;
         pvStorageName = testData.pvStorageName;
+        modelFormat = testData.modelFormat;
+        servingRuntime = testData.servingRuntime;
+        contributor = LDAP_CONTRIBUTOR_USER.USERNAME;
 
         if (!projectName) {
           throw new Error('Project name is undefined or empty in the loaded fixture');
         }
-        // Create a Project for pipelines
+        // Create a Project for model serving and add contributor
         provisionProjectForModelServing(projectName, awsBucket);
+        addUserToProject(projectName, contributor, 'edit');
       },
     );
   });
   after(() => {
+    if (isBYOIDCCluster()) {
+      cy.log('Skipping cleanup - tests were skipped on BYOIDC cluster');
+      return;
+    }
     // Delete provisioned Project
     deleteOpenShiftProject(projectName, { wait: false, ignoreNotFound: true });
   });
   it(
-    'should deploy a model from a PVC',
-    { tags: ['@Smoke', '@SmokeSet3', '@Dashboard', '@ModelServing', '@Bug'] },
+    'Admin creates PVC with model, Contributor deploys from PVC and verifies deployment',
+    { tags: ['@Smoke', '@SmokeSet3', '@Dashboard', '@ModelServing', '@ODS-2552'] },
     () => {
-      cy.step(`log into application with ${HTPASSWD_CLUSTER_ADMIN_USER.USERNAME}`);
+      cy.step('Log into the application as admin');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
 
       // Navigate to the project
-      cy.step('Navigate to the project');
+      cy.step('Navigate to the project as admin');
       projectListPage.visit();
       projectListPage.filterProjectByName(projectName);
       projectListPage.findProjectLink(projectName).click();
@@ -120,8 +138,18 @@ describe('[Product Bug: RHOAIENG-41827] Verify a model can be deployed from a PV
       cy.step('Verify S3 copy completed');
       verifyS3CopyCompleted(podName, projectName);
 
-      // Deploy the model
-      cy.step('Deploy the model');
+      // Now switch to contributor user to deploy the model
+      cy.step('Log out admin and log in as contributor');
+      cy.visitWithLogin('/', LDAP_CONTRIBUTOR_USER);
+
+      // Navigate to the project as contributor
+      cy.step('Navigate to the project as contributor');
+      projectListPage.navigate();
+      projectListPage.filterProjectByName(projectName);
+      projectListPage.findProjectLink(projectName).click();
+
+      // Deploy the model as contributor
+      cy.step('Deploy the model from PVC as contributor');
       projectDetails.findSectionTab('model-server').click();
       // If we have only one serving model platform, then it is selected by default.
       // So we don't need to click the button.
@@ -129,7 +157,7 @@ describe('[Product Bug: RHOAIENG-41827] Verify a model can be deployed from a PV
       modelServingGlobal.findDeployModelButton().click();
 
       cy.step('Step 1: Model details');
-      modelServingWizard.findModelLocationSelectOption('Cluster storage').click();
+      modelServingWizard.findModelLocationSelectOption(ModelLocationSelectOption.PVC).click();
       // There's only one PVC so it's automatically selected
       modelServingWizard.findLocationPathInput().should('have.value', modelFilePath);
       modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.PREDICTIVE).click();
@@ -137,8 +165,14 @@ describe('[Product Bug: RHOAIENG-41827] Verify a model can be deployed from a PV
 
       cy.step('Step 2: Model deployment');
       modelServingWizard.findModelDeploymentNameInput().clear().type(modelName);
-      modelServingWizard.findModelFormatSelectOption('openvino_ir - opset13').click();
-      modelServingWizard.selectServingRuntimeOption('OpenVINO Model Server');
+      modelServingWizard.findResourceNameButton().click();
+      modelServingWizard
+        .findResourceNameInput()
+        .should('be.visible')
+        .invoke('val')
+        .as('resourceName');
+      modelServingWizard.findModelFormatSelectOption(modelFormat).click();
+      modelServingWizard.selectServingRuntimeOption(servingRuntime);
       modelServingWizard.findNextButton().click();
 
       cy.step('Step 3: Advanced settings');
@@ -146,12 +180,17 @@ describe('[Product Bug: RHOAIENG-41827] Verify a model can be deployed from a PV
 
       cy.step('Step 4: Review');
       modelServingWizard.findSubmitButton().click();
-      modelServingSection.findModelServerDeployedName(testData.singleModelName);
-      //Verify the model created and is running
+      modelServingSection.findModelServerDeployedName(modelName);
+
+      // Verify the model created and is running
       cy.step('Verify that the Model is running');
       // Verify model deployment is ready
-      checkInferenceServiceState(testData.singleModelName, projectName, { checkReady: true });
-      cy.reload();
+      cy.get<string>('@resourceName').then((resourceName) => {
+        checkInferenceServiceState(resourceName, projectName, { checkReady: true });
+      });
+      modelServingSection.findModelMetricsLink(modelName);
+      // Note reload is required as status tooltip was not found due to a stale element
+      attemptToClickTooltip();
     },
   );
 });

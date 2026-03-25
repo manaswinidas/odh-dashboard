@@ -3,8 +3,12 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { z } from 'zod';
 import { useWizardContext, useWizardFooter } from '@patternfly/react-core';
 import { renderHook } from '@odh-dashboard/jest-config/hooks';
-import { KnownLabels } from '@odh-dashboard/internal/k8sTypes';
-import { ConnectionTypeConfigMapObj } from '@odh-dashboard/internal/concepts/connectionTypes/types';
+import { KnownLabels, PersistentVolumeClaimKind } from '@odh-dashboard/internal/k8sTypes';
+import {
+  ConnectionTypeConfigMapObj,
+  Connection,
+} from '@odh-dashboard/internal/concepts/connectionTypes/types';
+import { mockPVCK8sResource } from '@odh-dashboard/internal/__mocks__/mockPVCK8sResource';
 import { ModelLocationData, ModelLocationType } from '../../types';
 import { isValidModelLocationData, useModelLocationData } from '../ModelLocationInputFields';
 import { ModelLocationSelectField } from '../ModelLocationSelectField';
@@ -206,6 +210,23 @@ const mockConnectionTypes: ConnectionTypeConfigMapObj[] = [
 jest.mock('@odh-dashboard/internal/utilities/useWatchConnectionTypes', () => ({
   useWatchConnectionTypes: () => [mockConnectionTypes, true],
 }));
+
+const mockConnections: Connection[] = [];
+const mockPvcs: PersistentVolumeClaimKind[] = [];
+
+jest.mock('@odh-dashboard/internal/pages/modelServing/usePvcs', () => ({
+  __esModule: true,
+  default: jest.fn(() => ({ data: mockPvcs, loaded: true, error: undefined })),
+}));
+
+jest.mock(
+  '@odh-dashboard/internal/pages/projects/screens/detail/connections/useServingConnections',
+  () => ({
+    __esModule: true,
+    default: jest.fn(() => [mockConnections, true]),
+  }),
+);
+
 describe('ModelLocationSelectField', () => {
   const mockWizardContext = {
     activeStep: { index: 1, name: 'test-step', id: 'test-step', parentId: undefined },
@@ -404,8 +425,11 @@ describe('ModelLocationSelectField', () => {
       render(
         <ModelLocationSelectField
           setModelLocationData={mockSetModelLocationData}
-          projectName={undefined}
           resetModelLocationData={jest.fn()}
+          connections={mockConnections}
+          setSelectedConnection={jest.fn()}
+          selectedConnection={undefined}
+          pvcs={mockPvcs}
         />,
       );
       expect(screen.getByRole('button')).toBeInTheDocument();
@@ -416,8 +440,10 @@ describe('ModelLocationSelectField', () => {
         <ModelLocationSelectField
           modelLocation={ModelLocationType.NEW}
           setModelLocationData={mockSetModelLocationData}
-          projectName={undefined}
           resetModelLocationData={jest.fn()}
+          connections={mockConnections}
+          setSelectedConnection={jest.fn()}
+          selectedConnection={undefined}
           modelLocationData={{
             type: ModelLocationType.NEW,
             fieldValues: { URI: 'uri://test' },
@@ -434,6 +460,7 @@ describe('ModelLocationSelectField', () => {
               },
             },
           }}
+          pvcs={mockPvcs}
         />,
       );
       expect(screen.getByTestId('model-location-select')).toBeInTheDocument();
@@ -444,14 +471,17 @@ describe('ModelLocationSelectField', () => {
         <ModelLocationSelectField
           modelLocation={ModelLocationType.NEW}
           setModelLocationData={mockSetModelLocationData}
-          projectName={undefined}
           resetModelLocationData={jest.fn()}
+          connections={mockConnections}
+          setSelectedConnection={jest.fn()}
+          selectedConnection={undefined}
           modelLocationData={{
             type: ModelLocationType.NEW,
             fieldValues: {},
             additionalFields: {},
             connectionTypeObject: undefined,
           }}
+          pvcs={mockPvcs}
         />,
       );
       const button = screen.getByTestId('model-location-select');
@@ -484,14 +514,17 @@ describe('ModelLocationSelectField', () => {
         <ModelLocationSelectField
           modelLocation={ModelLocationType.NEW}
           setModelLocationData={mockSetModelLocationData}
-          projectName={undefined}
           resetModelLocationData={jest.fn()}
+          connections={mockConnections}
+          setSelectedConnection={jest.fn()}
+          selectedConnection={undefined}
           modelLocationData={{
             type: ModelLocationType.NEW,
             fieldValues: { URI: 'https://test' },
             additionalFields: {},
             connectionTypeObject: mockConnectionTypes[0],
           }}
+          pvcs={mockPvcs}
         />,
       );
       const uriInput = screen.getByTestId('field URI');
@@ -513,8 +546,10 @@ describe('ModelLocationSelectField', () => {
         <ModelLocationSelectField
           modelLocation={ModelLocationType.NEW}
           setModelLocationData={mockSetModelLocationData}
-          projectName={undefined}
           resetModelLocationData={jest.fn()}
+          connections={mockConnections}
+          setSelectedConnection={jest.fn()}
+          selectedConnection={undefined}
           modelLocationData={{
             type: ModelLocationType.NEW,
             fieldValues: {
@@ -527,6 +562,7 @@ describe('ModelLocationSelectField', () => {
             additionalFields: { modelPath: 'path' },
             connectionTypeObject: mockConnectionTypes[1],
           }}
+          pvcs={mockPvcs}
         />,
       );
       const s3Input = screen.getByTestId('field AWS_S3_BUCKET');
@@ -553,8 +589,10 @@ describe('ModelLocationSelectField', () => {
         <ModelLocationSelectField
           modelLocation={ModelLocationType.NEW}
           setModelLocationData={mockSetModelLocationData}
-          projectName={undefined}
           resetModelLocationData={jest.fn()}
+          connections={mockConnections}
+          setSelectedConnection={jest.fn()}
+          selectedConnection={undefined}
           modelLocationData={{
             type: ModelLocationType.NEW,
             fieldValues: {
@@ -565,6 +603,7 @@ describe('ModelLocationSelectField', () => {
             additionalFields: { modelUri: 'oci://test' },
             connectionTypeObject: mockConnectionTypes[2],
           }}
+          pvcs={mockPvcs}
         />,
       );
       const ociInput = screen.getByTestId('field OCI_HOST');
@@ -585,14 +624,17 @@ describe('ModelLocationSelectField', () => {
         <ModelLocationSelectField
           modelLocation={ModelLocationType.NEW}
           setModelLocationData={mockSetModelLocationData}
-          projectName={undefined}
           resetModelLocationData={jest.fn()}
+          connections={mockConnections}
+          setSelectedConnection={jest.fn()}
+          selectedConnection={undefined}
           modelLocationData={{
             type: ModelLocationType.NEW,
             fieldValues: {},
             additionalFields: {},
             connectionTypeObject: undefined,
           }}
+          pvcs={mockPvcs}
         />,
       );
       const modalLocationSelect = screen.getByTestId('model-location-select');
@@ -630,9 +672,12 @@ describe('ModelLocationSelectField', () => {
         <ModelLocationSelectField
           modelLocation={ModelLocationType.NEW}
           setModelLocationData={mockSetModelLocationData}
-          projectName={undefined}
           resetModelLocationData={jest.fn()}
           modelLocationData={newData}
+          connections={mockConnections}
+          setSelectedConnection={jest.fn()}
+          selectedConnection={undefined}
+          pvcs={mockPvcs}
         />,
       );
       expect(screen.getByTestId('field CUSTOM_URI_FIELD')).toBeInTheDocument();
@@ -647,6 +692,163 @@ describe('ModelLocationSelectField', () => {
         fieldValues: { CUSTOM_URI_FIELD: 'https://newtest' },
         additionalFields: {},
       });
+    });
+    it('should not show the existing connection option if the project has no connections', async () => {
+      mockConnections.length = 0;
+      render(
+        <ModelLocationSelectField
+          setModelLocationData={mockSetModelLocationData}
+          resetModelLocationData={jest.fn()}
+          connections={mockConnections}
+          setSelectedConnection={jest.fn()}
+          selectedConnection={undefined}
+          pvcs={mockPvcs}
+        />,
+      );
+      const button = screen.getByTestId('model-location-select');
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      expect(screen.queryByRole('option', { name: 'Existing connection' })).not.toBeInTheDocument();
+    });
+    it('should not show the existing connection option if the deployment uses a generated secret and the project has no other connections', async () => {
+      const mockGeneratedURIConnection = {
+        apiVersion: 'v1',
+        kind: 'Secret',
+        metadata: {
+          name: 'secret-k6kilc', // generated secret name
+          namespace: 'test-project',
+          labels: {
+            [KnownLabels.DASHBOARD_RESOURCE]: 'true',
+          },
+          annotations: {
+            'opendatahub.io/connection-type': 'uri',
+            'opendatahub.io/connection-type-protocol': 'uri',
+            'openshift.io/display-name': 'secret-k6kilc',
+          },
+        },
+        data: {
+          URI: btoa('https://test.io/organization/test-model:latest'),
+        },
+      } as Connection;
+      mockConnections.length = 0;
+      mockConnections.push(mockGeneratedURIConnection);
+      render(
+        <ModelLocationSelectField
+          setModelLocationData={mockSetModelLocationData}
+          resetModelLocationData={jest.fn()}
+          connections={mockConnections}
+          setSelectedConnection={jest.fn()}
+          selectedConnection={undefined}
+          pvcs={mockPvcs}
+        />,
+      );
+      const button = screen.getByTestId('model-location-select');
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      expect(screen.queryByRole('option', { name: 'Existing connection' })).not.toBeInTheDocument();
+    });
+    it('should show the existing connection option if the deployment uses a generated secret and the project has other connections', async () => {
+      const mockGeneratedURIConnection = {
+        apiVersion: 'v1',
+        kind: 'Secret',
+        metadata: {
+          name: 'secret-k6kilc', // generated secret name
+          namespace: 'test-project',
+          labels: {
+            [KnownLabels.DASHBOARD_RESOURCE]: 'true',
+          },
+          annotations: {
+            'opendatahub.io/connection-type': 'uri',
+            'opendatahub.io/connection-type-protocol': 'uri',
+            'openshift.io/display-name': 'secret-k6kilc',
+          },
+        },
+        data: {
+          URI: btoa('https://test.io/organization/test-model:latest'),
+        },
+      } as Connection;
+      const mockOtherConnection = {
+        apiVersion: 'v1',
+        kind: 'Secret',
+        metadata: {
+          name: 'test-uri-secret',
+          namespace: 'test-project',
+          labels: {
+            [KnownLabels.DASHBOARD_RESOURCE]: 'true',
+          },
+          annotations: {
+            'opendatahub.io/connection-type': 'uri',
+            'opendatahub.io/connection-type-protocol': 'uri',
+            'openshift.io/display-name': 'test-uri-secret',
+          },
+        },
+        data: {
+          URI: btoa('https://test.io/organization/test-model:latest'),
+        },
+      } as Connection;
+      mockConnections.length = 0;
+      mockConnections.push(mockGeneratedURIConnection);
+      mockConnections.push(mockOtherConnection);
+      render(
+        <ModelLocationSelectField
+          setModelLocationData={mockSetModelLocationData}
+          resetModelLocationData={jest.fn()}
+          connections={mockConnections}
+          setSelectedConnection={jest.fn()}
+          selectedConnection={undefined}
+          pvcs={mockPvcs}
+        />,
+      );
+      const button = screen.getByTestId('model-location-select');
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      expect(screen.getByRole('option', { name: 'Existing connection' })).toBeInTheDocument();
+    });
+    it('should show the cluster storage option if the project has PVCs', async () => {
+      const mockPVC = mockPVCK8sResource({
+        name: 'test-pvc',
+        namespace: 'test-project',
+        displayName: 'Test PVC',
+      });
+
+      mockPvcs.length = 0;
+      mockPvcs.push(mockPVC);
+      render(
+        <ModelLocationSelectField
+          setModelLocationData={mockSetModelLocationData}
+          resetModelLocationData={jest.fn()}
+          connections={mockConnections}
+          setSelectedConnection={jest.fn()}
+          selectedConnection={undefined}
+          pvcs={mockPvcs}
+        />,
+      );
+      const button = screen.getByTestId('model-location-select');
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      expect(screen.getByRole('option', { name: 'Cluster storage' })).toBeInTheDocument();
+    });
+    it('should not show the cluster storage option if the project has no PVCs', async () => {
+      mockPvcs.length = 0;
+      render(
+        <ModelLocationSelectField
+          setModelLocationData={mockSetModelLocationData}
+          resetModelLocationData={jest.fn()}
+          connections={mockConnections}
+          setSelectedConnection={jest.fn()}
+          selectedConnection={undefined}
+          pvcs={mockPvcs}
+        />,
+      );
+      const button = screen.getByTestId('model-location-select');
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      expect(screen.queryByRole('option', { name: 'Cluster storage' })).not.toBeInTheDocument();
     });
   });
 });

@@ -13,6 +13,7 @@ export const useFeatureStoreSearch = (): {
     type: string;
     project: string;
     featureView?: string;
+    matched_tags?: Record<string, string>;
   }>;
   isSearching: boolean;
   isLoadingMore: boolean;
@@ -56,6 +57,8 @@ export const useFeatureStoreSearch = (): {
       type: result.type,
       project: result.project,
       featureView: result.featureView,
+      // eslint-disable-next-line camelcase
+      matched_tags: result.matched_tags,
     }));
     return converted;
   }, [allResults]);
@@ -127,6 +130,7 @@ export const useFeatureStoreSearch = (): {
       search,
       apiAvailable,
       hasAvailableProjects,
+      featureStoreProjects.projects,
       currentSearchQuery,
       isSearching,
       currentAbortController,
@@ -175,6 +179,8 @@ export const useFeatureStoreSearch = (): {
     hasAvailableProjects,
     currentPage,
     search,
+    featureStoreProjects.projects,
+    currentAbortController?.signal,
   ]);
 
   const clearSearch = useCallback(() => {

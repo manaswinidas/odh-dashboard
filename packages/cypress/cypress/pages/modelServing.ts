@@ -4,6 +4,8 @@ import { TableRow } from './components/table';
 import { K8sNameDescriptionField } from './components/subComponents/K8sNameDescriptionField';
 import { Contextual } from './components/Contextual';
 import { Wizard } from './components/Wizard';
+import { DeleteModal } from './components/DeleteModal';
+import { DashboardCodeEditor } from './components/DashboardCodeEditor';
 import { mixin } from '../utils/mixin';
 
 class ModelServingToolbar extends Contextual<HTMLElement> {
@@ -26,7 +28,9 @@ class ModelServingGlobal {
   }
 
   navigate() {
-    appChrome.findNavItem({ name: 'Deployments', rootSection: 'AI hub' }).click();
+    appChrome
+      .findNavItem({ name: 'Deployments', rootSection: 'AI hub', subSection: 'Models' })
+      .click();
     this.wait();
   }
 
@@ -99,15 +103,14 @@ class ModelServingGlobal {
   }
 
   private findModelsTable() {
-    // TODO be more precise
-    return cy.findByTestId('inference-service-table');
+    return cy.findByTestId('deployments-table');
   }
 
   getModelRow(name: string) {
     return this.findModelsTable().find(`[data-label=Name]`).contains(name).parents('tr');
   }
 
-  getInferenceServiceRow(name: string) {
+  getDeploymentRow(name: string) {
     return new InferenceServiceRow(() => this.getModelRow(name));
   }
 
@@ -200,6 +203,12 @@ class ServingModal extends Modal {
 
   findServingRuntimeVersionLabel() {
     return cy.findByTestId('serving-runtime-version-label');
+  }
+}
+
+class DeleteModelServingModal extends DeleteModal {
+  constructor() {
+    super('Delete tier?');
   }
 }
 
@@ -664,6 +673,14 @@ class ModelServingRow extends TableRow {
     return this.find().find(`[data-label="API protocol"]`);
   }
 
+  findServingRuntime() {
+    return this.find().find(`[data-label="Serving runtime"]`);
+  }
+
+  findServiceRuntime() {
+    return this.findServingRuntime();
+  }
+
   findLastDeployed() {
     return this.find().find(`[data-label="Last deployed"]`);
   }
@@ -710,7 +727,7 @@ class KServeRow extends ModelServingRow {
   }
 }
 
-class InferenceServiceRow extends TableRow {
+class InferenceServiceRow extends ModelServingRow {
   findServingRuntimeVersionLabel() {
     return this.find().findByTestId('serving-runtime-version-label');
   }
@@ -737,36 +754,8 @@ class InferenceServiceRow extends TableRow {
       });
   }
 
-  findLastDeployed() {
-    return this.find().find(`[data-label="Last deployed"]`);
-  }
-
   findLastDeployedTimestamp() {
     return this.find().findByTestId('last-deployed-timestamp');
-  }
-
-  findAPIProtocol() {
-    return this.find().find(`[data-label="API protocol"]`);
-  }
-
-  findInternalServiceButton() {
-    return this.find().findByTestId('internal-service-button');
-  }
-
-  findInternalServicePopover() {
-    return cy.findByTestId('internal-service-popover');
-  }
-
-  findExternalServiceButton() {
-    return this.find().findByTestId('internal-external-service-button');
-  }
-
-  findExternalServicePopover() {
-    return cy.findByTestId('external-service-popover');
-  }
-
-  findServingRuntime() {
-    return this.find().find(`[data-label="Serving runtime"]`);
   }
 
   findProject() {
@@ -834,8 +823,8 @@ class ModelServingSection {
     return cy.findByTestId('section-model-server');
   }
 
-  private findKServeTable() {
-    return this.find().findByTestId('kserve-inference-service-table');
+  findKServeTable() {
+    return this.findDeploymentsTable();
   }
 
   findModelServerDeployedName(name: string) {
@@ -863,7 +852,7 @@ class ModelServingSection {
   }
 
   findKServeTableHeaderButton(name: string) {
-    return this.findKServeTable().find('thead').findByRole('button', { name });
+    return this.findDeploymentsTableHeaderButton(name);
   }
 
   findInternalExternalServiceButton() {
@@ -876,7 +865,7 @@ class ModelServingSection {
 
   getKServeRow(name: string) {
     return new KServeRow(() =>
-      this.findKServeTable().find('[data-label=Name]').contains(name).parents('tr'),
+      this.findDeploymentsTable().find('[data-label=Name]').contains(name).parents('tr'),
     );
   }
 
@@ -888,17 +877,22 @@ class ModelServingSection {
     return this.find().findByTestId('add-server-button');
   }
 
-  findInferenceServiceTable() {
-    return cy.findByTestId('inference-service-table');
+  findDeploymentsTable() {
+    return cy.get('body').then(($body) => {
+      if ($body.find('[data-testid="section-model-server"]').length > 0) {
+        return cy.findByTestId('section-model-server').findByTestId('deployments-table');
+      }
+      return cy.findByTestId('deployments-table');
+    });
   }
 
-  findInferenceServiceTableHeaderButton(name: string) {
-    return this.findInferenceServiceTable().find('thead').findByRole('button', { name });
+  findDeploymentsTableHeaderButton(name: string) {
+    return this.findDeploymentsTable().find('thead').findByRole('button', { name });
   }
 
-  getInferenceServiceRow(name: string) {
+  getDeploymentRow(name: string) {
     return new InferenceServiceRow(() =>
-      this.findInferenceServiceTable()
+      this.findDeploymentsTable()
         .find('tbody')
         .find('[data-label="Name"]')
         .contains(name)
@@ -954,6 +948,14 @@ class ModelServingWizard extends Wizard {
 
   findModelDeploymentDescriptionInput() {
     return cy.findByTestId('model-deployment-description');
+  }
+
+  findResourceNameButton() {
+    return cy.findByTestId('model-deployment-editResourceLink');
+  }
+
+  findResourceNameInput() {
+    return cy.findByTestId('model-deployment-resourceName');
   }
 
   findModelFormatSelect() {
@@ -1023,6 +1025,10 @@ class ModelServingWizard extends Wizard {
 
   getProjectScopedServingRuntimesLabel() {
     return cy.get('body').contains('Project-scoped serving runtimes');
+  }
+
+  selectGlobalScopedTemplateOption(name: string) {
+    return this.findGlobalScopedTemplateOption(name).should('exist').click({ force: true });
   }
 
   findProjectScopedLabel() {
@@ -1338,9 +1344,46 @@ class ModelServingWizard extends Wizard {
   findReviewStepModelDetailsSection() {
     return cy.findByTestId('review-step-model-details');
   }
+
+  findYAMLViewerToggle(toggle: string) {
+    return cy.findByRole('button', { name: toggle });
+  }
+
+  findYAMLCodeEditor() {
+    return new DashboardCodeEditor(() => cy.findByTestId('yaml-editor'));
+  }
+
+  findYAMLEditorEmptyState() {
+    return cy.findByTestId('yaml-editor-empty-state');
+  }
+
+  findManualEditModeButton() {
+    return cy.findByTestId('manual-edit-mode-button');
+  }
+
+  findSwitchToYAMLEditorConfirmButton() {
+    return cy.findByTestId('switch-to-manual-yaml-editor');
+  }
+
+  findLegacyModeCheckbox() {
+    return cy.findByTestId('legacy-mode-checkbox');
+  }
+
+  findYAMLEditFallbackAlert() {
+    return cy.findByTestId('yaml-fallback-alert');
+  }
 }
 
 export const modelServingGlobal = new ModelServingGlobal();
+
+export const inferenceServiceActions = {
+  findEditInferenceServiceAction(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return cy.findByTestId('edit-inference-service-action');
+  },
+  findDeleteInferenceServiceAction(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return cy.findByTestId('delete-inference-service-action');
+  },
+};
 export const inferenceServiceModal = new InferenceServiceModal();
 export const inferenceServiceModalEdit = new InferenceServiceModal(true);
 export const modelServingSection = new ModelServingSection();
@@ -1350,3 +1393,4 @@ export const kserveModal = new KServeModal();
 export const kserveModalEdit = new KServeModal(true);
 export const modelServingWizard = new ModelServingWizard(false);
 export const modelServingWizardEdit = new ModelServingWizard(true);
+export const deleteModelServingModal = new DeleteModelServingModal();

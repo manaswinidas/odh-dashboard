@@ -4,7 +4,7 @@ ARG BFF_SOURCE_CODE=./bff
 
 # Set the base images for the build stages
 ARG NODE_BASE_IMAGE=node:22
-ARG GOLANG_BASE_IMAGE=golang:1.24.6
+ARG GOLANG_BASE_IMAGE=golang:1.25.7
 ARG DISTROLESS_BASE_IMAGE=gcr.io/distroless/static:nonroot
 
 # UI build stage
@@ -22,7 +22,7 @@ COPY ${UI_SOURCE_CODE} /usr/src/app
 # Install the dependencies and build
 RUN npm cache clean --force
 RUN npm ci --omit=optional
-RUN npm run build:prod
+RUN DEPLOYMENT_MODE=${DEPLOYMENT_MODE} STYLE_THEME=${STYLE_THEME} npm run build:prod
 
 # BFF build stage
 FROM ${GOLANG_BASE_IMAGE} AS bff-builder

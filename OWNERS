@@ -10,11 +10,17 @@ filters:
       - hardware-profiles-approvers
       - model-registry-catalog-approvers
       - model-serving-metrics-approvers
+      - maas-approvers
       - pipelines-approvers
       - platform-approvers
       - quality-e2e-testing-approvers
       - workbenches-approvers
       - gen-ai-approvers
+      - nim-serving-approvers
+      - autorag-approvers
+      - automl-approvers
+      - eval-hub-approvers
+      - mlflow-approvers
 
   # Catchall
   '.*':
@@ -137,3 +143,57 @@ filters:
       - gen-ai-reviewers
     labels:
       - 'area/gen-ai'
+
+  # Models as a Service (MaaS)
+  'packages/maas/.*':
+    approvers:
+      - maas-approvers
+    reviewers:
+      - maas-reviewers
+    labels:
+      - 'area/maas'
+
+  # Notebooks
+  'packages/notebooks/.*':
+    approvers:
+      - notebooks-approvers
+    reviewers:
+      - notebooks-reviewers
+    labels:
+      - 'area/notebooks'
+
+  # AutoRAG
+  'packages/autorag/.*':
+    approvers:
+      - autorag-approvers
+    reviewers:
+      - autorag-reviewers
+    labels:
+      - 'area/autorag'
+
+  # AutoML
+  'packages/automl/.*':
+    approvers:
+      - automl-approvers
+    reviewers:
+      - automl-reviewers
+    labels:
+      - 'area/automl'
+  
+  # Eval Hub
+  'packages/eval-hub/.*':
+    approvers:
+      - eval-hub-approvers
+    reviewers:
+      - eval-hub-reviewers
+    labels:
+      - 'area/eval-hub'
+
+  # MLflow
+  'packages/mlflow.*/.*':
+    approvers:
+      - mlflow-approvers
+    reviewers:
+      - mlflow-reviewers
+    labels:
+      - 'area/mlflow'

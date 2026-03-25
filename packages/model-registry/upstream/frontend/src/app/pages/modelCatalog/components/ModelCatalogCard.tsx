@@ -11,8 +11,8 @@ import {
   Label,
   Popover,
   Skeleton,
-  Truncate,
 } from '@patternfly/react-core';
+import { ChartBarIcon } from '@patternfly/react-icons';
 import { Link } from 'react-router-dom';
 import { CatalogModel, CatalogSource } from '~/app/modelCatalogTypes';
 import { catalogModelDetailsFromModel } from '~/app/routes/modelCatalog/catalogModel';
@@ -29,10 +29,9 @@ import ModelCatalogCardBody from './ModelCatalogCardBody';
 type ModelCatalogCardProps = {
   model: CatalogModel;
   source: CatalogSource | undefined;
-  truncate?: boolean;
 };
 
-const ModelCatalogCard: React.FC<ModelCatalogCardProps> = ({ model, source, truncate = false }) => {
+const ModelCatalogCard: React.FC<ModelCatalogCardProps> = ({ model, source }) => {
   // Extract labels from customProperties and check for validated label
   const allLabels = model.customProperties ? getLabels(model.customProperties) : [];
   const isValidated = isModelValidated(model);
@@ -57,7 +56,7 @@ const ModelCatalogCard: React.FC<ModelCatalogCardProps> = ({ model, source, trun
               <Flex spaceItems={{ default: 'spaceItemsSm' }}>
                 {isValidated && (
                   <Popover bodyContent={MODEL_CATALOG_POPOVER_MESSAGES.VALIDATED}>
-                    <Label color="purple" isClickable>
+                    <Label color="purple" isClickable icon={<ChartBarIcon />}>
                       Validated
                     </Label>
                   </Popover>
@@ -84,17 +83,7 @@ const ModelCatalogCard: React.FC<ModelCatalogCardProps> = ({ model, source, trun
                 fontWeight: 'var(--pf-t--global--font--weight--body--bold)',
               }}
             >
-              {truncate ? (
-                <Truncate
-                  data-testid="model-catalog-card-name"
-                  content={getModelName(model.name)}
-                  position="middle"
-                  tooltipPosition="top"
-                  style={{ textDecoration: 'underline' }}
-                />
-              ) : (
-                <span data-testid="model-catalog-card-name">{getModelName(model.name)}</span>
-              )}
+              <span data-testid="model-catalog-card-name">{getModelName(model.name)}</span>
             </Button>
           </Link>
         </CardTitle>

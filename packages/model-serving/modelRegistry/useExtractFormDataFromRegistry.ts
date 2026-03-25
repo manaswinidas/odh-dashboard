@@ -2,6 +2,7 @@ import React from 'react';
 import {
   setupDefaults,
   handleUpdateLogic,
+  LimitNameResourceType,
 } from '@odh-dashboard/internal/concepts/k8s/K8sNameDescriptionField/utils';
 // eslint-disable-next-line @odh-dashboard/no-restricted-imports
 import { ModelDeployPrefillInfo } from '@odh-dashboard/internal/pages/modelServing/screens/projects/usePrefillModelDeployModal';
@@ -11,7 +12,7 @@ import { getResourceNameFromK8sResource } from '@odh-dashboard/internal/concepts
 import { ConnectionTypeValueType } from '@odh-dashboard/internal/concepts/connectionTypes/types';
 // eslint-disable-next-line @odh-dashboard/no-restricted-imports
 import { AccessTypes } from '@odh-dashboard/internal/pages/projects/dataConnections/const';
-import { getModelRegistryTransform } from './utils/deployUtils';
+import { getModelRegistryMetadata } from './utils/deployUtils';
 import {
   ModelLocationData,
   ModelLocationType,
@@ -98,15 +99,17 @@ export const useExtractFormDataFromRegistry = (
 
     // Setup defaults and then update with the model name
     // This ensures the k8s name is properly generated from the display name
-    const baseK8sNameDesc = setupDefaults({});
+    const baseK8sNameDesc = setupDefaults({
+      limitNameResourceType: LimitNameResourceType.MODEL_DEPLOYMENT,
+    });
     const k8sNameDesc = handleUpdateLogic(baseK8sNameDesc)('name', prefillInfo.modelName);
 
     const initialData: InitialWizardFormData = {
       // Set model name from prefill (k8s name will be auto-generated)
       k8sNameDesc,
 
-      // Set model registry info on transform data
-      transformData: getModelRegistryTransform(prefillInfo.modelRegistryInfo),
+      // Set model registry metadata (must be serializable for navigation state)
+      navSourceMetadata: getModelRegistryMetadata(prefillInfo.modelRegistryInfo),
 
       // Set model location data
       modelLocationData: (() => {

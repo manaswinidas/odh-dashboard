@@ -1,7 +1,8 @@
 import React from 'react';
-import { useResolvedExtensions } from '@odh-dashboard/plugin-core';
+import { isEqual } from 'lodash-es';
+import type { ExternalDataMap } from './ExternalDataLoader';
 import type { InitialWizardFormData, WizardField, WizardFormData } from './types';
-import { isWizardField2Extension } from '../../../extension-points';
+import { getFieldDependencies, useActiveFields } from './dynamicFormUtils';
 
 ///// Field type stuff
 
@@ -9,7 +10,12 @@ export type WizardFormState = WizardFormData['state'];
 
 ////// Reducer stuff
 
-export type WizardFormAction =
+type WizardFieldReducerState = {
+  fieldValues: Record<string, unknown>;
+  initialValues: Record<string, unknown>;
+};
+
+export type WizardFormAction<Field extends WizardField<unknown> = WizardField<unknown>> =
   | {
       type: 'setFieldData';
       payload: {
@@ -22,80 +28,169 @@ export type WizardFormAction =
       payload: {
         id: string;
       };
+    }
+  | {
+      type: 'initFieldData';
+      payload: {
+        field: Field;
+        existingFieldData?: unknown;
+        externalData?: ReturnType<NonNullable<Field['externalDataHook']>>;
+        dependencies?: Record<string, unknown>;
+      };
     };
 
-/** The reducer provides consistent behavior for interacting with the wizard for state management.
- * - `setFieldData` sets a field's UI state
- * - `clearFieldData` clears a field's UI state (like for unloading a field when it is no longer needed)
- **/
+/**
+ * The reducer manages field values alongside tracked initial values, enabling
+ * dirty detection without external refs.
+ *
+ * - `setFieldData` — sets a field's UI state (marks it dirty vs its initial value)
+ * - `clearFieldData` — removes a single field's state
+ * - `initFieldData` — initializes a field's state (separately from `setFieldData` to avoid dirty detection)
+ */
 export const wizardFormReducer = (
-  state: WizardFormState,
+  state: WizardFieldReducerState,
   action: WizardFormAction,
-): WizardFormState => {
+): WizardFieldReducerState => {
   switch (action.type) {
     case 'setFieldData':
-      return { ...state, [action.payload.id]: action.payload.data };
-    case 'clearFieldData':
-      return { ...state, [action.payload.id]: undefined };
+      return {
+        ...state,
+        fieldValues: { ...state.fieldValues, [action.payload.id]: action.payload.data },
+      };
+    case 'clearFieldData': {
+      const newFieldValues = { ...state.fieldValues };
+      const newInitialValues = { ...state.initialValues };
+      delete newFieldValues[action.payload.id];
+      delete newInitialValues[action.payload.id];
+      return { fieldValues: newFieldValues, initialValues: newInitialValues };
+    }
+    case 'initFieldData': {
+      const { field, existingFieldData, externalData, dependencies } = action.payload;
+
+      const initialValue = field.reducerFunctions.getInitialFieldData(
+        existingFieldData,
+        externalData?.data,
+        dependencies ?? {},
+      );
+      return {
+        ...state,
+        initialValues: {
+          ...state.initialValues,
+          [field.id]: initialValue,
+        },
+      };
+    }
     default:
       return state;
   }
 };
 
-///// Hook
+///// Hooks
 
 export type UseDeploymentWizardReducerResult = {
   state: WizardFormState;
   dispatch: React.Dispatch<WizardFormAction>;
   fields: WizardField<unknown>[];
+  externalDataLoaded: boolean;
 };
 
+/**
+ * Hook that manages dynamic wizard field state from extensions.
+ *
+ * The state flow is:
+ * - `baseFormState` (from legacy hooks) is merged with `reducerState` (dynamic fields)
+ * - `activeFields` is computed from the merged state
+ * - External data is loaded for active fields (via ExternalDataLoader)
+ *   - Mounts a dynamic hook via HookNotify
+ * - Field's initial values are separated from the field values (to avoid dirty detection)
+ *   - If only initial value exist, it's not dirty. If field value exists, it's dirty.
+ *   - Initial value calculated by its dependencies (`getFieldDependencies`) or external data (`externalDataMap[field.id]`)
+ *
+ * @param baseFormState - State from the legacy individual field hooks
+ * @param initialData - Initial data for pre-populating fields (e.g., when editing)
+ * @param externalDataMap - External data loaded by ExternalDataLoader
+ */
 export const useDeploymentWizardReducer = (
-  wizardFormState: WizardFormState,
+  baseFormState: WizardFormState,
   initialData?: InitialWizardFormData,
+  externalDataMap: ExternalDataMap = {},
 ): UseDeploymentWizardReducerResult => {
-  const [extensions] = useResolvedExtensions(isWizardField2Extension);
+  const [reducerState, dispatch] = React.useReducer(wizardFormReducer, {
+    fieldValues: {},
+    initialValues: {},
+  });
+  const mergedState: WizardFormState = React.useMemo(
+    () => ({ ...baseFormState, ...reducerState.initialValues, ...reducerState.fieldValues }),
+    [baseFormState, reducerState.initialValues, reducerState.fieldValues],
+  );
+  const mergedStateRef = React.useRef(mergedState);
+  mergedStateRef.current = mergedState;
 
-  const [state, dispatch] = React.useReducer(wizardFormReducer, wizardFormState);
+  const activeFields = useActiveFields(mergedState);
 
-  const activeFields: WizardField[] = React.useMemo(() => {
-    return extensions
-      .filter((ext) => ext.properties.field.isActive(wizardFormState))
-      .map((ext) => ext.properties.field);
-  }, [extensions, wizardFormState]);
+  // Makes it easier for callers to use init dispatch without needing entire merged state
+  const enhancedDispatch: React.Dispatch<WizardFormAction> = React.useCallback(
+    (action) => {
+      if (action.type === 'initFieldData') {
+        const { field } = action.payload;
+        dispatch({
+          ...action,
+          payload: {
+            ...action.payload,
+            existingFieldData: action.payload.existingFieldData ?? initialData?.[field.id],
+            dependencies:
+              action.payload.dependencies ?? getFieldDependencies(field, mergedStateRef.current),
+          },
+        });
+      } else {
+        dispatch(action);
+      }
+    },
+    [dispatch, initialData],
+  );
 
-  const previousFields = React.useRef<WizardField[]>([]);
+  const prevActiveFields = React.useRef<WizardField<unknown>[]>([]);
+  const prevMergedState = React.useRef<WizardFormState>(mergedState);
+
   React.useEffect(() => {
-    // set initial value of newly loaded field
     for (const field of activeFields) {
-      if (!previousFields.current.find((f) => f.id === field.id)) {
-        // Use extracted data from initialData if available (keyed by field.id), otherwise use field's default
-        const extractedData = initialData?.[field.id];
-        // The getInitialFieldData function accepts optional initial data of the field's type
-        // Since we're dealing with unknown types from dynamic fields, we pass the extracted data directly
-        const fieldInitialData = field.reducerFunctions.getInitialFieldData(extractedData);
+      const isNew = !prevActiveFields.current.some((f) => f.id === field.id);
+
+      const dependencies = getFieldDependencies(field, mergedState);
+      const prevDependencies = getFieldDependencies(field, prevMergedState.current);
+      const isDependenciesChanged = !isEqual(dependencies, prevDependencies);
+
+      if (isNew || isDependenciesChanged) {
         dispatch({
-          type: 'setFieldData',
-          payload: { id: field.id, data: fieldInitialData },
+          type: 'initFieldData',
+          payload: {
+            field,
+            existingFieldData: initialData?.[field.id],
+            externalData: field.id in externalDataMap ? externalDataMap[field.id] : undefined,
+            dependencies,
+          },
         });
       }
     }
-    // clear fields that are no longer active
-    for (const field of previousFields.current) {
-      if (!activeFields.find((f) => f.id === field.id)) {
-        dispatch({
-          type: 'clearFieldData',
-          payload: { id: field.id },
-        });
+
+    for (const prevField of prevActiveFields.current) {
+      const isGone = !activeFields.some((f) => f.id === prevField.id);
+      if (isGone) {
+        dispatch({ type: 'clearFieldData', payload: { id: prevField.id } });
       }
     }
-    previousFields.current = activeFields;
-    // Note: initialData is intentionally excluded from deps to only use it on first mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFields, dispatch]);
+
+    prevActiveFields.current = activeFields;
+    prevMergedState.current = mergedState;
+  }, [activeFields, dispatch, externalDataMap, initialData, mergedState]);
 
   return React.useMemo(
-    () => ({ state: { ...state, ...wizardFormState }, dispatch, fields: activeFields }),
-    [state, activeFields, wizardFormState],
+    () => ({
+      state: mergedState,
+      dispatch: enhancedDispatch,
+      fields: activeFields,
+      externalDataLoaded: true,
+    }),
+    [mergedState, enhancedDispatch, activeFields],
   );
 };

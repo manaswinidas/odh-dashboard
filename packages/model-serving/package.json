@@ -21,12 +21,14 @@
     ],
     "./types/form-data": "./src/components/deploymentWizard/types.ts",
     "./concepts/auth": "./src/concepts/auth.ts",
+    "./concepts/useModelServingClusterSettings": "./src/concepts/useModelServingClusterSettings.tsx",
     "./utils": "./src/concepts/utils.ts"
   },
   "dependencies": {
     "@odh-dashboard/internal": "*",
+    "@odh-dashboard/model-registry": "*",
     "@odh-dashboard/plugin-core": "*",
-    "@odh-dashboard/model-registry": "*"
+    "yaml": "^2.8.2"
   },
   "devDependencies": {
     "@odh-dashboard/eslint-config": "*",

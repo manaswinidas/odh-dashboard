@@ -1,5 +1,6 @@
 /* eslint-disable camelcase */
 import { K8sResourceCommon } from 'mod-arch-shared';
+import { fireMiscTrackingEvent } from '@odh-dashboard/internal/concepts/analyticsTracking/segmentIOUtils';
 import { AIModel, TokenInfo, MCPServerFromAPI, MCPServerConfig, MaaSModel } from '~/app/types';
 
 /**
@@ -90,19 +91,92 @@ export const generateMCPServerConfig = (
   serverTokens: Map<string, TokenInfo>,
 ): MCPServerConfig => {
   const serverTokenInfo = serverTokens.get(server.url);
-  const headers: Record<string, string> = {};
+  let authorization: string | undefined;
 
   if (serverTokenInfo?.token) {
-    const raw = serverTokenInfo.token.trim();
-    headers.Authorization = raw.toLowerCase().startsWith('bearer ') ? raw : `Bearer ${raw}`;
+    let token = serverTokenInfo.token.trim();
+    // Strip "Bearer " prefix if present (case-insensitive)
+    if (token.toLowerCase().startsWith('bearer ')) {
+      token = token.slice(7).trim();
+    }
+    authorization = token || undefined;
   }
 
   return {
     server_label: server.name,
     server_url: server.url,
-    headers,
+    authorization,
   };
 };
+
+export const parseEndpointByPrefix = (
+  endpoints: string[],
+  prefix: 'internal' | 'external',
+): string | undefined =>
+  endpoints
+    .find((e) => e.startsWith(`${prefix}:`))
+    ?.replace(`${prefix}:`, '')
+    .trim();
+
+/**
+ * Checks if a URL points to a Kubernetes cluster-local service.
+ * It properly parses the URL and checks only the hostname to prevent manipulation
+ * via query parameters or path components.
+ *
+ * Examples:
+ *   - "http://service.namespace.svc.cluster.local" -> true
+ *   - "https://service.namespace.svc.cluster.local:8080/path" -> true
+ *   - "https://evil.com/redirect?to=http://internal.svc.cluster.local" -> false
+ *   - "https://api.openai.com" -> false
+ *
+ * If the URL cannot be parsed, it returns false (treats it as external for safety).
+ *
+ * @param rawURL - The URL to check
+ * @returns true if the URL is cluster-local, false otherwise
+ */
+export const isClusterLocalURL = (rawURL: string): boolean => {
+  try {
+    // TODO: Accept extra cluster domains from the OdhDashboardConfig
+    const url = new URL(rawURL);
+    return url.hostname.endsWith('.svc.cluster.local');
+  } catch {
+    // If we can't parse it, treat it as external for safety
+    return false;
+  }
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  namespace: 'Internal',
+  custom_endpoint: 'Custom endpoint',
+  maas: 'MaaS',
+};
+
+const MODEL_TYPE_LABELS: Record<string, string> = {
+  llm: 'Inferencing',
+  embedding: 'Embedding',
+};
+
+export const getModelTypeLabel = (modelType?: string): string =>
+  MODEL_TYPE_LABELS[modelType || 'llm'] || 'Inferencing';
+
+export const getSourceLabel = (model: AIModel): string => {
+  const source = model.model_source_type;
+  const label = SOURCE_LABELS[source];
+  if (!label) {
+    // eslint-disable-next-line no-console
+    console.warn(`Unknown model source type: "${source}" for model "${model.model_id}"`);
+  }
+  return label || 'Internal';
+};
+
+const SOURCE_LABEL_COLORS: Record<string, 'blue' | 'green' | 'orange' | 'grey'> = {
+  MaaS: 'blue',
+  'Custom endpoint': 'green',
+  Internal: 'grey',
+};
+
+export const getSourceLabelColor = (sourceLabel: string): 'blue' | 'green' | 'orange' | 'grey' =>
+  SOURCE_LABEL_COLORS[sourceLabel] ?? 'grey';
 
 /**
  * Converts a MaaS model to AIModel format
@@ -110,22 +184,53 @@ export const generateMCPServerConfig = (
  * @returns The converted AIModel
  */
 export const convertMaaSModelToAIModel = (maasModel: MaaSModel): AIModel => ({
-  model_name: maasModel.id,
+  model_name: maasModel.display_name || maasModel.id,
   model_id: maasModel.id,
   serving_runtime: 'MaaS',
   api_protocol: 'OpenAI',
   version: '',
-  usecase: 'LLM',
-  description: '', //TODO: MaaS models don't have description yet, bff needs to be updated to provide it
-  endpoints: [`internal: ${maasModel.url}`],
+  usecase: maasModel.usecase || 'LLM',
+  description: maasModel.description || '',
+  endpoints: maasModel.url ? [`external: ${maasModel.url}`] : [],
   status: maasModel.ready ? 'Running' : 'Stop',
-  display_name: maasModel.id,
+  display_name: maasModel.display_name || maasModel.id,
   sa_token: {
     name: '',
     token_name: '',
     token: '',
   },
-  internalEndpoint: maasModel.url,
-  isMaaSModel: true,
-  maasModelId: maasModel.id,
+  model_source_type: 'maas',
+  externalEndpoint: maasModel.url || undefined,
+  internalEndpoint: undefined,
+  model_type: maasModel.model_type,
 });
+
+/**
+ * Properties for clipboard copy tracking events
+ */
+export type ClipboardCopyTrackingProperties = {
+  assetType?: 'model' | 'maas_model';
+  assetId?: string;
+  copyTarget?: 'endpoint' | 'service_token';
+  endpointType?: 'external' | 'internal' | 'maas_route';
+};
+
+/**
+ * Copies text to clipboard and fires a tracking event
+ *
+ * @param text - The text to copy to the clipboard
+ * @param eventName - Name of the tracking event
+ * @param properties - Properties of the tracking event
+ */
+export const copyToClipboardWithTracking = async (
+  text: string,
+  eventName: string,
+  properties: ClipboardCopyTrackingProperties,
+): Promise<void> => {
+  try {
+    await navigator.clipboard.writeText(text);
+    fireMiscTrackingEvent(eventName, properties);
+  } catch {
+    // Do nothing
+  }
+};

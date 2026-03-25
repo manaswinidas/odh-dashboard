@@ -81,17 +81,31 @@ export const blankDashboardCR: DashboardConfig = {
       disableAdminConnectionTypes: false,
       disableFeatureStore: false,
       genAiStudio: false,
+      automl: false,
+      autorag: false,
       modelAsService: false,
+      aiAssetCustomEndpoints: false,
       disableFineTuning: true,
       disableKueue: true,
       disableLMEval: true,
       mlflow: false,
+      mcpCatalog: false,
       trainingJobs: true,
+      disableLLMd: false,
+      projectRBAC: true,
+      deploymentWizardYAMLViewer: false,
+      vLLMDeploymentOnMaaS: false,
     },
     notebookController: {
       enabled: true,
     },
     templateOrder: [],
+    genAiStudioConfig: {
+      aiAssetCustomEndpoints: {
+        externalProviders: false,
+        clusterDomains: [],
+      },
+    },
     // templateDisablement: [], Don't create this field, will be used in migration
   },
 };

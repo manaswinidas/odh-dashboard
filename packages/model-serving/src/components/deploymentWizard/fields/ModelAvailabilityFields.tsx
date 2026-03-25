@@ -15,6 +15,7 @@ import { ServingRuntimeModelType } from '@odh-dashboard/internal/types';
 import { ModelTypeFieldData } from './ModelTypeSelectField';
 import { GenericFieldRenderer } from './GenericFieldRenderer';
 import type { UseModelDeploymentWizardState } from '../useDeploymentWizard';
+import type { ExternalDataMap } from '../ExternalDataLoader';
 
 export type ModelAvailabilityFieldsData = {
   saveAsAiAsset: boolean;
@@ -50,7 +51,7 @@ export const useModelAvailabilityFields = (
   );
 
   const AiAssetData = React.useMemo(() => {
-    if (modelType && modelType !== ServingRuntimeModelType.GENERATIVE) {
+    if (modelType && modelType.type !== ServingRuntimeModelType.GENERATIVE) {
       return {
         saveAsAiAsset: false,
         saveAsMaaS: undefined,
@@ -63,7 +64,7 @@ export const useModelAvailabilityFields = (
   return {
     data: AiAssetData,
     setData,
-    showField: modelType === ServingRuntimeModelType.GENERATIVE,
+    showField: modelType?.type === ServingRuntimeModelType.GENERATIVE,
   };
 };
 
@@ -71,12 +72,14 @@ type AvailableAiAssetsFieldsComponentProps = {
   data: ModelAvailabilityFieldsData;
   setData: (data: ModelAvailabilityFieldsData) => void;
   wizardState: UseModelDeploymentWizardState;
+  externalData?: ExternalDataMap;
 };
 
 export const AvailableAiAssetsFieldsComponent: React.FC<AvailableAiAssetsFieldsComponentProps> = ({
   data,
   setData,
   wizardState,
+  externalData,
 }) => {
   const setDataWithClearUseCase = React.useCallback(
     (newData: ModelAvailabilityFieldsData) => {
@@ -133,7 +136,11 @@ export const AvailableAiAssetsFieldsComponent: React.FC<AvailableAiAssetsFieldsC
             </div>
           </StackItem>
         )}
-        <GenericFieldRenderer parentId="model-playground-availability" wizardState={wizardState} />
+        <GenericFieldRenderer
+          parentId="model-playground-availability"
+          wizardState={wizardState}
+          externalData={externalData}
+        />
       </Stack>
     </StackItem>
   );

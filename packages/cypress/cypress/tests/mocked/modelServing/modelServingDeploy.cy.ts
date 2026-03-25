@@ -23,11 +23,21 @@ import {
   mockSecretK8sResource,
 } from '@odh-dashboard/internal/__mocks__/mockSecretK8sResource';
 import { mockPVCK8sResource } from '@odh-dashboard/internal/__mocks__/mockPVCK8sResource';
+import { mockLLMInferenceServiceK8sResource } from '@odh-dashboard/internal/__mocks__/mockLLMInferenceServiceK8sResource';
 import { isGeneratedSecretName } from '@odh-dashboard/internal/api/k8s/secrets';
-import { ModelTypeLabel } from '@odh-dashboard/model-serving/components/deploymentWizard/types';
+import {
+  ModelLocationSelectOption,
+  ModelTypeLabel,
+} from '@odh-dashboard/model-serving/types/form-data';
+import { KnownLabels } from '@odh-dashboard/internal/k8sTypes';
+import {
+  initMockConnectionSecretIntercepts,
+  initMockModelAuthIntercepts,
+} from '../../../utils/modelServingUtils';
 import {
   HardwareProfileModel,
   InferenceServiceModel,
+  LLMInferenceServiceModel,
   ProjectModel,
   PVCModel,
   RoleBindingModel,
@@ -48,9 +58,11 @@ import { hardwareProfileSection } from '../../../pages/components/HardwareProfil
 const initIntercepts = ({
   modelType,
   rejectAddSupportServingPlatformProject = false,
+  vLLMDeploymentOnMaaS = false,
 }: {
   modelType?: ServingRuntimeModelType;
   rejectAddSupportServingPlatformProject?: boolean;
+  vLLMDeploymentOnMaaS?: boolean;
 }) => {
   cy.interceptOdh(
     'GET /api/dsc/status',
@@ -65,6 +77,8 @@ const initIntercepts = ({
     mockDashboardConfig({
       disableNIMModelServing: true,
       disableKServe: false,
+      deploymentWizardYAMLViewer: true,
+      vLLMDeploymentOnMaaS,
     }),
   );
   // used by addSupportServingPlatformProject
@@ -325,8 +339,8 @@ describe('Model Serving Deploy Wizard', () => {
     cy.url().should('include', 'projects/test-project?section=model-server');
   });
 
-  it('Create a new generative deployment and submit', () => {
-    initIntercepts({ modelType: ServingRuntimeModelType.GENERATIVE });
+  it('Create a new legacy generative deployment and submit', () => {
+    initIntercepts({ modelType: ServingRuntimeModelType.GENERATIVE, vLLMDeploymentOnMaaS: true });
     cy.interceptK8sList(
       { model: InferenceServiceModel, ns: 'test-project' },
       mockK8sResourceList([mockInferenceServiceK8sResource({})]),
@@ -345,14 +359,18 @@ describe('Model Serving Deploy Wizard', () => {
     modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.PREDICTIVE).should('exist');
     modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.GENERATIVE).should('exist').click();
     modelServingWizard.findModelLocationSelect().should('exist');
-    modelServingWizard.findModelLocationSelectOption('Existing connection').should('exist').click();
+    modelServingWizard
+      .findModelLocationSelectOption(ModelLocationSelectOption.EXISTING)
+      .should('exist')
+      .click();
     modelServingWizard.findExistingConnectionSelect().should('exist').click();
     modelServingWizard
       .findExistingConnectionSelectOption('Test URI Secret')
       .should('exist')
       .click();
-
     modelServingWizard.findSaveConnectionCheckbox().should('not.exist');
+
+    modelServingWizard.findLegacyModeCheckbox().should('exist').click();
     modelServingWizard.findNextButton().should('be.enabled').click();
 
     // Step 2: Model deployment
@@ -363,12 +381,10 @@ describe('Model Serving Deploy Wizard', () => {
     modelServingWizard.findModelDeploymentDescriptionInput().type('test-description');
     hardwareProfileSection.findSelect().should('contain.text', 'Small');
 
-    // hardwareProfileSection.findGlobalScopedLabel().should('exist');
     modelServingWizard.findModelFormatSelect().should('not.exist');
     modelServingWizard.findServingRuntimeTemplateSearchSelector().should('exist');
     modelServingWizard.findServingRuntimeTemplateSearchSelector().click();
-    modelServingWizard.findGlobalScopedTemplateOption('vLLM NVIDIA').should('exist').click();
-
+    modelServingWizard.selectGlobalScopedTemplateOption('vLLM NVIDIA');
     modelServingWizard.findNumReplicasInput().should('exist');
     modelServingWizard.findNumReplicasInputField().should('have.value', '1');
     modelServingWizard.findNumReplicasMinusButton().should('be.disabled');
@@ -642,7 +658,10 @@ describe('Model Serving Deploy Wizard', () => {
     modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.GENERATIVE).should('exist');
     modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.PREDICTIVE).should('exist').click();
     modelServingWizard.findModelLocationSelect().should('exist');
-    modelServingWizard.findModelLocationSelectOption('Existing connection').should('exist').click();
+    modelServingWizard
+      .findModelLocationSelectOption(ModelLocationSelectOption.EXISTING)
+      .should('exist')
+      .click();
     modelServingWizard.findExistingConnectionSelect().should('exist').click();
     modelServingWizard
       .findExistingConnectionSelectOption('Test URI Secret')
@@ -817,7 +836,10 @@ describe('Model Serving Deploy Wizard', () => {
     modelServingGlobal.visit('test-project');
     modelServingGlobal.findDeployModelButton().click();
     // test filling in minimum required fields
-    modelServingWizard.findModelLocationSelectOption('URI').should('exist').click();
+    modelServingWizard
+      .findModelLocationSelectOption(ModelLocationSelectOption.URI)
+      .should('exist')
+      .click();
     modelServingWizard.findUrilocationInput().should('exist').type('https://test');
     modelServingWizard.findSaveConnectionCheckbox().should('be.checked');
     modelServingWizard.findSaveConnectionCheckbox().click();
@@ -876,7 +898,10 @@ describe('Model Serving Deploy Wizard', () => {
     modelServingWizard.findModelSourceStep().should('be.enabled');
     modelServingWizard.findModelDeploymentStep().should('be.disabled');
     modelServingWizard.findNextButton().should('be.disabled');
-    modelServingWizard.findModelLocationSelectOption('URI').should('exist').click();
+    modelServingWizard
+      .findModelLocationSelectOption(ModelLocationSelectOption.URI)
+      .should('exist')
+      .click();
     modelServingWizard.findUrilocationInput().should('exist').type('https://test');
     modelServingWizard.findSaveConnectionCheckbox().should('be.checked');
     modelServingWizard.findSaveConnectionCheckbox().click();
@@ -922,7 +947,10 @@ describe('Model Serving Deploy Wizard', () => {
     modelServingWizard.findNextButton().should('be.disabled');
 
     modelServingWizard.findModelLocationSelect().should('exist');
-    modelServingWizard.findModelLocationSelectOption('URI').should('exist').click();
+    modelServingWizard
+      .findModelLocationSelectOption(ModelLocationSelectOption.URI)
+      .should('exist')
+      .click();
 
     modelServingWizard.findSaveConnectionCheckbox().should('be.checked');
     modelServingWizard.findSaveConnectionCheckbox().click();
@@ -988,7 +1016,10 @@ describe('Model Serving Deploy Wizard', () => {
     modelServingWizard.findModelDeploymentStep().should('be.disabled');
     modelServingWizard.findNextButton().should('be.disabled');
     modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.PREDICTIVE).should('exist').click();
-    modelServingWizard.findModelLocationSelectOption('URI').should('exist').click();
+    modelServingWizard
+      .findModelLocationSelectOption(ModelLocationSelectOption.URI)
+      .should('exist')
+      .click();
     modelServingWizard.findUrilocationInput().should('exist').type('https://test');
     modelServingWizard.findSaveConnectionCheckbox().should('be.checked');
     modelServingWizard.findSaveConnectionCheckbox().click();
@@ -996,7 +1027,7 @@ describe('Model Serving Deploy Wizard', () => {
     modelServingWizard.findNextButton().should('be.enabled').click();
     modelServingWizard.findModelDeploymentNameInput().type('test-model');
     modelServingWizard.findServingRuntimeTemplateSearchSelector().click();
-    modelServingWizard.findGlobalScopedTemplateOption('Caikit').should('exist').click();
+    modelServingWizard.selectGlobalScopedTemplateOption('Caikit');
     modelServingWizard.findModelFormatSelectOption('openvino_ir - opset1').should('exist').click();
     modelServingWizard.findNextButton().should('be.enabled').click();
 
@@ -1071,7 +1102,10 @@ describe('Model Serving Deploy Wizard', () => {
     modelServingWizard.findNextButton().should('be.disabled');
     modelServingWizard.findBackButton().should('be.disabled');
     modelServingWizard.findCancelButton().should('be.enabled');
-    modelServingWizard.findModelLocationSelectOption('Existing connection').should('exist').click();
+    modelServingWizard
+      .findModelLocationSelectOption(ModelLocationSelectOption.EXISTING)
+      .should('exist')
+      .click();
     modelServingWizard.findExistingConnectionValue().should('have.value', 'Test Secret');
     modelServingWizard.findNextButton().should('be.disabled');
     modelServingWizard.findOCIModelURI().click();
@@ -1217,7 +1251,10 @@ describe('Model Serving Deploy Wizard', () => {
     modelServingWizard.findCancelButton().should('be.enabled');
     modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.PREDICTIVE).should('exist').click();
     modelServingWizard.findNextButton().should('be.disabled');
-    modelServingWizard.findModelLocationSelectOption('Cluster storage').should('exist').click();
+    modelServingWizard
+      .findModelLocationSelectOption(ModelLocationSelectOption.PVC)
+      .should('exist')
+      .click();
     modelServingWizard.findPVCSelectValue().should('have.value', 'Test PVC');
     modelServingWizard.findPVCPathPrefix().should('contain.text', 'pvc://test-pvc/');
     modelServingWizard.findLocationPathInput().should('have.value', 'test-path');
@@ -1304,7 +1341,7 @@ describe('Model Serving Deploy Wizard', () => {
     });
   });
 
-  it('Edit an existing deployment', () => {
+  it('Edit an existing predictive deployment', () => {
     initIntercepts({ modelType: ServingRuntimeModelType.PREDICTIVE });
     cy.interceptK8sList(
       { model: InferenceServiceModel, ns: 'test-project' },
@@ -1343,7 +1380,9 @@ describe('Model Serving Deploy Wizard', () => {
 
     // Step 1: Model source
     modelServingWizardEdit.findModelLocationSelect().should('exist');
-    modelServingWizardEdit.findModelLocationSelectOption('Existing connection').should('exist');
+    modelServingWizardEdit
+      .findModelLocationSelectOption(ModelLocationSelectOption.EXISTING)
+      .should('exist');
     modelServingWizardEdit.findExistingConnectionSelect().should('exist');
     modelServingWizardEdit.findExistingConnectionValue().should('have.value', 'Test URI Secret');
     modelServingWizardEdit.findSaveConnectionCheckbox().should('not.exist');
@@ -1382,6 +1421,74 @@ describe('Model Serving Deploy Wizard', () => {
     modelServingWizardEdit.findExternalRouteCheckbox().should('be.checked');
     modelServingWizardEdit.findTokenAuthenticationCheckbox().click();
     modelServingWizardEdit.findServiceAccountByIndex(0).should('have.value', 'default-name');
+    modelServingWizardEdit.findNextButton().should('be.enabled').click();
+
+    modelServingWizardEdit.findUpdateDeploymentButton().should('be.enabled').click();
+  });
+
+  it('Edit an existing legacy generative deployment', () => {
+    initIntercepts({ modelType: ServingRuntimeModelType.GENERATIVE, vLLMDeploymentOnMaaS: true });
+    cy.interceptK8sList(
+      { model: InferenceServiceModel, ns: 'test-project' },
+      mockK8sResourceList([
+        mockInferenceServiceK8sResource({
+          modelType: ServingRuntimeModelType.GENERATIVE,
+          hasExternalRoute: true,
+          secretName: 'test-uri-secret',
+          hardwareProfileName: 'small-profile',
+          hardwareProfileNamespace: 'opendatahub',
+          description: 'test-description',
+        }),
+      ]),
+    );
+    cy.interceptK8sList(
+      { model: ServingRuntimeModel, ns: 'test-project' },
+      mockK8sResourceList([
+        mockServingRuntimeK8sResource({
+          scope: 'global',
+          templateDisplayName: 'vLLM NVIDIA',
+        }),
+      ]),
+    );
+
+    modelServingGlobal.visit('test-project');
+    modelServingGlobal.getModelRow('Test Inference Service').findKebabAction('Edit').click();
+
+    // Step 1: Model source
+    modelServingWizardEdit.findModelLocationSelect().should('exist');
+    modelServingWizardEdit.findExistingConnectionValue().should('have.value', 'Test URI Secret');
+    modelServingWizardEdit.findModelSourceStep().should('be.enabled');
+    modelServingWizardEdit.findNextButton().should('be.enabled');
+
+    modelServingWizardEdit
+      .findModelTypeSelect()
+      .should('have.text', ModelTypeLabel.GENERATIVE)
+      .should('be.disabled');
+
+    modelServingWizardEdit.findLegacyModeCheckbox().should('be.checked').should('be.disabled');
+    modelServingWizardEdit.findNextButton().should('be.enabled').click();
+
+    // Step 2: Model deployment
+    modelServingWizardEdit
+      .findModelDeploymentDescriptionInput()
+      .should('contain.text', 'test-description');
+    modelServingWizardEdit.findModelDeploymentStep().should('be.enabled');
+    modelServingWizardEdit.findNextButton().should('be.enabled');
+
+    modelServingWizardEdit
+      .findModelDeploymentNameInput()
+      .should('have.value', 'Test Inference Service');
+    hardwareProfileSection.findSelect().should('be.visible');
+    hardwareProfileSection.findSelect().should('contain.text', 'Small');
+    modelServingWizardEdit.findServingRuntimeTemplateSearchSelector().should('exist');
+    modelServingWizardEdit
+      .findServingRuntimeTemplateSearchSelector()
+      .should('contain.text', 'vLLM NVIDIA');
+    modelServingWizardEdit.findNextButton().should('be.enabled').click();
+
+    // Step 3: Advanced options
+    modelServingWizardEdit.findAdvancedOptionsStep().should('be.enabled');
+    modelServingWizardEdit.findExternalRouteCheckbox().should('be.checked');
     modelServingWizardEdit.findNextButton().should('be.enabled').click();
 
     modelServingWizardEdit.findUpdateDeploymentButton().should('be.enabled').click();
@@ -1511,7 +1618,10 @@ describe('Model Serving Deploy Wizard', () => {
     modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.PREDICTIVE).should('exist');
     modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.GENERATIVE).should('exist').click();
     modelServingWizard.findModelLocationSelect().should('exist');
-    modelServingWizard.findModelLocationSelectOption('URI').should('exist').click();
+    modelServingWizard
+      .findModelLocationSelectOption(ModelLocationSelectOption.URI)
+      .should('exist')
+      .click();
     modelServingWizard.findUrilocationInput().type('https://testinguri');
 
     modelServingWizard.findSaveConnectionCheckbox().should('be.checked');
@@ -1658,6 +1768,302 @@ describe('Model Serving Deploy Wizard', () => {
     modelServingWizardEdit.findModelSourceStep().should('be.enabled');
   });
 
+  describe('YAML', () => {
+    it('Should show YAML preview mode when toggled', () => {
+      initIntercepts({ modelType: ServingRuntimeModelType.GENERATIVE });
+      cy.interceptK8sList(
+        { model: InferenceServiceModel, ns: 'test-project' },
+        mockK8sResourceList([mockInferenceServiceK8sResource({})]),
+      );
+      cy.interceptK8sList(
+        { model: ServingRuntimeModel, ns: 'test-project' },
+        mockK8sResourceList([mockServingRuntimeK8sResource({})]),
+      );
+
+      modelServingGlobal.visit('test-project');
+      modelServingGlobal.findDeployModelButton().click();
+
+      // YAML Viewer
+      modelServingWizard.findYAMLViewerToggle('YAML').should('exist').click();
+      modelServingWizard.findYAMLEditorEmptyState().should('exist');
+      modelServingWizard.findYAMLViewerToggle('Form').should('exist').click();
+
+      // Fill form to llmd and check yaml preview
+      modelServingWizard
+        .findModelTypeSelectOption(ModelTypeLabel.GENERATIVE)
+        .should('exist')
+        .click();
+      modelServingWizard
+        .findModelLocationSelectOption(ModelLocationSelectOption.URI)
+        .should('exist')
+        .click();
+      modelServingWizard.findUrilocationInput().type('https://test');
+      modelServingWizard.findSaveConnectionCheckbox().click();
+      modelServingWizard.findNextButton().should('be.enabled').click();
+      modelServingWizard.findModelDeploymentNameInput().type('test-model');
+      modelServingWizard.findServingRuntimeTemplateSearchSelector().click();
+      modelServingWizard
+        .findGlobalScopedTemplateOption('Distributed inference with llm-d')
+        .should('exist')
+        .click();
+
+      // Verify yaml preview contents (use .contains() command, not .should('contain.text'),
+      // because cy.contains() normalizes &nbsp; to regular spaces while the assertion does not)
+      modelServingWizard.findYAMLViewerToggle('YAML').should('exist').click();
+      const yamlEditor = modelServingWizard.findYAMLCodeEditor();
+      yamlEditor.containsText('apiVersion: serving.kserve.io/v1alpha1');
+      yamlEditor.containsText('kind: LLMInferenceService');
+      yamlEditor.containsText('name: test-model');
+    });
+
+    it('Switch to YAML edit mode on the last step and deploy', () => {
+      initIntercepts({ modelType: ServingRuntimeModelType.GENERATIVE });
+
+      initMockConnectionSecretIntercepts({ connectionSecretName: 'test-uri-connection-secret' });
+      initMockModelAuthIntercepts({ modelName: 'yaml-edited-model', getResponse: 404 });
+
+      cy.interceptK8s(
+        'POST',
+        { model: LLMInferenceServiceModel, ns: 'test-project' },
+        {
+          statusCode: 200,
+          body: mockLLMInferenceServiceK8sResource({ name: 'yaml-edited-model' }),
+        },
+      ).as('createLLMInferenceService');
+
+      modelServingGlobal.visit('test-project');
+      modelServingGlobal.findDeployModelButton().click();
+
+      // Step 1: Model source - create a new URI connection (saved as 'test-uri-connection-secret').
+      // The POST and subsequent GET for the connection secret are intercepted above.
+      modelServingWizard
+        .findModelTypeSelectOption(ModelTypeLabel.GENERATIVE)
+        .should('exist')
+        .click();
+      modelServingWizard
+        .findModelLocationSelectOption(ModelLocationSelectOption.EXISTING)
+        .should('exist')
+        .click();
+      modelServingWizard.findExistingConnectionSelect().should('exist').click();
+      modelServingWizard
+        .findModelLocationSelectOption(ModelLocationSelectOption.URI)
+        .should('exist')
+        .click();
+      modelServingWizard.findUrilocationInput().type('https://testinguri');
+      modelServingWizard.findSaveConnectionInput().type('test-uri-connection-secret');
+      modelServingWizard.findNextButton().should('be.enabled').click();
+
+      // Step 2: Model deployment - set name and choose the LLMd runtime
+      modelServingWizard.findModelDeploymentNameInput().type('test-model');
+      modelServingWizard.findServingRuntimeTemplateSearchSelector().click();
+      modelServingWizard
+        .findGlobalScopedTemplateOption('Distributed inference with llm-d')
+        .should('exist')
+        .click();
+      modelServingWizard.findNextButton().should('be.enabled').click();
+
+      // Step 3: Advanced options
+      modelServingWizard.findTokenAuthenticationCheckbox();
+      modelServingWizard.findNextButton().should('be.enabled').click();
+
+      // Step 4: Review - switch to YAML preview, verify the auto-generated YAML
+      modelServingWizard.findYAMLViewerToggle('YAML').should('exist').click();
+      const yamlEditor = modelServingWizard.findYAMLCodeEditor();
+      yamlEditor.containsText('kind: LLMInferenceService');
+      yamlEditor.containsText('name: test-model');
+
+      // Enter manual edit mode via the confirmation modal
+      modelServingWizard.findManualEditModeButton().click();
+      modelServingWizard.findSwitchToYAMLEditorConfirmButton().click();
+
+      // Once in yaml-edit mode, the Form toggle is disabled (cannot go back to wizard)
+      modelServingWizard.findYAMLViewerToggle('Form').should('be.disabled');
+
+      // Edit metadata.name in the YAML editor and verify the change propagates to the request
+      yamlEditor.replaceInEditor('name: test-model', 'name: yaml-edited-model');
+      yamlEditor.containsText('name: yaml-edited-model');
+
+      modelServingWizard.findErrorMessageAlert().should('not.exist');
+      modelServingWizard.findSubmitButton().should('be.enabled').click();
+
+      // Verify LLMInferenceService was created with the edited name (dry run + actual)
+      cy.wait('@createLLMInferenceService').then((interception) => {
+        expect(interception.request.url).to.include('?dryRun=All');
+        expect(interception.request.body.kind).to.equal('LLMInferenceService');
+        expect(interception.request.body.apiVersion).to.equal('serving.kserve.io/v1alpha1');
+        expect(interception.request.body.metadata.name).to.equal('yaml-edited-model');
+        expect(interception.request.body.metadata.namespace).to.equal('test-project');
+      });
+      cy.wait('@createLLMInferenceService').then((interception) => {
+        expect(interception.request.url).not.to.include('?dryRun=All');
+      });
+
+      cy.wait('@createServiceAccountSecret').then((interception) => {
+        expect(interception.request.body.metadata.name).to.equal('test-uri-connection-secret');
+        expect(interception.request.body.metadata.namespace).to.equal('test-project');
+      });
+
+      cy.wait('@createServiceAccount').then((interception) => {
+        expect(interception.request.body.metadata.name).to.equal('yaml-edited-model-sa');
+        expect(interception.request.body.metadata.namespace).to.equal('test-project');
+      });
+      cy.wait('@createRole').then((interception) => {
+        expect(interception.request.body.metadata.name).to.equal('yaml-edited-model-view-role');
+        expect(interception.request.body.metadata.namespace).to.equal('test-project');
+      });
+      cy.wait('@createRoleBinding').then((interception) => {
+        expect(interception.request.body.metadata.name).to.equal('yaml-edited-model-view');
+        expect(interception.request.body.metadata.namespace).to.equal('test-project');
+      });
+      cy.wait('@createServiceAccountSecret').then((interception) => {
+        expect(interception.request.body.metadata.name).to.equal(
+          'default-name-yaml-edited-model-sa',
+        );
+        expect(interception.request.body.metadata.namespace).to.equal('test-project');
+      });
+    });
+
+    it('Switch to YAML edit mode immediately and deploy from YAML only', () => {
+      initIntercepts({});
+      initMockConnectionSecretIntercepts({});
+      initMockModelAuthIntercepts({});
+
+      cy.interceptK8sList(
+        { model: LLMInferenceServiceModel, ns: 'test-project' },
+        mockK8sResourceList([]),
+      );
+      cy.interceptK8s(
+        'POST',
+        { model: LLMInferenceServiceModel, ns: 'test-project' },
+        {
+          statusCode: 200,
+          body: mockLLMInferenceServiceK8sResource({ name: 'yaml-only-model' }),
+        },
+      ).as('createLLMInferenceService');
+
+      modelServingGlobal.visit('test-project');
+      modelServingGlobal.findDeployModelButton().click();
+
+      // Immediately switch to YAML mode without touching the wizard form
+      modelServingWizard.findYAMLViewerToggle('YAML').should('exist').click();
+      modelServingWizard.findYAMLEditorEmptyState().should('exist');
+
+      // Enter manual edit mode via the confirmation modal
+      modelServingWizard.findManualEditModeButton().click();
+      modelServingWizard.findSwitchToYAMLEditorConfirmButton().click();
+
+      // Form toggle is disabled; submit is disabled until YAML is provided
+      modelServingWizard.findYAMLViewerToggle('Form').should('be.disabled');
+      modelServingWizard.findSubmitButton().should('be.disabled');
+
+      const yamlEditor = modelServingWizard.findYAMLCodeEditor();
+      yamlEditor.findStartFromScratchButton().click();
+      yamlEditor.waitForReady();
+
+      // Enter invalid YAML – error appears after submit
+      yamlEditor.setValue('invalid: yaml:');
+      modelServingWizard.findSubmitButton().click();
+      modelServingWizard.findErrorMessageAlert().should('exist');
+
+      // Dismiss the error manually with the close (x) button
+      modelServingWizard.findErrorMessageAlert().findByRole('button', { name: /close/i }).click();
+      modelServingWizard.findErrorMessageAlert().should('not.exist');
+
+      // Set a valid LLMInferenceService YAML
+      const yamlContent = [
+        'apiVersion: serving.kserve.io/v1alpha1',
+        'kind: LLMInferenceService',
+        'metadata:',
+        '  name: yaml-only-model',
+        '  namespace: test-project',
+        'spec:',
+        '  model:',
+        '    uri: hf://test/model',
+        '    name: yaml-only-model',
+      ].join('\n');
+      yamlEditor.setValue(yamlContent);
+
+      modelServingWizard.findErrorMessageAlert().should('not.exist');
+      modelServingWizard.findSubmitButton().should('be.enabled').click();
+
+      // Verify only LLMInferenceService was created (dry run + actual) – no other resources
+      cy.wait('@createLLMInferenceService').then((interception) => {
+        expect(interception.request.url).to.include('?dryRun=All');
+        expect(interception.request.body.kind).to.equal('LLMInferenceService');
+        expect(interception.request.body.apiVersion).to.equal('serving.kserve.io/v1alpha1');
+        expect(interception.request.body.metadata.name).to.equal('yaml-only-model');
+        expect(interception.request.body.metadata.namespace).to.equal('test-project');
+        expect(interception.request.body.spec.model.uri).to.equal('hf://test/model');
+      });
+
+      cy.wait('@createLLMInferenceService').then((interception) => {
+        expect(interception.request.url).not.to.include('?dryRun=All');
+      });
+
+      cy.get('@createConnectionSecret.all').then((interceptions) => {
+        expect(interceptions).to.have.length(0);
+      });
+      cy.get('@createServiceAccountSecret.all').then((interceptions) => {
+        expect(interceptions).to.have.length(0);
+      });
+      cy.get('@createServiceAccount.all').then((interceptions) => {
+        expect(interceptions).to.have.length(0);
+      });
+      cy.get('@createRole.all').then((interceptions) => {
+        expect(interceptions).to.have.length(0);
+      });
+      cy.get('@createRoleBinding.all').then((interceptions) => {
+        expect(interceptions).to.have.length(0);
+      });
+    });
+
+    it('should auto-fallback to YAML edit mode if the form data extraction fails', () => {
+      initIntercepts({});
+      initMockConnectionSecretIntercepts({});
+      initMockModelAuthIntercepts({});
+
+      const unparseableDeployment = mockLLMInferenceServiceK8sResource({
+        name: 'unparseable-model',
+        displayName: 'Unparseable Model',
+        modelUri: 's3://my-bucket/my-model',
+      });
+      delete unparseableDeployment.metadata.annotations?.['opendatahub.io/model-type'];
+
+      cy.interceptK8sList(
+        { model: LLMInferenceServiceModel, ns: 'test-project' },
+        mockK8sResourceList([unparseableDeployment]),
+      );
+      cy.interceptK8sList(
+        { model: ServingRuntimeModel, ns: 'test-project' },
+        mockK8sResourceList([]),
+      );
+      cy.interceptK8s(
+        'GET',
+        { model: LLMInferenceServiceModel, ns: 'test-project', name: 'unparseable-model' },
+        unparseableDeployment,
+      );
+      cy.interceptK8s(
+        'PUT',
+        { model: LLMInferenceServiceModel, ns: 'test-project', name: 'unparseable-model' },
+        {
+          statusCode: 200,
+          body: unparseableDeployment,
+        },
+      ).as('updateLLMInferenceService');
+
+      modelServingGlobal.visit('test-project');
+      modelServingGlobal.getModelRow('Unparseable Model').findKebabAction('Edit').click();
+      modelServingWizard.findYAMLViewerToggle('YAML').should('have.attr', 'aria-pressed', 'true');
+      modelServingWizard.findYAMLViewerToggle('Form').should('be.disabled');
+
+      cy.findByTestId('yaml-fallback-alert').should('exist');
+      cy.findByTestId('yaml-fallback-alert').should(
+        'contain.text',
+        'This deployment contains custom configuration that cannot be displayed in the form',
+      );
+    });
+  });
+
   describe('redirect from v2 to v3 route', () => {
     beforeEach(() => {
       initIntercepts({});
@@ -1693,7 +2099,10 @@ describe('Model Serving Deploy Wizard', () => {
         .findModelTypeSelectOption(ModelTypeLabel.PREDICTIVE)
         .should('exist')
         .click();
-      modelServingWizard.findModelLocationSelectOption('URI').should('exist').click();
+      modelServingWizard
+        .findModelLocationSelectOption(ModelLocationSelectOption.URI)
+        .should('exist')
+        .click();
       modelServingWizard.findUrilocationInput().type('https://test');
       modelServingWizard.findSaveConnectionCheckbox().click();
       modelServingWizard.findNextButton().should('be.enabled').click();
@@ -1710,7 +2119,7 @@ describe('Model Serving Deploy Wizard', () => {
       // Step 3: Override autoselect - manually select Caikit
       modelServingWizard.findServingRuntimeSelectRadio().click();
       modelServingWizard.findServingRuntimeTemplateSearchSelector().click();
-      modelServingWizard.findGlobalScopedTemplateOption('Caikit').click();
+      modelServingWizard.selectGlobalScopedTemplateOption('Caikit');
       // Verify manual selection is active
       modelServingWizard.findServingRuntimeSelectRadio().should('be.checked');
 
@@ -1759,6 +2168,696 @@ describe('Model Serving Deploy Wizard', () => {
       modelServingWizard
         .findServingRuntimeTemplateSearchSelector()
         .should('contain.text', 'vLLM AMD');
+    });
+  });
+  describe('Model location data prefill', () => {
+    beforeEach(() => {
+      initIntercepts({});
+    });
+
+    it('should prefill model location data for saved S3, saved OCI, and saved URI', () => {
+      const savedS3Secret = mockSecretK8sResource({
+        name: 'saved-s3-secret',
+        namespace: 'test-project',
+        displayName: 'Saved S3 Secret',
+        connectionType: 's3',
+        data: {
+          AWS_ACCESS_KEY_ID: 'dGVzdC1rZXk=',
+          AWS_SECRET_ACCESS_KEY: 'dGVzdC1zZWNyZXQ=',
+          AWS_S3_ENDPOINT: 'aHR0cHM6Ly9zMy5hbWF6b25hd3MuY29tLw==',
+          AWS_S3_BUCKET: 'dGVzdC1idWNrZXQ=',
+          AWS_DEFAULT_REGION: 'dXMtZWFzdC0x',
+        },
+      });
+
+      const savedOCISecret = mockCustomSecretK8sResource({
+        name: 'saved-oci-secret',
+        namespace: 'test-project',
+        type: 'kubernetes.io/dockerconfigjson',
+        annotations: {
+          'opendatahub.io/connection-type-protocol': 'oci',
+          'opendatahub.io/connection-type-ref': 'oci-v1',
+          'openshift.io/display-name': 'Saved OCI Secret',
+        },
+        data: {
+          '.dockerconfigjson':
+            'eyJhdXRocyI6IHsidGVzdC5pbyI6IHsiYXV0aCI6ICJibGFoYmxhaGJsYWgifX19Cg==',
+          OCI_HOST: 'dGVzdC5pby9vcmdhbml6YXRpb24K',
+          ACCESS_TYPE: 'WyJQdWxsIl0=',
+        },
+      });
+
+      const savedURISecret = mockSecretK8sResource({
+        name: 'saved-uri-secret',
+        namespace: 'test-project',
+        displayName: 'Saved URI Secret',
+        connectionType: 'uri',
+        data: {
+          URI: 'aHR0cHM6Ly90ZXN0LmlvL29yZ2FuaXphdGlvbi90ZXN0LW1vZGVsOmxhdGVzdA==',
+        },
+      });
+      const savedURIModel = mockInferenceServiceK8sResource({
+        name: 'saved-uri-model',
+        displayName: 'Saved URI Model',
+        modelType: ServingRuntimeModelType.PREDICTIVE,
+        storageUri: 'https://test.io/organization/test-model:latest',
+        secretName: 'saved-uri-secret',
+      });
+
+      const savedS3Model = mockInferenceServiceK8sResource({
+        name: 'saved-s3-model',
+        displayName: 'Saved S3 Model',
+        secretName: 'saved-s3-secret',
+        modelType: ServingRuntimeModelType.PREDICTIVE,
+        path: 'path/to/model',
+        predictorAnnotations: {
+          'opendatahub.io/connection-path': 'test-model/',
+        },
+      });
+
+      const savedOCIModel = mockInferenceServiceK8sResource({
+        name: 'saved-oci-model',
+        displayName: 'Saved OCI Model',
+        modelType: ServingRuntimeModelType.PREDICTIVE,
+        imagePullSecrets: [{ name: 'saved-oci-secret' }],
+        storageUri: 'oci://test.io/organization/test-model:latest',
+      });
+
+      cy.interceptK8sList(
+        { model: SecretModel, ns: 'test-project' },
+        mockK8sResourceList([savedS3Secret, savedOCISecret, savedURISecret]),
+      );
+
+      cy.interceptK8sList(
+        { model: InferenceServiceModel, ns: 'test-project' },
+        mockK8sResourceList([savedS3Model, savedOCIModel, savedURIModel]),
+      );
+
+      cy.interceptK8sList(
+        { model: ServingRuntimeModel, ns: 'test-project' },
+        mockK8sResourceList([mockServingRuntimeK8sResource({})]),
+      );
+
+      modelServingGlobal.visit('test-project');
+
+      // Saved S3 connection - should prefill 'existing connection', select it, and show model path
+      modelServingGlobal.getModelRow('Saved S3 Model').findKebabAction('Edit').click();
+      modelServingWizardEdit.findModelLocationSelectOption('Existing connection').should('exist');
+      modelServingWizardEdit.findExistingConnectionValue().should('have.value', 'Saved S3 Secret');
+      modelServingWizardEdit.findLocationPathInput().should('have.value', 'path/to/model');
+      modelServingWizardEdit.findCancelButton().click();
+      modelServingWizardEdit.findDiscardButton().click();
+
+      // Saved OCI connection - should prefill existing connection, select it, and show model URI
+      modelServingGlobal.getModelRow('Saved OCI Model').findKebabAction('Edit').click();
+      modelServingWizardEdit.findModelLocationSelectOption('Existing connection').should('exist');
+      modelServingWizardEdit.findExistingConnectionValue().should('have.value', 'Saved OCI Secret');
+      modelServingWizardEdit
+        .findOCIModelURI()
+        .should('have.value', 'test.io/organization/test-model:latest');
+      modelServingWizardEdit.findCancelButton().click();
+      modelServingWizardEdit.findDiscardButton().click();
+
+      // Saved URI connection - should prefill existing connection
+      modelServingGlobal.getModelRow('Saved URI Model').findKebabAction('Edit').click();
+      modelServingWizardEdit.findModelLocationSelectOption('Existing connection').should('exist');
+      modelServingWizardEdit.findExistingConnectionValue().should('have.value', 'Saved URI Secret');
+      modelServingWizardEdit.findCancelButton().click();
+      modelServingWizardEdit.findDiscardButton().click();
+    });
+
+    it('should prefill model location data for unsaved S3, unsaved OCI, and unsaved URI', () => {
+      const unsavedS3Secret = mockSecretK8sResource({
+        name: 'secret-12345-unsaved-s3',
+        namespace: 'test-project',
+        displayName: 'Unsaved S3 Secret',
+        connectionType: 's3',
+        data: {
+          AWS_ACCESS_KEY_ID: 'dW5zYXZlZC1rZXk=',
+          AWS_SECRET_ACCESS_KEY: 'dW5zYXZlZC1zZWNyZXQ=',
+          AWS_S3_ENDPOINT: 'aHR0cHM6Ly9zMy5hbWF6b25hd3MuY29tLw==',
+          AWS_S3_BUCKET: 'dW5zYXZlZC1idWNrZXQ=',
+        },
+      });
+      // Add ownerReferences to make it an unsaved connection
+      unsavedS3Secret.metadata.ownerReferences = [
+        {
+          apiVersion: 'v1',
+          kind: 'InferenceService',
+          name: 'unsaved-s3-model',
+          uid: 'test-uid',
+        },
+      ];
+
+      const unsavedURISecret = mockSecretK8sResource({
+        name: 'secret-12345-unsaved-uri',
+        namespace: 'test-project',
+        displayName: 'Unsaved URI Secret',
+        connectionType: 'uri',
+        data: {
+          URI: 'aHR0cHM6Ly90ZXN0LmlvL29yZ2FuaXphdGlvbi90ZXN0LW1vZGVsOmxhdGVzdA==',
+        },
+      });
+      // Add ownerReferences to make it an unsaved connection
+      unsavedURISecret.metadata.ownerReferences = [
+        {
+          apiVersion: 'v1',
+          kind: 'InferenceService',
+          name: 'unsaved-uri-model',
+          uid: 'test-uid',
+        },
+      ];
+
+      const unsavedOCISecret = mockCustomSecretK8sResource({
+        name: 'secret-12345-unsaved-oci',
+        namespace: 'test-project',
+        type: 'kubernetes.io/dockerconfigjson',
+        annotations: {
+          'opendatahub.io/connection-type-protocol': 'oci',
+          'opendatahub.io/connection-type-ref': 'oci-v1',
+          'openshift.io/display-name': 'Unsaved OCI Secret',
+        },
+        data: {
+          '.dockerconfigjson':
+            'eyJhdXRocyI6IHsidGVzdC5pbyI6IHsiYXV0aCI6ICJibGFoYmxhaGJsYWgifX19Cg==',
+          OCI_HOST: 'dGVzdC5pby9vcmdhbml6YXRpb24K',
+          ACCESS_TYPE: 'WyJQdWxsIl0=',
+        },
+      });
+      // Add ownerReferences to make it an unsaved connection
+      unsavedOCISecret.metadata.ownerReferences = [
+        {
+          apiVersion: 'v1',
+          kind: 'InferenceService',
+          name: 'unsaved-oci-model',
+          uid: 'test-uid',
+        },
+      ];
+      const unsavedURIModel = mockInferenceServiceK8sResource({
+        name: 'unsaved-uri-model',
+        displayName: 'Unsaved URI Model',
+        modelType: ServingRuntimeModelType.PREDICTIVE,
+        storageUri: 'https://test.io/organization/test-model:latest',
+        secretName: 'secret-12345-unsaved-uri',
+      });
+
+      const unsavedOCIModel = mockInferenceServiceK8sResource({
+        name: 'unsaved-oci-model',
+        displayName: 'Unsaved OCI Model',
+        modelType: ServingRuntimeModelType.PREDICTIVE,
+        imagePullSecrets: [{ name: 'secret-12345-unsaved-oci' }],
+        storageUri: 'oci://test.io/organization/test-model:latest',
+      });
+      const unsavedS3Model = mockInferenceServiceK8sResource({
+        name: 'unsaved-s3-model',
+        displayName: 'Unsaved S3 Model',
+        secretName: 'secret-12345-unsaved-s3',
+        modelType: ServingRuntimeModelType.PREDICTIVE,
+        path: 'path/to/model',
+      });
+      cy.interceptK8sList(
+        { model: SecretModel, ns: 'test-project' },
+        mockK8sResourceList([unsavedS3Secret, unsavedURISecret, unsavedOCISecret]),
+      );
+      cy.interceptK8sList(
+        { model: InferenceServiceModel, ns: 'test-project' },
+        mockK8sResourceList([unsavedS3Model, unsavedURIModel, unsavedOCIModel]),
+      );
+      cy.interceptK8sList(
+        { model: ServingRuntimeModel, ns: 'test-project' },
+        mockK8sResourceList([mockServingRuntimeK8sResource({})]),
+      );
+
+      modelServingGlobal.visit('test-project');
+      // Unsaved S3 connection - should select S3 location type, select it, and prefill all fields
+      modelServingGlobal.getModelRow('Unsaved S3 Model').findKebabAction('Edit').click();
+      modelServingWizardEdit.findModelLocationSelectOption('S3 object storage').should('exist');
+      modelServingWizardEdit.findLocationAccessKeyInput().should('have.value', 'unsaved-key');
+      modelServingWizardEdit.findLocationSecretKeyInput().should('have.value', 'unsaved-secret');
+      modelServingWizardEdit
+        .findLocationEndpointInput()
+        .should('have.value', 'https://s3.amazonaws.com/');
+      modelServingWizardEdit.findLocationBucketInput().should('have.value', 'unsaved-bucket');
+      modelServingWizardEdit.findLocationPathInput().should('have.value', 'path/to/model');
+      modelServingWizardEdit.findCancelButton().click();
+      modelServingWizardEdit.findDiscardButton().click();
+
+      // Unsaved URI connection - should select URI location type, select it, and prefill all fields
+      modelServingGlobal.getModelRow('Unsaved URI Model').findKebabAction('Edit').click();
+      modelServingWizardEdit.findModelLocationSelectOption('URI').should('exist');
+      modelServingWizardEdit
+        .findUrilocationInput()
+        .should('have.value', 'https://test.io/organization/test-model:latest');
+      modelServingWizardEdit.findCancelButton().click();
+      modelServingWizardEdit.findDiscardButton().click();
+
+      // Unsaved OCI connection - should select OCI location type, select it, and prefill all fields
+      modelServingGlobal.getModelRow('Unsaved OCI Model').findKebabAction('Edit').click();
+      modelServingWizardEdit
+        .findModelLocationSelectOption('OCI compliant registry')
+        .should('exist');
+      modelServingWizardEdit
+        .findOCIModelURI()
+        .should('have.value', 'test.io/organization/test-model:latest');
+      modelServingWizardEdit.findCancelButton().click();
+      modelServingWizardEdit.findDiscardButton().click();
+    });
+
+    it('should prefill model location data for saved deleted S3 type, saved deleted OCI type, and saved deleted URI type', () => {
+      // Saved OCI secret with a non-existent connection type
+      const savedDeletedTypeOCISecret = mockCustomSecretK8sResource({
+        name: 'saved-deleted-type-oci-secret',
+        namespace: 'test-project',
+        type: 'kubernetes.io/dockerconfigjson',
+        annotations: {
+          'opendatahub.io/connection-type': 'oci-deleted',
+          'openshift.io/display-name': 'Saved Deleted Type OCI Secret',
+          'opendatahub.io/connection-type-protocol': 'oci',
+          'opendatahub.io/connection-type-ref': 'ct-deleted-oci',
+        },
+        data: {
+          '.dockerconfigjson':
+            'eyJhdXRocyI6IHsidGVzdC5pbyI6IHsiYXV0aCI6ICJibGFoYmxhaGJsYWgifX19Cg==',
+          OCI_HOST: 'dGVzdC5pby9vcmdhbml6YXRpb24K',
+          ACCESS_TYPE: 'WyJQdWxsIl0=',
+          CUSTOM_FIELD: 'Y3VzdG9tLXZhbHVl',
+        },
+      });
+      const savedDeletedTypeURISecret = mockCustomSecretK8sResource({
+        name: 'saved-deleted-type-uri-secret',
+        namespace: 'test-project',
+        annotations: {
+          'opendatahub.io/connection-type': 'uri-deleted',
+          'openshift.io/display-name': 'Saved Deleted Type URI Secret',
+          'opendatahub.io/connection-type-protocol': 'uri',
+          'opendatahub.io/connection-type-ref': 'ct-deleted-uri',
+        },
+        data: {
+          URI: 'aHR0cHM6Ly90ZXN0LmlvL29yZ2FuaXphdGlvbi9zYXZlZC1kZWxldGVkLW1vZGVsOmxhdGVzdA==',
+          CUSTOM_URI_FIELD: 'Y3VzdG9tLXZhbHVl',
+        },
+      });
+      const savedDeletedTypeS3Secret = mockCustomSecretK8sResource({
+        name: 'saved-deleted-type-s3-secret',
+        namespace: 'test-project',
+        type: 'Opaque',
+        labels: {
+          [KnownLabels.DATA_CONNECTION_AWS]: 'true',
+        },
+        annotations: {
+          'opendatahub.io/connection-type': 's3',
+          'openshift.io/display-name': 'Saved Deleted Type S3 Secret',
+          'opendatahub.io/connection-type-protocol': 's3',
+          'opendatahub.io/connection-type-ref': 'ct-deleted-s3',
+        },
+        data: {
+          AWS_ACCESS_KEY_ID: 'dGVzdC1rZXk=',
+          AWS_SECRET_ACCESS_KEY: 'dGVzdC1zZWNyZXQ=',
+          AWS_S3_ENDPOINT: 'aHR0cHM6Ly9zMy5hbWF6b25hd3MuY29tLw==',
+          AWS_S3_BUCKET: 'dGVzdC1idWNrZXQ=',
+          AWS_DEFAULT_REGION: 'dXMtZWFzdC0x',
+        },
+      });
+      const savedDeletedTypeS3Model = mockInferenceServiceK8sResource({
+        name: 'saved-deleted-type-s3-model',
+        displayName: 'Saved Deleted Type S3 Model',
+        secretName: 'saved-deleted-type-s3-secret',
+        modelType: ServingRuntimeModelType.PREDICTIVE,
+        path: 'path/to/model',
+      });
+      const savedDeletedTypeURIModel = mockInferenceServiceK8sResource({
+        name: 'saved-deleted-type-uri-model',
+        displayName: 'Saved Deleted Type URI Model',
+        secretName: 'saved-deleted-type-uri-secret',
+        modelType: ServingRuntimeModelType.PREDICTIVE,
+        storageUri: 'https://test.io/organization/saved-deleted-model:latest',
+      });
+      const savedDeletedTypeOCIModel = mockInferenceServiceK8sResource({
+        name: 'saved-deleted-type-oci-model',
+        displayName: 'Saved Deleted Type OCI Model',
+        secretName: 'saved-deleted-type-oci-secret',
+        modelType: ServingRuntimeModelType.PREDICTIVE,
+        imagePullSecrets: [{ name: 'saved-deleted-type-oci-secret' }],
+        storageUri: 'oci://test.io/organization/saved-deleted-model:latest',
+      });
+
+      cy.interceptK8sList(
+        { model: SecretModel, ns: 'test-project' },
+        mockK8sResourceList([
+          savedDeletedTypeOCISecret,
+          savedDeletedTypeURISecret,
+          savedDeletedTypeS3Secret,
+        ]),
+      );
+      cy.interceptK8sList(
+        { model: InferenceServiceModel, ns: 'test-project' },
+        mockK8sResourceList([
+          savedDeletedTypeOCIModel,
+          savedDeletedTypeURIModel,
+          savedDeletedTypeS3Model,
+        ]),
+      );
+      modelServingGlobal.visit('test-project');
+
+      // Saved OCI connection with non-existent connection type - should select existing connection, select it, and prefill model URI
+      modelServingGlobal
+        .getModelRow('Saved Deleted Type OCI Model')
+        .findKebabAction('Edit')
+        .click();
+      modelServingWizardEdit.findModelLocationSelectOption('Existing connection').should('exist');
+      modelServingWizardEdit
+        .findExistingConnectionValue()
+        .should('have.value', 'Saved Deleted Type OCI Secret');
+      modelServingWizardEdit
+        .findOCIModelURI()
+        .should('have.value', 'test.io/organization/saved-deleted-model:latest');
+      modelServingWizardEdit.findCancelButton().click();
+      modelServingWizardEdit.findDiscardButton().click();
+
+      // Saved URI connection with non-existent connection type - should select existing connection, select it, and prefill model URI
+      modelServingGlobal
+        .getModelRow('Saved Deleted Type URI Model')
+        .findKebabAction('Edit')
+        .click();
+      modelServingWizardEdit.findModelLocationSelectOption('Existing connection').should('exist');
+      modelServingWizardEdit
+        .findExistingConnectionValue()
+        .should('have.value', 'Saved Deleted Type URI Secret');
+      modelServingWizardEdit.findCancelButton().click();
+      modelServingWizardEdit.findDiscardButton().click();
+
+      // Saved S3 connection with non-existent connection type - should select existing connection, select it, and prefill model path
+      modelServingGlobal.getModelRow('Saved Deleted Type S3 Model').findKebabAction('Edit').click();
+      modelServingWizardEdit.findModelLocationSelectOption('Existing connection').should('exist');
+      modelServingWizardEdit
+        .findExistingConnectionValue()
+        .should('have.value', 'Saved Deleted Type S3 Secret');
+      modelServingWizardEdit.findLocationPathInput().should('have.value', 'path/to/model');
+      modelServingWizardEdit.findCancelButton().click();
+      modelServingWizardEdit.findDiscardButton().click();
+    });
+
+    it('should prefill model location data for unsaved deleted S3 type, unsaved deleted OCI type, and unsaved deleted URI type', () => {
+      const unsavedDeletedTypeURISecret = mockCustomSecretK8sResource({
+        name: 'unsaved-deleted-type-uri-secret',
+        namespace: 'test-project',
+        annotations: {
+          'opendatahub.io/connection-type': 'uri-deleted',
+          'openshift.io/display-name': 'Unsaved Deleted Type URI Secret',
+          'opendatahub.io/connection-type-protocol': 'uri',
+          'opendatahub.io/connection-type-ref': 'ct-deleted-uri',
+        },
+        data: {
+          URI: 'aHR0cHM6Ly90ZXN0LmlvL29yZ2FuaXphdGlvbi91bnNhdmVkLWRlbGV0ZWQtbW9kZWw6bGF0ZXN0',
+          CUSTOM_URI_FIELD: 'Y3VzdG9tLXZhbHVl',
+        },
+      });
+      unsavedDeletedTypeURISecret.metadata.ownerReferences = [
+        {
+          apiVersion: 'v1',
+          kind: 'InferenceService',
+          name: 'unsaved-deleted-type-uri-model',
+          uid: 'test-uid',
+        },
+      ];
+      const unsavedDeletedTypeS3Secret = mockSecretK8sResource({
+        name: 'unsaved-deleted-type-s3-secret',
+        namespace: 'test-project',
+        annotations: {
+          'openshift.io/display-name': 'Unsaved Deleted Type S3 Secret',
+          'opendatahub.io/connection-type-protocol': 's3',
+          'opendatahub.io/connection-type-ref': 'ct-deleted-s3',
+        },
+        data: {
+          AWS_ACCESS_KEY_ID: 'dGVzdC1rZXk=',
+          AWS_SECRET_ACCESS_KEY: 'dGVzdC1zZWNyZXQ=',
+          AWS_S3_ENDPOINT: 'aHR0cHM6Ly9zMy5hbWF6b25hd3MuY29tLw==',
+          AWS_S3_BUCKET: 'dGVzdC1idWNrZXQ=',
+          AWS_DEFAULT_REGION: 'dXMtZWFzdC0x',
+        },
+      });
+      unsavedDeletedTypeS3Secret.metadata.ownerReferences = [
+        {
+          apiVersion: 'v1',
+          kind: 'InferenceService',
+          name: 'unsaved-deleted-type-s3-model',
+          uid: 'test-uid',
+        },
+      ];
+      const unsavedDeletedTypeS3Model = mockInferenceServiceK8sResource({
+        name: 'unsaved-deleted-type-s3-model',
+        displayName: 'Unsaved Deleted Type S3 Model',
+        secretName: 'unsaved-deleted-type-s3-secret',
+        modelType: ServingRuntimeModelType.PREDICTIVE,
+        path: 'path/to/model',
+      });
+      const unsavedDeletedTypeURIModel = mockInferenceServiceK8sResource({
+        name: 'unsaved-deleted-type-uri-model',
+        displayName: 'Unsaved Deleted Type URI Model',
+        secretName: 'unsaved-deleted-type-uri-secret',
+        modelType: ServingRuntimeModelType.PREDICTIVE,
+        storageUri: 'https://test.io/organization/unsaved-deleted-model:latest',
+      });
+      // OCI secret with non-existent connection type
+      const unsavedDeletedTypeOCISecret = mockCustomSecretK8sResource({
+        name: 'unsaved-deleted-type-oci-secret',
+        namespace: 'test-project',
+        type: 'kubernetes.io/dockerconfigjson',
+        annotations: {
+          'opendatahub.io/connection-type': 'oci-deleted',
+          'openshift.io/display-name': 'Unsaved Deleted Type OCI Secret',
+          'opendatahub.io/connection-type-protocol': 'oci',
+          'opendatahub.io/connection-type-ref': 'oci-deleted',
+        },
+        data: {
+          '.dockerconfigjson':
+            'eyJhdXRocyI6IHsidGVzdC5pbyI6IHsiYXV0aCI6ICJibGFoYmxhaGJsYWgifX19Cg==',
+          OCI_HOST: 'dGVzdC5pby9vcmdhbml6YXRpb24K',
+          ACCESS_TYPE: 'WyJQdWxsIl0=',
+          // Custom field for testing rendering based on the secret data
+          CUSTOM_FIELD: 'Y3VzdG9tLXZhbHVl',
+        },
+      });
+
+      unsavedDeletedTypeOCISecret.metadata.ownerReferences = [
+        {
+          apiVersion: 'v1',
+          kind: 'InferenceService',
+          name: 'unsaved-deleted-type-oci-model',
+          uid: 'test-uid',
+        },
+      ];
+      const unsavedDeletedTypeOCIModel = mockInferenceServiceK8sResource({
+        name: 'unsaved-deleted-type-oci-model',
+        displayName: 'Unsaved Deleted Type OCI Model',
+        modelType: ServingRuntimeModelType.PREDICTIVE,
+        imagePullSecrets: [{ name: 'unsaved-deleted-type-oci-secret' }],
+        storageUri: 'oci://test.io/organization/unsaved-deleted-model:latest',
+      });
+      cy.interceptK8sList(
+        { model: SecretModel, ns: 'test-project' },
+        mockK8sResourceList([
+          unsavedDeletedTypeOCISecret,
+          unsavedDeletedTypeURISecret,
+          unsavedDeletedTypeS3Secret,
+        ]),
+      );
+      cy.interceptK8sList(
+        { model: InferenceServiceModel, ns: 'test-project' },
+        mockK8sResourceList([
+          unsavedDeletedTypeOCIModel,
+          unsavedDeletedTypeURIModel,
+          unsavedDeletedTypeS3Model,
+        ]),
+      );
+      modelServingGlobal.visit('test-project');
+
+      // Unsaved OCI connection with non-existent connection type - should select OCI location type, select it, and prefill fields
+      modelServingGlobal
+        .getModelRow('Unsaved Deleted Type OCI Model')
+        .findKebabAction('Edit')
+        .click();
+      modelServingWizardEdit
+        .findModelLocationSelectOption('OCI compliant registry')
+        .should('exist');
+      // Checking the custom field is read from the secret and rendered in the UI
+      cy.findByTestId('field CUSTOM_FIELD').should('have.value', 'custom-value');
+      // Verify OCI fields are prefilled (connection type should be inferred as OCI compatible)
+      modelServingWizardEdit
+        .findOCIModelURI()
+        .should('have.value', 'test.io/organization/unsaved-deleted-model:latest');
+      modelServingWizardEdit.findCancelButton().click();
+      modelServingWizardEdit.findDiscardButton().click();
+
+      // Unsaved URI connection with non-existent connection type - should select URI location type, select it, and prefill fields
+      modelServingGlobal
+        .getModelRow('Unsaved Deleted Type URI Model')
+        .findKebabAction('Edit')
+        .click();
+      modelServingWizardEdit.findModelLocationSelectOption('URI').should('exist');
+      modelServingWizardEdit
+        .findUrilocationInput()
+        .should('have.value', 'https://test.io/organization/unsaved-deleted-model:latest');
+      modelServingWizardEdit.findCancelButton().click();
+      modelServingWizardEdit.findDiscardButton().click();
+
+      // Unsaved S3 connection with non-existent connection type - should select S3 location type, select it, and prefill fields
+      modelServingGlobal
+        .getModelRow('Unsaved Deleted Type S3 Model')
+        .findKebabAction('Edit')
+        .click();
+      modelServingWizardEdit.findModelLocationSelectOption('S3 object storage').should('exist');
+      modelServingWizardEdit.findLocationAccessKeyInput().should('have.value', 'test-key');
+      modelServingWizardEdit.findLocationSecretKeyInput().should('have.value', 'test-secret');
+      modelServingWizardEdit
+        .findLocationEndpointInput()
+        .should('have.value', 'https://s3.amazonaws.com/');
+      modelServingWizardEdit.findLocationBucketInput().should('have.value', 'test-bucket');
+      modelServingWizardEdit.findLocationPathInput().should('have.value', 'path/to/model');
+      modelServingWizardEdit.findCancelButton().click();
+      modelServingWizardEdit.findDiscardButton().click();
+    });
+
+    it('should auto-select single connection (OCI) and prefill additional fields on edit', () => {
+      const singleOCISecret = mockCustomSecretK8sResource({
+        name: 'single-oci-secret',
+        namespace: 'test-project',
+        type: 'kubernetes.io/dockerconfigjson',
+        annotations: {
+          'opendatahub.io/connection-type': 'oci',
+          'openshift.io/display-name': 'Single OCI Secret',
+        },
+        data: {
+          '.dockerconfigjson':
+            'eyJhdXRocyI6IHsidGVzdC5pbyI6IHsiYXV0aCI6ICJibGFoYmxhaGJsYWgifX19Cg==',
+          OCI_HOST: 'dGVzdC5pby9vcmdhbml6YXRpb24K',
+          OCI_MODEL_URI: 'b2NpOi8vdGVzdC5pby9vcmdhbml6YXRpb24vc2luZ2xlLW1vZGVsOmxhdGVzdA==',
+          ACCESS_TYPE: 'WyJQdWxsIl0=',
+        },
+      });
+
+      const singleOCIModel = mockInferenceServiceK8sResource({
+        name: 'single-oci-model',
+        displayName: 'Single OCI Model',
+        secretName: 'single-oci-secret',
+        modelType: ServingRuntimeModelType.PREDICTIVE,
+        imagePullSecrets: [{ name: 'single-oci-secret' }],
+        storageUri: 'oci://test.io/organization/single-model:latest',
+      });
+
+      // Only one connection in the project
+      cy.interceptK8sList(
+        { model: SecretModel, ns: 'test-project' },
+        mockK8sResourceList([singleOCISecret]),
+      );
+
+      cy.interceptK8sList(
+        { model: InferenceServiceModel, ns: 'test-project' },
+        mockK8sResourceList([singleOCIModel]),
+      );
+
+      cy.interceptK8sList(
+        { model: ServingRuntimeModel, ns: 'test-project' },
+        mockK8sResourceList([mockServingRuntimeK8sResource({})]),
+      );
+
+      modelServingGlobal.visit('test-project');
+      modelServingGlobal.getModelRow('Single OCI Model').findKebabAction('Edit').click();
+
+      // Verify existing connection is selected (auto-selected since it's the only one)
+      modelServingWizardEdit.findModelLocationSelectOption('Existing connection').should('exist');
+      modelServingWizardEdit
+        .findExistingConnectionValue()
+        .should('have.value', 'Single OCI Secret');
+
+      // Verify model URI is prefilled
+      modelServingWizardEdit
+        .findOCIModelURI()
+        .should('have.value', 'test.io/organization/single-model:latest');
+    });
+
+    it('should auto-select single connection (S3) and prefill additional fields on edit', () => {
+      const singleS3Secret = mockSecretK8sResource({
+        name: 'single-s3-secret',
+        displayName: 'Single S3 Secret',
+        namespace: 'test-project',
+        connectionType: 's3',
+        data: {
+          AWS_ACCESS_KEY_ID: 'dGVzdC1rZXk=',
+          AWS_SECRET_ACCESS_KEY: 'dGVzdC1zZWNyZXQ=',
+          AWS_S3_ENDPOINT: 'aHR0cHM6Ly9zMy5hbWF6b25hd3MuY29tLw==',
+          AWS_S3_BUCKET: 'dGVzdC1idWNrZXQ=',
+          AWS_DEFAULT_REGION: 'dXMtZWFzdC0x',
+        },
+      });
+
+      const singleS3Model = mockInferenceServiceK8sResource({
+        name: 'single-s3-model',
+        displayName: 'Single S3 Model',
+        secretName: 'single-s3-secret',
+        modelType: ServingRuntimeModelType.PREDICTIVE,
+        imagePullSecrets: [{ name: 'single-s3-secret' }],
+        storageUri: 's3://test.io/single-model:latest',
+        path: 'path/to/model',
+      });
+
+      // Only one connection in the project
+      cy.interceptK8sList(
+        { model: SecretModel, ns: 'test-project' },
+        mockK8sResourceList([singleS3Secret]),
+      );
+
+      cy.interceptK8sList(
+        { model: InferenceServiceModel, ns: 'test-project' },
+        mockK8sResourceList([singleS3Model]),
+      );
+
+      cy.interceptK8sList(
+        { model: ServingRuntimeModel, ns: 'test-project' },
+        mockK8sResourceList([mockServingRuntimeK8sResource({})]),
+      );
+
+      modelServingGlobal.visit('test-project');
+      modelServingGlobal.getModelRow('Single S3 Model').findKebabAction('Edit').click();
+
+      // Verify existing connection is selected (auto-selected since it's the only one)
+      modelServingWizardEdit.findModelLocationSelectOption('Existing connection').should('exist');
+      modelServingWizardEdit.findExistingConnectionValue().should('have.value', 'Single S3 Secret');
+
+      // Verify model path is prefilled
+      modelServingWizardEdit.findLocationPathInput().should('have.value', 'path/to/model');
+    });
+    it('should auto-select single PVC and prefill additional fields on edit', () => {
+      const singlePVC = mockPVCK8sResource({
+        name: 'single-pvc',
+        namespace: 'test-project',
+        displayName: 'Single PVC',
+        storageClassName: 'openshift-default-sc',
+        annotations: {
+          'dashboard.opendatahub.io/model-name': 'single-model',
+          'dashboard.opendatahub.io/model-path': 'path/to/model',
+        },
+      });
+      const singlePVCModel = mockInferenceServiceK8sResource({
+        name: 'single-pvc-model',
+        displayName: 'Single PVC Model',
+        secretName: 'single-pvc-secret',
+        modelType: ServingRuntimeModelType.PREDICTIVE,
+        storageUri: 'pvc://single-pvc/path/to/model',
+      });
+      cy.interceptK8sList(
+        { model: PVCModel, ns: 'test-project' },
+        mockK8sResourceList([singlePVC]),
+      );
+      cy.interceptK8sList(
+        { model: InferenceServiceModel, ns: 'test-project' },
+        mockK8sResourceList([singlePVCModel]),
+      );
+      modelServingGlobal.visit('test-project');
+      modelServingGlobal.getModelRow('Single PVC').findKebabAction('Edit').click();
+      modelServingWizardEdit.findModelLocationSelectOption('Cluster storage').should('exist');
+      modelServingWizardEdit.findPVCSelectValue().should('have.value', 'Single PVC');
+      modelServingWizardEdit.findLocationPathInput().should('have.value', 'path/to/model');
     });
   });
 });

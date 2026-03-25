@@ -1,4 +1,3 @@
-import { TEMP_DEV_CATALOG_ADVANCED_FILTERS_FEATURE_KEY } from '~/app/hooks/useTempDevCatalogAdvancedFiltersFeatureAvailable';
 import { appChrome } from './appChrome';
 
 class ModelCatalogFilter {
@@ -32,12 +31,7 @@ class ModelCatalogFilter {
 }
 
 class ModelCatalog {
-  visit({
-    enableTempDevCatalogAdvancedFiltersFeature = false,
-  }: { enableTempDevCatalogAdvancedFiltersFeature?: boolean } = {}) {
-    if (enableTempDevCatalogAdvancedFiltersFeature) {
-      window.localStorage.setItem(TEMP_DEV_CATALOG_ADVANCED_FILTERS_FEATURE_KEY, 'true');
-    }
+  visit() {
     cy.visit('/model-catalog');
     this.wait();
   }
@@ -105,6 +99,26 @@ class ModelCatalog {
     return cy.findByTestId('empty-model-catalog-state');
   }
 
+  findEmptyStateAdminLink() {
+    return this.findModelCatalogEmptyState().contains('Go to').parent();
+  }
+
+  findEmptyStateAdminSettingsLink() {
+    return this.findModelCatalogEmptyState().contains('Model catalog settings');
+  }
+
+  findEmptyStateWhosMyAdminLink() {
+    return this.findModelCatalogEmptyState().contains("Who's my administrator?");
+  }
+
+  findEmptyStateTitle() {
+    return this.findModelCatalogEmptyState().find('.pf-v6-c-empty-state__title-text');
+  }
+
+  findEmptyStateBody() {
+    return this.findModelCatalogEmptyState().find('.pf-v6-c-empty-state__body');
+  }
+
   findModelCatalogCards() {
     return cy.findAllByTestId('model-catalog-card');
   }
@@ -141,20 +155,8 @@ class ModelCatalog {
     return cy.get('img[alt="model logo"]');
   }
 
-  findVersionIcon() {
-    return cy.get('.pf-v6-c-icon');
-  }
-
-  findFrameworkLabel() {
-    return cy.contains('PyTorch');
-  }
-
   findTaskLabel() {
     return cy.contains('text-generation');
-  }
-
-  findLicenseLabel() {
-    return cy.contains('apache-2.0');
   }
 
   findProviderLabel() {
@@ -184,6 +186,14 @@ class ModelCatalog {
 
   findDetailsDescription() {
     return cy.findByTestId('model-long-description');
+  }
+
+  findModelArchitecture() {
+    return cy.findByTestId('model-architecture');
+  }
+
+  findModelType() {
+    return cy.findByTestId('model-type');
   }
 
   // Tabs functionality
@@ -240,36 +250,20 @@ class ModelCatalog {
     return cy.get('[data-testid="hardware-configuration-table"] tbody tr');
   }
 
-  findHardwareConfigurationTableData() {
-    return cy.get('[data-testid="hardware-configuration-table"] tbody td');
-  }
-
   findHardwareConfigurationColumn(columnName: string) {
     return cy.get(`[data-testid="hardware-configuration-table"] [data-label="${columnName}"]`);
-  }
-
-  findHardwareConfigurationSortButton(columnName: string) {
-    return cy.get(`[data-testid="hardware-configuration-table"] th`).contains(columnName);
-  }
-
-  findHardwareConfigurationPagination() {
-    return cy.get('[data-testid="hardware-configuration-table"] .pf-v6-c-pagination');
   }
 
   findValidatedModelHardware() {
     return cy.findByTestId('validated-model-hardware');
   }
 
-  findValidatedModelRps() {
-    return cy.findByTestId('validated-model-rps');
-  }
-
   findValidatedModelReplicas() {
     return cy.findByTestId('validated-model-replicas');
   }
 
-  findValidatedModelTtft() {
-    return cy.findByTestId('validated-model-ttft');
+  findValidatedModelLatency() {
+    return cy.findByTestId('validated-model-latency');
   }
 
   findWorkloadTypeFilter() {
@@ -277,8 +271,8 @@ class ModelCatalog {
   }
 
   findWorkloadTypeOption(useCaseValue: string) {
-    // Use the checkbox id attribute (e.g., 'chatbot', 'code_fixing', 'long_rag', 'rag')
-    return cy.get(`#${useCaseValue}`);
+    // WorkloadTypeFilter is now single-select dropdown with data-testid
+    return cy.findByTestId(`workload-type-filter-${useCaseValue}`);
   }
 
   selectWorkloadType(useCaseValue: string) {
@@ -309,6 +303,149 @@ class ModelCatalog {
   dismissPerformanceFiltersUpdatedAlert() {
     this.findPerformanceFiltersUpdatedAlertCloseButton().click();
     return this;
+  }
+
+  closeFilterChip(filterKey: string, value: string) {
+    cy.get(`[data-testid="${filterKey}-filter-chip-${value}"]`)
+      .closest('.pf-v6-c-label')
+      .find('button')
+      .click();
+    return this;
+  }
+
+  // Model card content helpers for toggle-based display
+  findValidatedModelBenchmarksCount() {
+    return cy.findAllByTestId('validated-model-benchmarks');
+  }
+
+  // Latency filter helpers
+  findLatencyFilter() {
+    return cy.findByTestId('latency-filter');
+  }
+
+  openLatencyFilter() {
+    this.findLatencyFilter().click();
+    // Wait for dropdown content to appear
+    cy.findByTestId('latency-filter-content').should('be.visible');
+    return this;
+  }
+
+  findLatencyMetricSelect() {
+    return cy.findByTestId('latency-metric-select');
+  }
+
+  findLatencyPercentileSelect() {
+    return cy.findByTestId('latency-percentile-select');
+  }
+
+  selectLatencyMetric(metric: string) {
+    this.findLatencyMetricSelect().click();
+    // Wait for menu to appear and click the option
+    cy.findByTestId('latency-metric-options').contains(metric).click();
+    return this;
+  }
+
+  selectLatencyPercentile(percentile: string) {
+    this.findLatencyPercentileSelect().click();
+    // Wait for menu to appear and click the option
+    cy.findByTestId('latency-percentile-options').contains(percentile).click();
+    return this;
+  }
+
+  findApplyFilterButton() {
+    return cy.findByTestId('latency-apply-filter');
+  }
+
+  findResetFilterButton() {
+    return cy.findByTestId('latency-reset-filter');
+  }
+
+  findEmptyStateResetFiltersButton() {
+    return this.findModelCatalogEmptyState().findByRole('button', {
+      name: /Reset all (defaults|filters)/i,
+    });
+  }
+
+  clickApplyFilter() {
+    this.findApplyFilterButton().click();
+    return this;
+  }
+
+  clickResetFilter() {
+    this.findResetFilterButton().click();
+    return this;
+  }
+
+  // Compression Comparison Card
+  findCompressionComparisonCard() {
+    return cy.findByTestId('compression-comparison-card');
+  }
+
+  findCompressionComparisonLoading() {
+    return cy.findByTestId('compression-comparison-loading');
+  }
+
+  findCompressionComparisonError() {
+    return cy.findByTestId('compression-comparison-error');
+  }
+
+  findCompressionComparisonEmpty() {
+    return cy.findByTestId('compression-comparison-empty');
+  }
+
+  findCompressionVariant(index: number) {
+    return cy.findByTestId(`compression-variant-${index}`);
+  }
+
+  findCompressionVariantLogo(index: number) {
+    return cy.findByTestId(`compression-logo-${index}`);
+  }
+
+  findCompressionVariantSkeleton(index: number) {
+    return cy.findByTestId(`compression-skeleton-${index}`);
+  }
+
+  findCompressionVariantLink(index: number) {
+    return cy.findByTestId(`compression-link-${index}`);
+  }
+
+  findCompressionTensorType(index: number) {
+    return cy.findByTestId(`compression-tensor-type-${index}`);
+  }
+
+  findCompressionCurrentModelName() {
+    return cy.findByTestId('compression-current-model-name');
+  }
+
+  findCompressionCurrentLabel() {
+    return cy.findByTestId('compression-current-label');
+  }
+
+  findAllCompressionCurrentLabels() {
+    return cy.findAllByTestId('compression-current-label');
+  }
+
+  findCompressionDivider(index: number) {
+    return cy.findByTestId(`compression-divider-${index}`);
+  }
+
+  findAllCompressionVariants() {
+    return cy.get('[data-testid^="compression-variant-"]');
+  }
+
+  // Performance Empty State
+  findPerformanceEmptyState() {
+    return cy.findByTestId('performance-empty-state');
+  }
+
+  findSetPerformanceOffLink() {
+    return this.findPerformanceEmptyState().contains('button', /Turn off model performance view/i);
+  }
+
+  findSelectAllModelsCategoryButton() {
+    return this.findPerformanceEmptyState().findByRole('button', {
+      name: /View all models with performance data/i,
+    });
   }
 }
 

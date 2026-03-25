@@ -1,3 +1,8 @@
+import {
+  ModelLocationSelectOption,
+  ModelStateLabel,
+  ModelTypeLabel,
+} from '@odh-dashboard/model-serving/components/deploymentWizard/types';
 import { HTPASSWD_CLUSTER_ADMIN_USER } from '../../../utils/e2eUsers';
 import {
   FormFieldSelector,
@@ -5,6 +10,7 @@ import {
 } from '../../../pages/modelRegistry/registerModelPage';
 import { modelRegistry } from '../../../pages/modelRegistry';
 import { retryableBefore } from '../../../utils/retryableHooks';
+import { isBYOIDCCluster, skipSuiteIfBYOIDC } from '../../../utils/skipUtils';
 import {
   checkModelExistsInDatabase,
   cleanupModelRegistryComponents,
@@ -25,11 +31,16 @@ import { deleteOpenShiftProject } from '../../../utils/oc_commands/project';
 import { AWS_BUCKETS } from '../../../utils/s3Buckets';
 
 describe('Verify models can be deployed from model registry', () => {
+  // Skip entire suite on BYOIDC clusters
+  skipSuiteIfBYOIDC('Multiple permissions management tests are not supported on BYOIDC clusters');
+
   let testData: ModelRegistryTestData;
   let registryName: string;
   let modelName: string;
   let projectName: string;
   let deploymentName: string;
+  let modelFormat: string;
+  let servingRuntime: string;
   const uuid = generateTestUUID();
   const databaseName = `model-registry-db-${uuid}`;
 
@@ -41,6 +52,8 @@ describe('Verify models can be deployed from model registry', () => {
       modelName = `${testData.objectStorageModelName}-${uuid}`;
       projectName = `${testData.deployProjectNamePrefix}-${uuid}`;
       deploymentName = testData.operatorDeploymentName;
+      modelFormat = testData.modelFormat;
+      servingRuntime = testData.servingRuntime;
 
       // ensure operator has optimal memory
       cy.step('Ensure operator has optimal memory for testing');
@@ -59,6 +72,12 @@ describe('Verify models can be deployed from model registry', () => {
   });
 
   after(() => {
+    // Skip cleanup on BYOIDC clusters since setup was skipped
+    if (isBYOIDCCluster()) {
+      cy.log('Skipping cleanup - tests were skipped on BYOIDC cluster');
+      return;
+    }
+
     cy.clearCookies();
     cy.clearLocalStorage();
 
@@ -84,8 +103,8 @@ describe('Verify models can be deployed from model registry', () => {
       cy.step('Log into the application');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
 
-      cy.step('Navigate to Model Registry');
-      modelRegistry.navigate();
+      cy.step('Visit Model Registry Page');
+      modelRegistry.visit();
 
       cy.step('Select the created model registry');
       modelRegistry.findSelectModelRegistry(registryName);
@@ -139,7 +158,8 @@ describe('Verify models can be deployed from model registry', () => {
 
       cy.step('Deploy the model from the versions table');
       const modelVersionRow = modelRegistry.getModelVersionRow(testData.version1Name);
-      modelVersionRow.findKebabAction('Deploy').click();
+      modelVersionRow.findKebab().click();
+      modelRegistry.findDeployAction().click();
 
       cy.step('Select the project for deployment');
       modelVersionDeployModal.selectProjectByName(projectName);
@@ -148,7 +168,9 @@ describe('Verify models can be deployed from model registry', () => {
       cy.step('Configure the deployment');
       cy.step('Model details');
       // connection data should be prefilled
-      modelServingWizard.findModelLocationSelect().should('contain.text', 'S3 object storage');
+      modelServingWizard
+        .findModelLocationSelect()
+        .should('contain.text', ModelLocationSelectOption.S3);
       modelServingWizard.findLocationAccessKeyInput().clear().type(AWS_BUCKETS.AWS_ACCESS_KEY_ID);
       modelServingWizard
         .findLocationSecretKeyInput()
@@ -164,7 +186,7 @@ describe('Verify models can be deployed from model registry', () => {
       modelServingWizard.findLocationPathInput().should('have.value', testData.modelOpenVinoPath);
       modelServingWizard.findSaveConnectionCheckbox().should('be.checked');
       modelServingWizard.findSaveConnectionInput().clear().type(`${projectName}-connection`);
-      modelServingWizard.findModelTypeSelectOption('Predictive model').click();
+      modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.PREDICTIVE).click();
       modelServingWizard.findNextButton().click();
 
       cy.step('Model deployment');
@@ -172,7 +194,14 @@ describe('Verify models can be deployed from model registry', () => {
       modelServingWizard
         .findModelDeploymentNameInput()
         .should('have.value', `${modelName} - ${testData.version1Name}`);
-      modelServingWizard.findModelFormatSelectOption('openvino_ir - opset13').click();
+      modelServingWizard.findResourceNameButton().click();
+      modelServingWizard
+        .findResourceNameInput()
+        .should('be.visible')
+        .invoke('val')
+        .as('resourceName');
+      modelServingWizard.findModelFormatSelectOption(modelFormat).click();
+      modelServingWizard.selectServingRuntimeOption(servingRuntime);
       modelServingWizard.findNextButton().click();
 
       cy.step('Advanced settings');
@@ -181,17 +210,19 @@ describe('Verify models can be deployed from model registry', () => {
       cy.step('Review');
       modelServingWizard.findSubmitButton().click();
       modelRegistry
-        .getInferenceServiceRow(`${modelName} - ${testData.version1Name}`)
+        .getDeploymentRow(`${modelName} - ${testData.version1Name}`)
         .should('be.visible');
 
       // Verify model deployment is ready
       cy.step('Verify the model is deployed and started in backend');
-      checkInferenceServiceState(`${modelName}-v10`, projectName, { checkReady: true });
+      cy.get<string>('@resourceName').then((resourceName) => {
+        checkInferenceServiceState(resourceName, projectName, { checkReady: true });
+      });
       // Check deployment link and verify status in deployments view
-      modelRegistry.navigate();
+      modelRegistry.visit();
       cy.contains('1 deployment', { timeout: 30000 }).should('be.visible').click();
       cy.contains(modelName).should('be.visible');
-      cy.contains('Started').should('be.visible');
+      cy.contains(ModelStateLabel.STARTED).should('be.visible');
     },
   );
 });

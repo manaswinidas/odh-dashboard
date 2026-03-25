@@ -6,7 +6,7 @@ createRegistryName: "e2e-test-registry"
 operatorDeploymentName: "model-registry-operator-controller-manager"
 
 # First model (Object Storage)
-objectStorageModelName: "test-object-storage-model"
+objectStorageModelName: "test-object-model"
 objectStorageModelDescription: "E2E test model using object storage"
 version1Name: "v1.0"
 version1Description: "First version of the object storage test model"
@@ -17,6 +17,8 @@ objectStorageBucket: "test-models"
 objectStorageRegion: "us-east-1"
 objectStoragePath: "models/test-model/v1.0"
 modelOpenVinoPath: "kserve-openvino-test/openvino-example-model"
+modelFormat: 'openvino_ir - opset13'
+servingRuntime: 'OpenVINO Model Server'
 
 # Second model (URI)
 uriModelName: "test-uri-model"
@@ -41,3 +43,25 @@ deployProjectNamePrefix: "test-deploy-project"
 permissionsRegistryNamePrefix: "test-mr-permissions-registry"
 testProjectNamePrefix: "test-mr-permissions-project"
 rhodsUsersGroup: "rhods-users"
+
+# Default database form values
+defaultMysqlPort: "3306"
+defaultPostgresPort: "5432"
+defaultDatabaseName: "model-registry"
+statusAvailable: "Available"
+
+# Database credentials for E2E tests
+mysqlUsername: "mlmduser"
+postgresUsername: "modelregistryuser"
+databasePassword: "TheBlurstOfTimes"
+
+# Database configuration testing
+databaseName: "model-registry-db-test"
+newDatabaseHost: "model-registry-db-test-new"
+newDatabasePort: "3307"
+newDatabaseName: "model_registry_updated"
+newDatabaseUsername: "mlmduser_updated"
+newDatabasePassword: "NewTestPassword123"
+
+# Object storage paths for v2
+objectStoragePathV2: "models/test-model/v2.0"

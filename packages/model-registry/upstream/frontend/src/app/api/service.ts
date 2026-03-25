@@ -6,17 +6,22 @@ import {
   restGET,
   restPATCH,
   handleRestFailures,
+  restDELETE,
 } from 'mod-arch-core';
 import {
   CreateModelArtifactData,
   CreateModelVersionData,
   CreateRegisteredModelData,
+  CreateModelTransferJobData,
   ModelArtifact,
   ModelArtifactList,
   ModelVersionList,
   ModelVersion,
   RegisteredModelList,
   RegisteredModel,
+  ModelTransferJobList,
+  ModelTransferJob,
+  ModelTransferJobEvent,
 } from '~/app/types';
 import { bumpRegisteredModelTimestamp } from '~/app/api/updateTimestamps';
 
@@ -226,6 +231,103 @@ export const patchModelArtifact =
     ).then((response) => {
       if (isModArchResponse<ModelArtifact>(response)) {
         return response.data;
+      }
+      throw new Error('Invalid response format');
+    });
+
+export const getListModelTransferJobs =
+  (hostPath: string, queryParams: Record<string, unknown> = {}) =>
+  (opts: APIOptions): Promise<ModelTransferJobList> =>
+    handleRestFailures(restGET(hostPath, `/model_transfer_jobs`, queryParams, opts)).then(
+      (response) => {
+        if (isModArchResponse<ModelTransferJobList>(response)) {
+          return response.data;
+        }
+        throw new Error('Invalid response format');
+      },
+    );
+
+export const getModelTransferJobByName =
+  (hostPath: string, queryParams: Record<string, unknown> = {}) =>
+  (opts: APIOptions, namespace: string, jobName: string): Promise<ModelTransferJob> =>
+    handleRestFailures(
+      restGET(
+        hostPath,
+        `/model_transfer_jobs/${encodeURIComponent(jobName)}`,
+        { ...queryParams, jobNamespace: namespace },
+        opts,
+      ),
+    ).then((response) => {
+      if (isModArchResponse<ModelTransferJob>(response)) {
+        return response.data;
+      }
+      throw new Error('Invalid response format');
+    });
+
+export const createModelTransferJob =
+  (hostPath: string, queryParams: Record<string, unknown> = {}) =>
+  (opts: APIOptions, data: CreateModelTransferJobData): Promise<ModelTransferJob> =>
+    handleRestFailures(
+      restCREATE(hostPath, '/model_transfer_jobs', assembleModArchBody(data), queryParams, opts),
+    ).then((response) => {
+      if (isModArchResponse<ModelTransferJob>(response)) {
+        return response.data;
+      }
+      throw new Error('Invalid response format');
+    });
+
+export const updateModelTransferJob =
+  (hostPath: string, queryParams: Record<string, unknown> = {}) =>
+  (
+    opts: APIOptions,
+    jobName: string,
+    data: Partial<ModelTransferJob>,
+    additionalQueryParams?: Record<string, unknown>,
+  ): Promise<ModelTransferJob> =>
+    handleRestFailures(
+      restPATCH(
+        hostPath,
+        `/model_transfer_jobs/${jobName}`,
+        assembleModArchBody(data),
+        { ...queryParams, ...additionalQueryParams },
+        opts,
+      ),
+    ).then((response) => {
+      if (isModArchResponse<ModelTransferJob>(response)) {
+        return response.data;
+      }
+      throw new Error('Invalid response format');
+    });
+
+export const deleteModelTransferJob =
+  (hostPath: string, queryParams: Record<string, unknown> = {}) =>
+  (opts: APIOptions, jobName: string, jobNamespace: string): Promise<void> =>
+    handleRestFailures(
+      restDELETE(
+        hostPath,
+        `/model_transfer_jobs/${encodeURIComponent(jobName)}`,
+        {},
+        { ...queryParams, jobNamespace },
+        opts,
+      ),
+    );
+
+export const getModelTransferJobEvents =
+  (hostPath: string, queryParams: Record<string, unknown> = {}) =>
+  (opts: APIOptions, jobName: string, jobNamespace: string): Promise<ModelTransferJobEvent[]> =>
+    handleRestFailures(
+      restGET(
+        hostPath,
+        `/model_transfer_jobs/${encodeURIComponent(jobName)}/events`,
+        { ...queryParams, jobNamespace },
+        opts,
+      ),
+    ).then((response) => {
+      if (
+        isModArchResponse<{ events: ModelTransferJobEvent[] }>(response) &&
+        Array.isArray(response.data.events)
+      ) {
+        return response.data.events;
       }
       throw new Error('Invalid response format');
     });

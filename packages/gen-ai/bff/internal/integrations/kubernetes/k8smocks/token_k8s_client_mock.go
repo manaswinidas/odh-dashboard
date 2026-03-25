@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
+	"github.com/opendatahub-io/gen-ai/internal/constants"
 	"github.com/opendatahub-io/gen-ai/internal/integrations"
 	k8s "github.com/opendatahub-io/gen-ai/internal/integrations/kubernetes"
 	"github.com/opendatahub-io/gen-ai/internal/integrations/maas"
 	"github.com/opendatahub-io/gen-ai/internal/models"
 	"github.com/opendatahub-io/gen-ai/internal/types"
+	gorchv1alpha1 "github.com/trustyai-explainability/trustyai-service-operator/api/gorch/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -24,6 +27,33 @@ import (
 const (
 	mockLSDName = "mock-lsd"
 )
+
+// generateMockShieldID creates a unique shield ID based on type and model name
+func generateMockShieldID(shieldType, modelName string, _ int) string {
+	// Sanitize model name for use in shield ID
+	sanitized := strings.ReplaceAll(modelName, "/", "_")
+	sanitized = strings.ReplaceAll(sanitized, " ", "_")
+	sanitized = strings.ReplaceAll(sanitized, "-", "_")
+	sanitized = strings.ToLower(sanitized)
+
+	return fmt.Sprintf("trustyai_%s_%s", shieldType, sanitized)
+}
+
+// formatPoliciesYAML formats a slice of policies as a YAML inline array
+func formatPoliciesYAML(policies []string) string {
+	if len(policies) == 0 {
+		return "[]"
+	}
+	result := "["
+	for i, p := range policies {
+		if i > 0 {
+			result += ", "
+		}
+		result += p
+	}
+	result += "]"
+	return result
+}
 
 type TokenKubernetesClientMock struct {
 	*k8s.TokenKubernetesClient
@@ -45,40 +75,29 @@ func (m *TokenKubernetesClientMock) BearerToken() (string, error) {
 	return "FAKE_BEARER_TOKEN", nil
 }
 
-// GetNamespaces returns mock namespace data for testing
+// GetNamespaces lists namespaces from the envtest cluster
 func (m *TokenKubernetesClientMock) GetNamespaces(ctx context.Context, identity *integrations.RequestIdentity) ([]corev1.Namespace, error) {
-	// Return mock test namespaces instead of real cluster data
-	return []corev1.Namespace{
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "mock-test-namespace-1",
-			},
-		},
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "mock-test-namespace-2",
-			},
-		},
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "mock-test-namespace-3",
-			},
-		},
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "mock-test-namespace-4",
-			},
-		},
-	}, nil
+	var nsList corev1.NamespaceList
+	if err := m.Client.List(ctx, &nsList); err != nil {
+		return nil, fmt.Errorf("failed to list namespaces: %w", err)
+	}
+	return nsList.Items, nil
 }
 
-// GetAAModels returns mock AA models for testing, namespace-scoped
+// GetAAModels returns mock AA models plus any external models from ConfigMaps
 func (m *TokenKubernetesClientMock) GetAAModels(ctx context.Context, identity *integrations.RequestIdentity, namespace string) ([]models.AAModel, error) {
+	// Special case: empty-test-namespace should always return empty list for testing empty state (no namespace models, no MaaS models, no external models)
+	if namespace == "empty-test-namespace" {
+		return []models.AAModel{}, nil
+	}
+
+	var mockModels []models.AAModel
+
 	// Return different mock AA models based on namespace
 	switch namespace {
 	case "mock-test-namespace-1":
 		// Return only LLMInferenceService models for testing llm-d architecture
-		return []models.AAModel{
+		mockModels = []models.AAModel{
 			{
 				ModelName:      "llm-d-codestral-22b",
 				ModelID:        "llm-d-codestral-22b",
@@ -91,8 +110,9 @@ func (m *TokenKubernetesClientMock) GetAAModels(ctx context.Context, identity *i
 					fmt.Sprintf("internal: http://llm-d-codestral-22b.%s.svc.cluster.local:80", namespace),
 					fmt.Sprintf("external: https://llm-d-codestral-22b-%s.example.com", namespace),
 				},
-				Status:      "Running",
-				DisplayName: "LLM-D Codestral 22B",
+				Status:          "Running",
+				DisplayName:     "LLM-D Codestral 22B",
+				ModelSourceType: models.ModelSourceTypeNamespace,
 			},
 			{
 				ModelName:      "llm-d-deepseek-coder-33b",
@@ -105,12 +125,13 @@ func (m *TokenKubernetesClientMock) GetAAModels(ctx context.Context, identity *i
 				Endpoints: []string{
 					fmt.Sprintf("internal: http://llm-d-deepseek-coder-33b.%s.svc.cluster.local:80", namespace),
 				},
-				Status:      "Running",
-				DisplayName: "LLM-D DeepSeek Coder 33B",
+				Status:          "Running",
+				DisplayName:     "LLM-D DeepSeek Coder 33B",
+				ModelSourceType: models.ModelSourceTypeNamespace,
 			},
-		}, nil
+		}
 	case "mock-test-namespace-2", "mock-test-namespace-3":
-		aaModels := []models.AAModel{
+		mockModels = []models.AAModel{
 			{
 				ModelName:      "granite-7b-code",
 				ModelID:        "granite-7b-code",
@@ -123,8 +144,9 @@ func (m *TokenKubernetesClientMock) GetAAModels(ctx context.Context, identity *i
 					fmt.Sprintf("internal: http://granite-7b-code.%s.svc.cluster.local:8080", namespace),
 					fmt.Sprintf("external: https://granite-7b-code-%s.example.com", namespace),
 				},
-				Status:      "Running",
-				DisplayName: "Granite 7B code",
+				Status:          "Running",
+				DisplayName:     "Granite 7B code",
+				ModelSourceType: models.ModelSourceTypeNamespace,
 			},
 			{
 				ModelName:      "llama-3.1-8b-instruct",
@@ -138,8 +160,9 @@ func (m *TokenKubernetesClientMock) GetAAModels(ctx context.Context, identity *i
 					fmt.Sprintf("internal: http://llama-3.1-8b-instruct.%s.svc.cluster.local:8080", namespace),
 					fmt.Sprintf("external: https://llama-3.1-8b-instruct-%s.example.com", namespace),
 				},
-				Status:      "Running",
-				DisplayName: "Llama 3.1 8B instruct",
+				Status:          "Running",
+				DisplayName:     "Llama 3.1 8B instruct",
+				ModelSourceType: models.ModelSourceTypeNamespace,
 			},
 			{
 				ModelName:      "mistral-7b-instruct",
@@ -152,8 +175,9 @@ func (m *TokenKubernetesClientMock) GetAAModels(ctx context.Context, identity *i
 				Endpoints: []string{
 					fmt.Sprintf("internal: http://mistral-7b-instruct.%s.svc.cluster.local:8080", namespace),
 				},
-				Status:      "Stop",
-				DisplayName: "Mistral 7B instruct",
+				Status:          "Stop",
+				DisplayName:     "Mistral 7B instruct",
+				ModelSourceType: models.ModelSourceTypeNamespace,
 			},
 			{
 				ModelName:      "ollama/llama3.2:3b",
@@ -167,8 +191,9 @@ func (m *TokenKubernetesClientMock) GetAAModels(ctx context.Context, identity *i
 					fmt.Sprintf("internal: http://llama3.2-3b.%s.svc.cluster.local:11434", namespace),
 					fmt.Sprintf("external: https://llama3.2-3b-%s.example.com", namespace),
 				},
-				Status:      "Running",
-				DisplayName: "Ollama Llama 3.2 3B",
+				Status:          "Running",
+				DisplayName:     "Ollama Llama 3.2 3B",
+				ModelSourceType: models.ModelSourceTypeNamespace,
 			},
 			{
 				ModelName:      "ollama/all-minilm:l6-v2",
@@ -182,8 +207,9 @@ func (m *TokenKubernetesClientMock) GetAAModels(ctx context.Context, identity *i
 					fmt.Sprintf("internal: http://all-minilm-l6-v2.%s.svc.cluster.local:11434", namespace),
 					fmt.Sprintf("external: https://all-minilm-l6-v2-%s.example.com", namespace),
 				},
-				Status:      "Running",
-				DisplayName: "Ollama All MiniLM L6 v2",
+				Status:          "Running",
+				DisplayName:     "Ollama All MiniLM L6 v2",
+				ModelSourceType: models.ModelSourceTypeNamespace,
 			},
 		}
 
@@ -201,8 +227,9 @@ func (m *TokenKubernetesClientMock) GetAAModels(ctx context.Context, identity *i
 					fmt.Sprintf("internal: http://llm-d-llama-3.1-70b.%s.svc.cluster.local:80", namespace),
 					fmt.Sprintf("external: https://llm-d-llama-3.1-70b-%s.example.com", namespace),
 				},
-				Status:      "Running",
-				DisplayName: "LLM-D Llama 3.1 70B",
+				Status:          "Running",
+				DisplayName:     "LLM-D Llama 3.1 70B",
+				ModelSourceType: models.ModelSourceTypeNamespace,
 			},
 			{
 				ModelName:      "llm-d-mixtral-8x7b",
@@ -216,8 +243,9 @@ func (m *TokenKubernetesClientMock) GetAAModels(ctx context.Context, identity *i
 					fmt.Sprintf("internal: http://llm-d-mixtral-8x7b.%s.svc.cluster.local:80", namespace),
 					fmt.Sprintf("external: https://llm-d-mixtral-8x7b-%s.example.com", namespace),
 				},
-				Status:      "Running",
-				DisplayName: "LLM-D Mixtral 8x7B",
+				Status:          "Running",
+				DisplayName:     "LLM-D Mixtral 8x7B",
+				ModelSourceType: models.ModelSourceTypeNamespace,
 			},
 			{
 				ModelName:      "llm-d-qwen2.5-72b",
@@ -230,17 +258,30 @@ func (m *TokenKubernetesClientMock) GetAAModels(ctx context.Context, identity *i
 				Endpoints: []string{
 					fmt.Sprintf("internal: http://llm-d-qwen2.5-72b.%s.svc.cluster.local:80", namespace),
 				},
-				Status:      "Running",
-				DisplayName: "LLM-D Qwen 2.5 72B",
+				Status:          "Running",
+				DisplayName:     "LLM-D Qwen 2.5 72B",
+				ModelSourceType: models.ModelSourceTypeNamespace,
 			},
 		}
 
 		// Append LLM-D models to the existing models
-		aaModels = append(aaModels, llmDModels...)
-		return aaModels, nil
+		mockModels = append(mockModels, llmDModels...)
 	default:
-		return []models.AAModel{}, nil
+		mockModels = []models.AAModel{}
 	}
+
+	// Add external models from ConfigMaps if they exist
+	externalModels, err := m.GetAAModelsFromExternalModels(ctx, identity, namespace)
+	if err != nil {
+		// Log error but don't fail - continue with namespace models only
+		m.Logger.Warn("failed to get external models, continuing with namespace models only",
+			"error", err,
+			"namespace", namespace)
+		externalModels = []models.AAModel{}
+	}
+	mockModels = append(mockModels, externalModels...)
+
+	return mockModels, nil
 }
 
 // IsClusterAdmin returns mock admin status for testing
@@ -343,7 +384,7 @@ func (m *TokenKubernetesClientMock) GetLlamaStackDistributions(ctx context.Conte
 	}, nil
 }
 
-func (m *TokenKubernetesClientMock) InstallLlamaStackDistribution(ctx context.Context, identity *integrations.RequestIdentity, namespace string, models []models.InstallModel, guardrailModel *models.GuardrailModel, maasClient maas.MaaSClientInterface) (*lsdapi.LlamaStackDistribution, error) {
+func (m *TokenKubernetesClientMock) InstallLlamaStackDistribution(ctx context.Context, identity *integrations.RequestIdentity, namespace string, installModels []models.InstallModel, enableGuardrails bool, maasClient maas.MaaSClientInterface) (*lsdapi.LlamaStackDistribution, error) {
 	// Check if LSD already exists in the namespace
 	existingLSDList, err := m.GetLlamaStackDistributions(ctx, identity, namespace)
 	if err != nil {
@@ -365,55 +406,88 @@ func (m *TokenKubernetesClientMock) InstallLlamaStackDistribution(ctx context.Co
 		return nil, fmt.Errorf("failed to create namespace %s: %w", namespace, err)
 	}
 
-	// Build safety section based on guardrailModel
+	// Check guardrails: feature flag first, then auto-detect infrastructure
+	actuallyEnableGuardrails := false
+	if enableGuardrails {
+		guardrailStatus, err := m.GetGuardrailsOrchestratorStatus(ctx, identity, namespace)
+		if err == nil && guardrailStatus.Phase == "Ready" {
+			actuallyEnableGuardrails = true
+		}
+	}
+
+	// Build safety section based on enableGuardrails flag
+	// When enabled, guardrails are automatically added for all selected models
 	safetySection := "  safety: []"
 	shieldsSection := "  shields: []"
 
-	if guardrailModel != nil && guardrailModel.ModelName != "" {
-		// GuardrailModel is provided - add TrustyAI safety provider
-		guardrailModelURL := guardrailModel.ModelURL
-		if guardrailModelURL == "" {
-			// Default URL if not provided
-			guardrailModelURL = "http://guardrail-model-predictor." + namespace + ".svc.cluster.local/v1/chat/completions"
+	if actuallyEnableGuardrails && len(installModels) > 0 {
+		// Build shields config for each model when guardrails are enabled
+		shieldsConfig := ""
+		shieldsList := ""
+
+		// Default policies for models
+		inputPolicies := models.DefaultInputGuardrailPolicies()
+		outputPolicies := models.DefaultOutputGuardrailPolicies()
+		detectorURL := constants.DefaultDetectorURL
+
+		for i, model := range installModels {
+			modelName := model.ModelName
+			guardrailModelURL := "http://" + modelName + "-predictor." + namespace + ".svc.cluster.local/v1/chat/completions"
+
+			// Generate shield IDs
+			inputShieldID := generateMockShieldID("input", modelName, i)
+			outputShieldID := generateMockShieldID("output", modelName, i)
+
+			// Format policies as YAML array
+			inputPoliciesYAML := formatPoliciesYAML(inputPolicies)
+			outputPoliciesYAML := formatPoliciesYAML(outputPolicies)
+
+			// Add shields config
+			// auth_token uses GUARDRAIL_AUTH_TOKEN from guardrails-service-account secret
+			shieldsConfig += `
+        ` + inputShieldID + `:
+          type: content
+          detector_url: "` + detectorURL + `"
+          message_types: ["user", "completion"]
+          verify_ssl: false
+          auth_token: "` + constants.FormatEnvVar(constants.GuardrailAuthTokenEnvName) + `"
+          detector_params:
+            custom:
+              input_guardrail:
+                input_policies: ` + inputPoliciesYAML + `
+                guardrail_model: ` + modelName + `
+                guardrail_model_token: "${env.VLLM_API_TOKEN_1:=fake}"
+                guardrail_model_url: "` + guardrailModelURL + `"
+        ` + outputShieldID + `:
+          type: content
+          detector_url: "` + detectorURL + `"
+          message_types: ["user", "completion"]
+          verify_ssl: false
+          auth_token: "` + constants.FormatEnvVar(constants.GuardrailAuthTokenEnvName) + `"
+          detector_params:
+            custom:
+              output_guardrail:
+                output_policies: ` + outputPoliciesYAML + `
+                guardrail_model: ` + modelName + `
+                guardrail_model_token: "${env.VLLM_API_TOKEN_1:=fake}"
+                guardrail_model_url: "` + guardrailModelURL + `"`
+
+			// Add shield registrations
+			shieldsList += `
+    - shield_id: ` + inputShieldID + `
+      provider_id: trustyai_fms
+    - shield_id: ` + outputShieldID + `
+      provider_id: trustyai_fms`
 		}
 
 		safetySection = `  safety:
   - provider_id: trustyai_fms
     provider_type: remote::trustyai_fms
+    module: llama_stack_provider_trustyai_fms==0.3.2
     config:
-      shields:
-        trustyai_input:
-          type: content
-          detector_url: "https://custom-guardrails-service:8480"
-          message_types: ["user", "completion"]
-          verify_ssl: false
-          auth_token: "${VLLM_TOKEN}"
-          detector_params:
-            custom:
-              input_guardrail:
-                input_policies: [jailbreak, content-moderation, pii]
-                guardrail_model: ` + guardrailModel.ModelName + `
-                guardrail_model_token: "${VLLM_TOKEN}"
-                guardrail_model_url: "` + guardrailModelURL + `"
-        trustyai_output:
-          type: content
-          detector_url: "https://custom-guardrails-service:8480"
-          message_types: ["user", "completion"]
-          verify_ssl: false
-          auth_token: "${VLLM_TOKEN}"
-          detector_params:
-            custom:
-              output_guardrail:
-                output_policies: [jailbreak, content-moderation, pii]
-                guardrail_model: ` + guardrailModel.ModelName + `
-                guardrail_model_token: "${VLLM_TOKEN}"
-                guardrail_model_url: "` + guardrailModelURL + `"`
+      shields:` + shieldsConfig
 
-		shieldsSection = `  shields:
-    - shield_id: trustyai_input
-      provider_id: trustyai_fms
-    - shield_id: trustyai_output
-      provider_id: trustyai_fms`
+		shieldsSection = `  shields:` + shieldsList
 	}
 
 	// Then create the ConfigMap that the LSD will reference
@@ -423,9 +497,9 @@ func (m *TokenKubernetesClientMock) InstallLlamaStackDistribution(ctx context.Co
 			Namespace: namespace,
 		},
 		Data: map[string]string{
-			"run.yaml": `# Llama Stack Configuration
+			constants.LlamaStackConfigYAMLKey: `# Llama Stack Configuration
 version: "2"
-image_name: rh
+distro_name: rh
 apis:
 - datasetio
 - files
@@ -440,7 +514,7 @@ providers:
   - provider_id: vllm-inference-1
     provider_type: remote::vllm
     config:
-      url: http://mock-model-predictor.` + namespace + `.svc.cluster.local:8080/v1
+      base_url: http://mock-model-predictor.` + namespace + `.svc.cluster.local:8080/v1
       max_tokens: ${env.VLLM_MAX_TOKENS:=4096}
       api_token: ${env.VLLM_API_TOKEN:=fake}
       tls_verify: ${env.VLLM_TLS_VERIFY:=true}
@@ -562,9 +636,14 @@ server:
 		},
 		Spec: lsdapi.LlamaStackDistributionSpec{
 			Replicas: 1,
+			Network: &lsdapi.NetworkSpec{
+				AllowedFrom: &lsdapi.AllowedFromSpec{
+					Namespaces: []string{namespace},
+				},
+			},
 			Server: lsdapi.ServerSpec{
 				ContainerSpec: lsdapi.ContainerSpec{
-					Command: []string{"/bin/sh", "-c", "llama stack run /etc/llama-stack/run.yaml"},
+					Command: []string{"/bin/sh", "-c", "llama stack run /etc/llama-stack/config.yaml"},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceCPU:    resource.MustParse("250m"),
@@ -637,59 +716,15 @@ func (m *TokenKubernetesClientMock) DeleteLlamaStackDistribution(ctx context.Con
 	return targetLSD, nil
 }
 
-func (m *TokenKubernetesClientMock) GetConfigMap(ctx context.Context, identity *integrations.RequestIdentity, namespace string, name string) (*corev1.ConfigMap, error) {
-	// Return mock ConfigMap for testing
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Data: map[string]string{
-			"brave": `{
-  "url": "http://localhost:9090/sse",
-  "transport": "sse",
-  "description": "Search the Internet using Brave Search."
-}`,
-			"kubernetes": `{
-  "url": "http://localhost:9091/mcp",
-  "description": "Manage resources in a Kubernetes cluster.",
-  "logo": "https://kubernetes.io/images/kubernetes-horizontal-color.png"
-}`,
-			"default-transport": `{
-  "url": "http://localhost:9092/default-transport",
-  "description": "Server with default transport (streamable-http)."
-}`,
-			"invalid-transport": `{
-  "url": "http://localhost:9093/invalid-transport",
-  "transport": "invalid-transport-type",
-  "description": "Server with invalid transport field."
-}`,
-			"unavailable-server": `{
-  "url": "https://mcp-unavailable:8080/sse",
-  "transport": "sse",
-  "description": "Server that is not reachable for testing error scenarios."
-}`,
-			"error-server": `{
-  "url": "https://mcp-error:8080/mcp",
-  "description": "Server that returns authentication errors for testing."
-}`,
-			"github-copilot": `{
-  "url": "https://api.githubcopilot.com/mcp",
-  "description": "GitHub Copilot MCP server with advanced kubectl tools.",
-			"logo": "https://github.com/images/modules/logos_page/GitHub-Mark.png"
-		}`,
-			"high-tools-server": `{
-  "url": "http://localhost:9094/high-tools",
-  "description": "Server with 5 tools for testing"
-}`,
-		},
-	}, nil
-}
-
 // CanListLlamaStackDistributions returns mock permission check for testing
 func (m *TokenKubernetesClientMock) CanListLlamaStackDistributions(ctx context.Context, identity *integrations.RequestIdentity, namespace string) (bool, error) {
 	// For testing purposes, always return true to allow LlamaStackDistribution listing
 	// In real scenarios, this would perform a SubjectAccessReview
+	return true, nil
+}
+
+// CanListGuardrailsOrchestrator returns mock permission check for testing
+func (m *TokenKubernetesClientMock) CanListGuardrailsOrchestrator(ctx context.Context, identity *integrations.RequestIdentity, namespace string) (bool, error) {
 	return true, nil
 }
 
@@ -748,44 +783,44 @@ func (m *TokenKubernetesClientMock) CanListNamespaces(ctx context.Context, ident
 
 // GetGuardrailsOrchestratorStatus returns mock GuardrailsOrchestrator status for testing
 func (m *TokenKubernetesClientMock) GetGuardrailsOrchestratorStatus(ctx context.Context, identity *integrations.RequestIdentity, namespace string) (*models.GuardrailsStatus, error) {
-	// Mock data - simulating the "custom-guardrails" CR status
 	return &models.GuardrailsStatus{
+		Name:  "guardrails-orchestrator",
 		Phase: "Ready",
-		Conditions: []models.GuardrailsCondition{
+		Conditions: []gorchv1alpha1.Condition{
 			{
 				Type:               "Progressing",
-				Status:             "True",
+				Status:             corev1.ConditionTrue,
 				Reason:             "ReconcileInit",
 				Message:            "Initializing GuardrailsOrchestrator resource",
-				LastTransitionTime: "2025-12-24T06:40:07Z",
+				LastTransitionTime: metav1.Now(),
 			},
 			{
 				Type:               "InferenceServiceReady",
-				Status:             "False",
+				Status:             corev1.ConditionFalse,
 				Reason:             "InferenceServiceNotReady",
 				Message:            "Inference service is not ready",
-				LastTransitionTime: "2025-12-24T06:40:47Z",
+				LastTransitionTime: metav1.Now(),
 			},
 			{
 				Type:               "DeploymentReady",
-				Status:             "True",
+				Status:             corev1.ConditionTrue,
 				Reason:             "DeploymentReady",
 				Message:            "Deployment is ready",
-				LastTransitionTime: "2025-12-24T06:40:47Z",
+				LastTransitionTime: metav1.Now(),
 			},
 			{
 				Type:               "RouteReady",
-				Status:             "False",
+				Status:             corev1.ConditionFalse,
 				Reason:             "RouteNotReady",
 				Message:            "Route is not ready",
-				LastTransitionTime: "2025-12-24T06:40:47Z",
+				LastTransitionTime: metav1.Now(),
 			},
 			{
 				Type:               "ReconcileComplete",
-				Status:             "False",
+				Status:             corev1.ConditionFalse,
 				Reason:             "ReconcileFailed",
 				Message:            "Reconcile failed",
-				LastTransitionTime: "2025-12-24T06:40:47Z",
+				LastTransitionTime: metav1.Now(),
 			},
 		},
 	}, nil
@@ -796,16 +831,58 @@ func (m *TokenKubernetesClientMock) GetGuardrailsOrchestratorStatus(ctx context.
 func (m *TokenKubernetesClientMock) GetSafetyConfig(ctx context.Context, identity *integrations.RequestIdentity, namespace string) (*models.SafetyConfigResponse, error) {
 	// Return hardcoded mock data for testing
 	return &models.SafetyConfigResponse{
-		Enabled: true,
 		GuardrailModels: []models.GuardrailModelConfig{
 			{
 				ModelName:      "llama-guard-3",
-				DisplayName:    "Llama Guard 3",
 				InputShieldID:  "trustyai_input",
 				OutputShieldID: "trustyai_output",
-				InputPolicies:  []string{"jailbreak", "content-moderation", "pii"},
-				OutputPolicies: []string{"jailbreak", "content-moderation", "pii"},
 			},
 		},
 	}, nil
+}
+
+// GenerateProviderID generates a mock provider ID for testing
+// GenerateProviderID delegates to the real implementation to properly count existing providers
+func (m *TokenKubernetesClientMock) GenerateProviderID(ctx context.Context, identity *integrations.RequestIdentity, namespace string) (string, error) {
+	// Use the real implementation from the embedded TokenKubernetesClient
+	return m.TokenKubernetesClient.GenerateProviderID(ctx, identity, namespace)
+}
+
+// CreateExternalModelSecret creates a mock Secret for testing
+func (m *TokenKubernetesClientMock) CreateExternalModelSecret(ctx context.Context, identity *integrations.RequestIdentity, namespace string, secretName string, secretValue string) error {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: namespace,
+		},
+		Type: corev1.SecretTypeOpaque,
+		StringData: map[string]string{
+			"api_key": secretValue,
+		},
+	}
+	return m.Client.Create(ctx, secret)
+}
+
+// CreateOrUpdateExternalModelConfigMap delegates to the real implementation
+// to properly test the ConfigMap creation logic
+func (m *TokenKubernetesClientMock) CreateOrUpdateExternalModelConfigMap(ctx context.Context, identity *integrations.RequestIdentity, namespace string, providerID string, secretName string, req models.ExternalModelRequest) error {
+	// Use the real implementation from the embedded TokenKubernetesClient
+	return m.TokenKubernetesClient.CreateOrUpdateExternalModelConfigMap(ctx, identity, namespace, providerID, secretName, req)
+}
+
+// DeleteExternalModel delegates to the real implementation for proper testing
+func (m *TokenKubernetesClientMock) DeleteExternalModel(ctx context.Context, identity *integrations.RequestIdentity, namespace string, modelID string) error {
+	// Use the real implementation from the embedded TokenKubernetesClient
+	return m.TokenKubernetesClient.DeleteExternalModel(ctx, identity, namespace, modelID)
+}
+
+// DeleteSecret deletes a mock Secret for testing
+func (m *TokenKubernetesClientMock) DeleteSecret(ctx context.Context, identity *integrations.RequestIdentity, namespace string, secretName string) error {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: namespace,
+		},
+	}
+	return m.Client.Delete(ctx, secret)
 }

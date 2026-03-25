@@ -35,6 +35,8 @@ import {
   ModelRegistrySelectIcon,
   ModelEvaluationIcon,
   LabTuningIcon,
+  ModelConnectionRocketIcon,
+  PromptManagementIcon,
 } from '#~/images/icons';
 
 type TypedObjectIconProps = SVGIconProps & {
@@ -72,6 +74,9 @@ const TypedObjectIcon: React.FC<TypedObjectIconProps> = ({
       Icon = PipelineRunIcon;
       break;
     case ProjectObjectType.pipelineExperiment:
+      Icon = ExperimentIcon;
+      break;
+    case ProjectObjectType.mlflow:
       Icon = ExperimentIcon;
       break;
     case ProjectObjectType.pipelineExecution:
@@ -116,7 +121,7 @@ const TypedObjectIcon: React.FC<TypedObjectIconProps> = ({
       Icon = DeployedModelIcon;
       break;
     case ProjectObjectType.connectedModels:
-      Icon = CheckmarkIcon;
+      Icon = ModelConnectionRocketIcon;
       break;
     case ProjectObjectType.servingRuntime:
       Icon = ServingRuntimeIcon;
@@ -157,6 +162,9 @@ const TypedObjectIcon: React.FC<TypedObjectIconProps> = ({
       break;
     case ProjectObjectType.modelEvaluation:
       Icon = ModelEvaluationIcon;
+      break;
+    case ProjectObjectType.promptManagement:
+      Icon = PromptManagementIcon;
       break;
     default:
       return null;

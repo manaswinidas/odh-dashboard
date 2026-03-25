@@ -1,16 +1,32 @@
-import { ServingRuntimeKind, type SecretKind } from '@odh-dashboard/internal/k8sTypes';
+import {
+  MetadataAnnotation,
+  ServingRuntimeKind,
+  type SecretKind,
+} from '@odh-dashboard/internal/k8sTypes';
+import { getGeneratedSecretName } from '@odh-dashboard/internal/api/index';
 import {
   getDisplayNameFromK8sResource,
   getResourceNameFromK8sResource,
 } from '@odh-dashboard/internal/concepts/k8s/utils';
-import { isValidModelType, type ModelTypeFieldData } from './fields/ModelTypeSelectField';
+import {
+  getConnectionTypeRef,
+  getModelServingCompatibility,
+  getModelServingConnectionTypeName,
+  ModelServingCompatibleTypes,
+} from '@odh-dashboard/internal/concepts/connectionTypes/utils';
+import {
+  Connection,
+  ConnectionTypeConfigMapObj,
+} from '@odh-dashboard/internal/concepts/connectionTypes/types';
 import { type TokenAuthenticationFieldData } from './fields/TokenAuthenticationField';
 import {
   ModelLocationType,
   ModelLocationData,
   WizardFormData,
   type InitialWizardFormData,
+  WizardStepTitle,
 } from './types';
+import { DeployExtension } from './deploying/useDeployMethod';
 import {
   handleConnectionCreation,
   handleSecretOwnerReferencePatch,
@@ -24,18 +40,6 @@ import { isDeploymentAuthEnabled } from '../../concepts/auth';
 
 export const getDeploymentWizardRoute = (): string => {
   return '/ai-hub/deployments/deploy';
-};
-
-export const getModelTypeFromDeployment = (
-  deployment: Deployment,
-): ModelTypeFieldData | undefined => {
-  if (
-    deployment.model.metadata.annotations?.['opendatahub.io/model-type'] &&
-    isValidModelType(deployment.model.metadata.annotations['opendatahub.io/model-type'])
-  ) {
-    return deployment.model.metadata.annotations['opendatahub.io/model-type'];
-  }
-  return undefined;
 };
 
 export const isExistingModelLocation = (data?: ModelLocationData): data is ModelLocationData => {
@@ -68,48 +72,53 @@ export const getTokenAuthenticationFromDeployment = (
 };
 
 export const deployModel = async (
-  wizardState: WizardFormData,
-  secretName: string,
-  exitWizard: () => void,
-  deployMethod?: (
-    wizardState: WizardFormData['state'],
-    projectName: string,
-    existingDeployment?: Deployment,
-    serverResource?: ServingRuntimeKind,
-    serverResourceTemplateName?: string,
-    dryRun?: boolean,
-    secretName?: string,
-    overwrite?: boolean,
-    initialWizardData?: InitialWizardFormData,
-    applyFieldData?: DeploymentAssemblyFn,
-  ) => Promise<Deployment>,
+  wizardState: WizardFormData['state'],
+  secretName?: string,
+  deployMethod?: DeployExtension,
   existingDeployment?: Deployment,
+  modelResource?: Deployment['model'],
   serverResource?: ServingRuntimeKind,
   serverResourceTemplateName?: string,
   overwrite?: boolean,
   initialWizardData?: InitialWizardFormData,
   applyFieldData?: DeploymentAssemblyFn,
 ): Promise<void> => {
-  const { projectName } = wizardState.state.project;
+  const projectName = wizardState.project.projectName || modelResource?.metadata.namespace;
   if (!projectName) {
     throw new Error('Project is required');
   }
+  let modelResourceWithNamespace = modelResource;
+  if (modelResource && !modelResource.metadata.namespace) {
+    // Use the project user came from if they didn't specify one in yaml edit
+    modelResourceWithNamespace = structuredClone(modelResource);
+    modelResourceWithNamespace.metadata.namespace = projectName;
+  }
+
+  if (!deployMethod) {
+    throw new Error('Deploy method is required. Model serving platform could be missing.');
+  }
+
+  // If connection name doesn't exist yet, it will fail the dry run
+  const dryRunModelResource = structuredClone(modelResourceWithNamespace);
+  delete dryRunModelResource?.metadata.annotations?.[MetadataAnnotation.ConnectionName];
+
   // Dry runs
-  const [dryRunSecret] = await Promise.all([
+  await Promise.all([
     handleConnectionCreation(
-      wizardState.state.createConnectionData.data,
+      wizardState.createConnectionData.data,
       projectName,
-      wizardState.state.modelLocationData.data,
+      wizardState.modelLocationData.data,
       secretName,
       true,
-      wizardState.state.modelLocationData.selectedConnection,
+      wizardState.modelLocationData.selectedConnection,
     ),
     ...(!overwrite
       ? [
-          deployMethod?.(
-            wizardState.state,
+          deployMethod.deploy(
+            wizardState,
             projectName,
             existingDeployment,
+            dryRunModelResource,
             serverResource,
             serverResourceTemplateName,
             true,
@@ -122,49 +131,87 @@ export const deployModel = async (
       : []),
   ]);
 
-  // The secret name is calculated in handleConnectionCreation dryRun
-  // so ensure we're sending the correct name into the real deploy and secret creation methods
-  const realSecretName = dryRunSecret?.metadata.name ?? secretName;
-
   // Create secret
   const newSecret = await handleConnectionCreation(
-    wizardState.state.createConnectionData.data,
+    wizardState.createConnectionData.data,
     projectName,
-    wizardState.state.modelLocationData.data,
-    realSecretName,
+    wizardState.modelLocationData.data,
+    secretName,
     false,
-    wizardState.state.modelLocationData.selectedConnection,
+    wizardState.modelLocationData.selectedConnection,
   );
+
   // newSecret.metadata.name is the name of the secret created during secret creation,
-  // use realSecretName as a fallback (should be the same)
-  const actualSecretName = newSecret?.metadata.name ?? realSecretName;
+  const createdSecretName = newSecret?.metadata.name ?? secretName ?? getGeneratedSecretName();
 
   // Create deployment
-  const deploymentResult = await deployMethod?.(
-    wizardState.state,
+  const modelResourceWithConnection = structuredClone(modelResourceWithNamespace);
+  if (modelResourceWithConnection?.metadata.annotations) {
+    modelResourceWithConnection.metadata.annotations[MetadataAnnotation.ConnectionName] =
+      createdSecretName;
+  }
+  const deploymentResult = await deployMethod.deploy(
+    wizardState,
     projectName,
     existingDeployment,
+    modelResourceWithNamespace,
     serverResource,
     serverResourceTemplateName,
     false,
-    actualSecretName,
+    createdSecretName,
     overwrite,
     initialWizardData,
     applyFieldData,
   );
 
-  if (!wizardState.state.modelLocationData.data || !deploymentResult) {
-    throw new Error('Model location data or deployment result is missing');
+  // Potentially skip this if YAML is used and model location is set directly in the YAML
+  if (newSecret && createdSecretName && wizardState.modelLocationData.data) {
+    await handleSecretOwnerReferencePatch(
+      wizardState.createConnectionData.data,
+      deploymentResult.model,
+      wizardState.modelLocationData.data,
+      createdSecretName,
+      deploymentResult.model.metadata.uid ?? '',
+      false,
+    );
   }
+};
 
-  await handleSecretOwnerReferencePatch(
-    wizardState.state.createConnectionData.data,
-    deploymentResult.model,
-    wizardState.state.modelLocationData.data,
-    actualSecretName,
-    deploymentResult.model.metadata.uid ?? '',
-    false,
-  );
+export const resolveConnectionType = (
+  connection: Connection,
+  connectionTypes: ConnectionTypeConfigMapObj[],
+): ConnectionTypeConfigMapObj | undefined => {
+  const connectionTypeRef = getConnectionTypeRef(connection);
+  const connectionType = connectionTypes.find((ct) => ct.metadata.name === connectionTypeRef);
+  // If we find the connection type, return it
+  if (connectionType) {
+    return connectionType;
+  }
+  const compatibleTypes = getModelServingCompatibility(connection);
 
-  exitWizard();
+  // If we don't find the connection type, return the first compatible type
+  switch (compatibleTypes[0]) {
+    case ModelServingCompatibleTypes.S3ObjectStorage:
+      return connectionTypes.find(
+        (ct) =>
+          ct.metadata.name ===
+          getModelServingConnectionTypeName(ModelServingCompatibleTypes.S3ObjectStorage),
+      );
+    case ModelServingCompatibleTypes.OCI:
+      return connectionTypes.find(
+        (ct) =>
+          ct.metadata.name === getModelServingConnectionTypeName(ModelServingCompatibleTypes.OCI),
+      );
+    case ModelServingCompatibleTypes.URI:
+      return connectionTypes.find(
+        (ct) =>
+          ct.metadata.name === getModelServingConnectionTypeName(ModelServingCompatibleTypes.URI),
+      );
+    default:
+      return undefined;
+  }
+};
+
+export const isWizardStepTitle = (value: string): value is WizardStepTitle => {
+  return Object.values(WizardStepTitle).some((title) => title === value);
 };

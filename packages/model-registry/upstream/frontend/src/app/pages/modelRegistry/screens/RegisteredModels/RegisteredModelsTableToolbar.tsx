@@ -15,6 +15,7 @@ import { EllipsisVIcon, FilterIcon } from '@patternfly/react-icons';
 import { useNavigate } from 'react-router-dom';
 import { ModelRegistrySelectorContext } from '~/app/context/ModelRegistrySelectorContext';
 import {
+  modelTransferJobsUrl,
   registeredModelArchiveUrl,
   registerModelUrl,
   registerVersionUrl,
@@ -109,6 +110,11 @@ const RegisteredModelsTableToolbar: React.FC<RegisteredModelsTableToolbarProps> 
                 onClick={() => navigate(registeredModelArchiveUrl(preferredModelRegistry?.name))}
               >
                 View archived models
+              </DropdownItem>
+              <DropdownItem
+                onClick={() => navigate(modelTransferJobsUrl(preferredModelRegistry?.name))}
+              >
+                View model transfer jobs
               </DropdownItem>
             </DropdownList>
           </Dropdown>

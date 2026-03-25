@@ -24,8 +24,8 @@ import useNamespaces from '#~/pages/notebookController/useNamespaces';
 import { useAppContext } from '#~/app/AppContext';
 import { EventKind, NotebookKind, RoleBindingKind } from '#~/k8sTypes';
 import { useWatchNotebookEvents } from '#~/api';
-import { getRoutePathForWorkbench } from '#~/concepts/notebooks/utils';
 import { useDeepCompareMemoize } from './useDeepCompareMemoize';
+import { useGetNotebookRoute } from './useGetNotebookRoute';
 
 export const usernameTranslate = (username: string): string => {
   const encodedUsername = encodeURIComponent(username);
@@ -200,6 +200,15 @@ export const useNotebookRedirectLink = (): (() => Promise<string>) => {
 
   const routeName = currentUserNotebook?.metadata.name;
 
+  const workbenchPath =
+    useGetNotebookRoute(
+      workbenchNamespace,
+      routeName,
+      currentUserNotebook?.metadata.annotations?.['notebooks.opendatahub.io/inject-auth'] ===
+        'true',
+      true,
+    ) ?? '';
+
   return React.useCallback((): Promise<string> => {
     if (!routeName) {
       // At time of call, if we do not have a route name, we are too late
@@ -215,11 +224,10 @@ export const useNotebookRedirectLink = (): (() => Promise<string>) => {
         resolve(currentUserNotebookLink);
       } else {
         // Generate same-origin relative path
-        const workbenchPath = getRoutePathForWorkbench(workbenchNamespace, routeName);
         resolve(workbenchPath);
       }
     });
-  }, [workbenchNamespace, routeName, currentUserNotebookLink]);
+  }, [routeName, currentUserNotebookLink, workbenchPath]);
 };
 
 export const getEventTimestamp = (event: EventKind): string =>
@@ -232,9 +240,9 @@ const filterEvents = (
   allEvents: EventKind[],
   lastActivity: Date,
 ): [filterEvents: EventKind[], thisInstanceEvents: EventKind[], gracePeriod: boolean] => {
-  const thisInstanceEvents = allEvents
-    .filter((event) => new Date(getEventTimestamp(event)) >= lastActivity)
-    .toSorted((a, b) => getEventTimestamp(a).localeCompare(getEventTimestamp(b)));
+  const thisInstanceEvents = allEvents.toSorted((a, b) =>
+    getEventTimestamp(a).localeCompare(getEventTimestamp(b)),
+  );
   if (thisInstanceEvents.length === 0) {
     // Filtered out all of the events, exit early
     return [[], [], false];
@@ -294,49 +302,53 @@ export const getNotebookEventStatus = (
 ): NotebookProgressStep => {
   const timestamp = new Date(getEventTimestamp(event)).getTime();
 
-  // For Oauth-related events
-  if (event.message.includes('oauth-proxy') || event.message.includes('ose-oauth-proxy')) {
+  const isAuthProxyEvent =
+    event.message.includes('oauth-proxy') ||
+    event.message.includes('ose-oauth-proxy') ||
+    event.message.includes('kube-rbac-proxy');
+
+  if (isAuthProxyEvent) {
     switch (event.reason) {
       case 'Pulling':
         return {
-          step: ProgressionStep.PULLING_OAUTH,
+          step: ProgressionStep.PULLING_AUTH_PROXY,
           status: EventStatus.SUCCESS,
           timestamp,
         };
       case 'Pulled':
         return {
-          step: ProgressionStep.OAUTH_PULLED,
+          step: ProgressionStep.AUTH_PROXY_PULLED,
           status: EventStatus.SUCCESS,
           timestamp,
         };
       case 'Created':
         return {
-          step: ProgressionStep.OAUTH_CONTAINER_CREATED,
+          step: ProgressionStep.AUTH_PROXY_CONTAINER_CREATED,
           status: EventStatus.SUCCESS,
           timestamp,
         };
       case 'Started':
         return {
-          step: ProgressionStep.OAUTH_CONTAINER_STARTED,
+          step: ProgressionStep.AUTH_PROXY_CONTAINER_STARTED,
           status: EventStatus.SUCCESS,
           timestamp,
         };
       case 'Killing':
         return {
-          step: ProgressionStep.OAUTH_CONTAINER_STARTED,
+          step: ProgressionStep.AUTH_PROXY_CONTAINER_STARTED,
           status: EventStatus.WARNING,
           timestamp,
         };
       default:
         if (event.type === 'Warning') {
           return {
-            step: ProgressionStep.OAUTH_CONTAINER_CREATED,
+            step: ProgressionStep.AUTH_PROXY_CONTAINER_CREATED,
             status: EventStatus.WARNING,
             timestamp,
           };
         }
         return {
-          step: ProgressionStep.OAUTH_CONTAINER_PROBLEM,
+          step: ProgressionStep.AUTH_PROXY_CONTAINER_PROBLEM,
           status: EventStatus.WARNING,
           timestamp,
         };
@@ -545,10 +557,10 @@ export const useNotebookProgress = (
     }
   });
 
-  // If the container is started and the server is running, mark the server started step complete
+  // If the auth proxy container is started and the server is running, mark the server started step complete
   if (
     isRunning &&
-    progressSteps.find((p) => p.step === ProgressionStep.OAUTH_CONTAINER_STARTED)?.status ===
+    progressSteps.find((p) => p.step === ProgressionStep.AUTH_PROXY_CONTAINER_STARTED)?.status ===
       EventStatus.SUCCESS
   ) {
     const startedStep = progressSteps.find((p) => p.step === ProgressionStep.WORKBENCH_STARTED);

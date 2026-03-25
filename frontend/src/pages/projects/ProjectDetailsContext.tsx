@@ -4,6 +4,7 @@ import {
   GroupKind,
   HardwareProfileKind,
   InferenceServiceKind,
+  LocalQueueKind,
   PersistentVolumeClaimKind,
   ProjectKind,
   RoleBindingKind,
@@ -11,6 +12,7 @@ import {
   ServingRuntimeKind,
   TemplateKind,
 } from '#~/k8sTypes';
+import type { KueueWorkloadStatusWithMessage } from '#~/concepts/kueue/types';
 import {
   DEFAULT_LIST_FETCH_STATE,
   DEFAULT_LIST_WATCH_RESULT,
@@ -18,11 +20,11 @@ import {
   POLL_INTERVAL,
 } from '#~/utilities/const';
 import useServingRuntimes from '#~/pages/modelServing/useServingRuntimes';
+import { PipelineContextProvider } from '#~/concepts/pipelines/context';
 import useInferenceServices from '#~/pages/modelServing/useInferenceServices';
 import { CustomWatchK8sResult, ListWithNonDashboardPresence } from '#~/types';
 import { FetchStateObject } from '#~/utilities/useFetch';
 import useServingRuntimeSecrets from '#~/pages/modelServing/screens/projects/useServingRuntimeSecrets';
-import { PipelineContextProvider } from '#~/concepts/pipelines/context';
 import { byName, ProjectsContext } from '#~/concepts/projects/ProjectsContext';
 import InvalidProject from '#~/concepts/projects/InvalidProject';
 import useSyncPreferredProject from '#~/concepts/projects/useSyncPreferredProject';
@@ -34,8 +36,10 @@ import { SupportedArea, useIsAreaAvailable } from '#~/concepts/areas';
 import { Connection } from '#~/concepts/connectionTypes/types';
 import { useGroups, useTemplates } from '#~/api';
 import { useWatchHardwareProfiles } from '#~/utilities/useWatchHardwareProfiles';
+import useProjectKueueInfo from './useProjectKueueInfo';
 import { NotebookState } from './notebook/types';
 import useProjectNotebookStates from './notebook/useProjectNotebookStates';
+import { useKueueStatusForNotebooks } from './notebook/useKueueStatusForNotebooks';
 import useProjectPvcs from './screens/detail/storage/useProjectPvcs';
 import useProjectSharing from './projectSharing/useProjectSharing';
 import useConnections from './screens/detail/connections/useConnections';
@@ -55,6 +59,9 @@ export type ProjectDetailsContextType = {
   projectSharingRB: FetchStateObject<RoleBindingKind[]>;
   groups: CustomWatchK8sResult<GroupKind[]>;
   projectHardwareProfiles: CustomWatchK8sResult<HardwareProfileKind[]>;
+  localQueues: FetchStateObject<LocalQueueKind[]>;
+  kueueStatusByNotebookName: Record<string, KueueWorkloadStatusWithMessage | null>;
+  isKueueLoaded: boolean;
 };
 
 export const ProjectDetailsContext = React.createContext<ProjectDetailsContextType>({
@@ -72,6 +79,9 @@ export const ProjectDetailsContext = React.createContext<ProjectDetailsContextTy
   projectSharingRB: DEFAULT_LIST_FETCH_STATE,
   groups: DEFAULT_LIST_WATCH_RESULT,
   projectHardwareProfiles: DEFAULT_LIST_WATCH_RESULT,
+  localQueues: DEFAULT_LIST_FETCH_STATE,
+  kueueStatusByNotebookName: {},
+  isKueueLoaded: false,
 });
 
 const ProjectDetailsContextProvider: React.FC = () => {
@@ -81,6 +91,11 @@ const ProjectDetailsContextProvider: React.FC = () => {
   const project = projects.find(byName(namespace)) ?? null;
   useSyncPreferredProject(project);
   const notebooks = useProjectNotebookStates(namespace, { refreshRate: POLL_INTERVAL });
+  const { kueueStatusByNotebookName, isLoading: isKueueLoading } = useKueueStatusForNotebooks(
+    notebooks.data,
+    project ?? undefined,
+  );
+  const isKueueLoaded = !isKueueLoading;
 
   const pvcs = useProjectPvcs(namespace, { refreshRate: POLL_INTERVAL });
   const connections = useConnections(namespace, { refreshRate: POLL_INTERVAL });
@@ -97,6 +112,7 @@ const ProjectDetailsContextProvider: React.FC = () => {
   const groups = useGroups();
   const projectHardwareProfiles = useWatchHardwareProfiles(namespace);
 
+  const { localQueues } = useProjectKueueInfo(project, namespace);
   const pageName = 'project details';
 
   const filterTokens = React.useCallback(
@@ -138,11 +154,16 @@ const ProjectDetailsContextProvider: React.FC = () => {
             projectSharingRB,
             groups,
             projectHardwareProfiles,
+            localQueues,
+            kueueStatusByNotebookName,
+            isKueueLoaded,
           }
         : null,
     [
       project,
       notebooks,
+      kueueStatusByNotebookName,
+      isKueueLoaded,
       pvcs,
       connections,
       servingRuntimes,
@@ -155,6 +176,7 @@ const ProjectDetailsContextProvider: React.FC = () => {
       projectSharingRB,
       groups,
       projectHardwareProfiles,
+      localQueues,
     ],
   );
 
@@ -176,7 +198,7 @@ const ProjectDetailsContextProvider: React.FC = () => {
   return (
     <ProjectDetailsContext.Provider value={contextValue}>
       {pipelinesEnabled ? (
-        <PipelineContextProvider namespace={project.metadata.name} pageName={pageName}>
+        <PipelineContextProvider namespace={project.metadata.name}>
           <Outlet />
         </PipelineContextProvider>
       ) : (

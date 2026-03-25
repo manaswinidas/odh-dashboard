@@ -254,10 +254,57 @@ Cypress.Commands.addQuery(
   },
 );
 
+/**
+ * Helper function to handle Keycloak/OIDC login
+ */
+const handleKeycloakLogin = (credentials: UserAuthConfig): void => {
+  cy.log('Keycloak login flow detected - completing authentication');
+
+  // Keycloak login form - wait for the username field to be visible
+  cy.get('#username, input[name="username"]', { timeout: 15000 }).should('be.visible');
+
+  // Fill in credentials on Keycloak form
+  cy.get('#username, input[name="username"]').clear();
+  cy.get('#username, input[name="username"]').type(credentials.USERNAME);
+  cy.get('#password, input[name="password"]').clear();
+  cy.get('#password, input[name="password"]').type(credentials.PASSWORD, { log: false });
+
+  // Click the Sign In button
+  cy.get('#kc-login, input[type="submit"], button[type="submit"]').click();
+
+  // Wait for redirect back to dashboard
+  cy.url({ timeout: 30000 }).should('not.include', 'keycloak');
+  cy.url().should('not.include', '/protocol/openid-connect');
+};
+
+/**
+ * Helper function to handle standard OpenShift OAuth login
+ */
+const handleOAuthLogin = (credentials: UserAuthConfig): void => {
+  cy.log('OAuth login flow detected - completing authentication');
+
+  // Look for and click the auth provider link
+  cy.findAllByRole('link', credentials.AUTH_TYPE ? { name: credentials.AUTH_TYPE } : {})
+    .last()
+    .click();
+
+  // Fill in credentials
+  cy.get('input[name=username]').clear();
+  cy.get('input[name=username]').type(credentials.USERNAME);
+  cy.get('input[name=password]').clear();
+  cy.get('input[name=password]').type(credentials.PASSWORD, { log: false });
+  cy.get('input[type="submit"], button[type="submit"]').click();
+
+  // Wait for redirect back to dashboard
+  cy.url().should('include', Cypress.config('baseUrl'));
+  cy.url().should('not.include', '/oauth');
+};
+
 Cypress.Commands.add('visitWithLogin', (relativeUrl, credentials = HTPASSWD_CLUSTER_ADMIN_USER) => {
   if (Cypress.env('MOCK')) {
     cy.visit(relativeUrl);
   } else {
+    const isBYOIDCCluster = Cypress.env('CLUSTER_AUTH') === 'oidc';
     let fullUrl: string;
     if (relativeUrl.replace(/\//g, '')) {
       fullUrl = new URL(relativeUrl, Cypress.config('baseUrl') || '').href;
@@ -265,6 +312,65 @@ Cypress.Commands.add('visitWithLogin', (relativeUrl, credentials = HTPASSWD_CLUS
       fullUrl = new URL(Cypress.config('baseUrl') || '').href;
     }
     cy.step(`Navigate to: ${fullUrl}`);
+
+    // When running against localhost (webpack dev server), check if we need to switch oc user
+    const baseUrl = Cypress.config('baseUrl') || '';
+    if (baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1')) {
+      cy.log('🔍 Localhost detected - checking if oc user switch is needed');
+      cy.exec('oc whoami', { failOnNonZeroExit: false, log: false }).then((result) => {
+        const currentOcUser = result.stdout.trim();
+        const requestedUser = credentials.USERNAME;
+
+        if (result.code !== 0) {
+          cy.log(
+            `⚠️ oc whoami failed (exit code: ${result.code}) - may not be logged into cluster`,
+          );
+          return cy.wrap(null);
+        }
+
+        if (currentOcUser !== requestedUser) {
+          cy.log(
+            `🔄 Switching oc user from ${currentOcUser ? '***' : 'none'} to ${
+              requestedUser ? '***' : 'none'
+            }`,
+          );
+
+          const ocServer = Cypress.env('OC_SERVER');
+          if (!ocServer) {
+            const errorMsg =
+              'OC_SERVER is required to switch oc user but was not set in Cypress env. ' +
+              'Set CYPRESS_OC_SERVER environment variable or pass via --env OC_SERVER=...';
+            cy.log(`❌ ${errorMsg}`);
+            throw new Error(errorMsg);
+          }
+
+          return cy
+            .exec(
+              `oc login -u "${requestedUser}" -p "${credentials.PASSWORD}" --server="${ocServer}" --insecure-skip-tls-verify`,
+              { failOnNonZeroExit: false, log: false },
+            )
+            .then((loginResult) => {
+              if (loginResult.code === 0) {
+                cy.log(`✅ oc user switched successfully`);
+              } else {
+                const errorMsg =
+                  `oc login failed (exit code: ${loginResult.code}). ` +
+                  `Output: ${loginResult.stdout || loginResult.stderr || 'No output'}`;
+                cy.log(`❌ ${errorMsg}`);
+                throw new Error(errorMsg);
+              }
+            });
+        }
+
+        cy.log(`✅ Already logged in as correct oc user`);
+        return cy.wrap(null);
+      });
+    }
+
+    if (isBYOIDCCluster) {
+      cy.log('BYOIDC cluster detected - using Keycloak authentication');
+    }
+
     cy.intercept('GET', fullUrl, { log: false }).as('page');
     cy.visit(fullUrl, { failOnStatusCode: false });
     cy.wait('@page', { log: false }).then((interception) => {
@@ -272,39 +378,35 @@ Cypress.Commands.add('visitWithLogin', (relativeUrl, credentials = HTPASSWD_CLUS
       if (statusCode === 403) {
         cy.log('Log in');
         cy.get('form[action="/oauth/start"]').submit();
-        cy.findAllByRole('link', credentials.AUTH_TYPE ? { name: credentials.AUTH_TYPE } : {})
-          .last()
-          .then(($link) => {
-            cy.wrap($link).click();
-          });
-        cy.get('input[name=username]').fill(credentials.USERNAME);
-        cy.get('input[name=password]').fill(credentials.PASSWORD);
-        cy.get('form').submit();
+
+        if (isBYOIDCCluster) {
+          // For BYOIDC clusters, we expect to be redirected to Keycloak
+          handleKeycloakLogin(credentials);
+        } else {
+          // Standard OAuth flow - select auth provider and login
+          cy.findAllByRole('link', credentials.AUTH_TYPE ? { name: credentials.AUTH_TYPE } : {})
+            .last()
+            .then(($link) => {
+              cy.wrap($link).click();
+            });
+          cy.get('input[name=username]').fill(credentials.USERNAME);
+          cy.get('input[name=password]').fill(credentials.PASSWORD, { log: false });
+          cy.get('form').submit();
+        }
       } else if (!interception.response || (statusCode !== 200 && statusCode !== 302)) {
         throw new Error(`Failed to visit '${fullUrl}'. Status code: ${statusCode || 'unknown'}`);
       }
     });
 
-    // Handle OAuth login flow - check if we got redirected to OAuth login
+    // Handle any additional OAuth/Keycloak redirects that may occur
     cy.url().then((currentUrl) => {
-      if (currentUrl.includes('/oauth/authorize') || currentUrl.includes('oauth-openshift')) {
-        cy.log('OAuth login flow detected - completing authentication');
-
-        // Look for and click the auth provider link
-        cy.findAllByRole('link', credentials.AUTH_TYPE ? { name: credentials.AUTH_TYPE } : {})
-          .last()
-          .click();
-
-        // Fill in credentials
-        cy.get('input[name=username]').clear();
-        cy.get('input[name=username]').type(credentials.USERNAME);
-        cy.get('input[name=password]').clear();
-        cy.get('input[name=password]').type(credentials.PASSWORD);
-        cy.get('input[type="submit"], button[type="submit"]').click();
-
-        // Wait for redirect back to dashboard
-        cy.url().should('include', Cypress.config('baseUrl'));
-        cy.url().should('not.include', '/oauth');
+      // Check for Keycloak login page
+      if (currentUrl.includes('keycloak') || currentUrl.includes('/protocol/openid-connect/auth')) {
+        handleKeycloakLogin(credentials);
+      }
+      // Check for standard OAuth login page
+      else if (currentUrl.includes('/oauth/authorize') || currentUrl.includes('oauth-openshift')) {
+        handleOAuthLogin(credentials);
       }
     });
   }

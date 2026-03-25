@@ -1,6 +1,10 @@
 import { HTPASSWD_CLUSTER_ADMIN_USER, LDAP_CONTRIBUTOR_USER } from '../../../utils/e2eUsers';
-import { modelRegistryPermissions } from '../../../pages/modelRegistryPermissions';
-import { retryableBeforeEach } from '../../../utils/retryableHooks';
+import {
+  modelRegistryPermissions,
+  permissionActions,
+} from '../../../pages/modelRegistryPermissions';
+import { retryableBefore, retryableBeforeEach } from '../../../utils/retryableHooks';
+import { isBYOIDCCluster, skipSuiteIfBYOIDC } from '../../../utils/skipUtils';
 import {
   checkModelRegistry,
   checkModelRegistryAvailable,
@@ -20,6 +24,9 @@ import { deleteOpenShiftProject } from '../../../utils/oc_commands/project';
 import { checkModelRegistryRoleBindings } from '../../../utils/oc_commands/roleBindings';
 
 describe('Verify model registry permissions can be managed', () => {
+  // Skip entire suite on BYOIDC clusters
+  skipSuiteIfBYOIDC('Multiple permissions management tests are not supported on BYOIDC clusters');
+
   let testData: ModelRegistryTestData;
   let registryName: string;
   let testProjectName: string;
@@ -27,7 +34,7 @@ describe('Verify model registry permissions can be managed', () => {
   const uuid = generateTestUUID();
   const databaseName = `model-registry-db-${uuid}`;
 
-  before(() => {
+  retryableBefore(() => {
     cy.step('Load test data from fixture');
     loadModelRegistryFixture('e2e/modelRegistry/testModelRegistry.yaml').then(
       (fixtureData: ModelRegistryTestData) => {
@@ -68,7 +75,9 @@ describe('Verify model registry permissions can be managed', () => {
 
   it(
     'Admin can add user permissions to model registry',
-    { tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'] },
+    {
+      tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'],
+    },
     () => {
       cy.step('Login as an Admin');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
@@ -102,9 +111,11 @@ describe('Verify model registry permissions can be managed', () => {
 
   it(
     'Contributor user can access model registry after being added',
-    { tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'] },
+    {
+      tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'],
+    },
     () => {
-      cy.step(`Log into the application with ${LDAP_CONTRIBUTOR_USER.USERNAME}`);
+      cy.step('Log into the application as non-admin');
       cy.visitWithLogin(`/ai-hub/registry/${registryName}`, LDAP_CONTRIBUTOR_USER);
 
       cy.step('Verify contributor user can access model registry');
@@ -115,7 +126,9 @@ describe('Verify model registry permissions can be managed', () => {
 
   it(
     'Admin can remove user permissions from model registry',
-    { tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'] },
+    {
+      tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'],
+    },
     () => {
       cy.step('Login as an Admin');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
@@ -131,8 +144,9 @@ describe('Verify model registry permissions can be managed', () => {
         .getUsersContent()
         .getUserTable()
         .getTableRow(LDAP_CONTRIBUTOR_USER.USERNAME)
-        .findKebabAction('Delete')
+        .findKebab()
         .click();
+      permissionActions.findDeletePermissionAction().click();
 
       cy.step('Verify contributor user was removed');
       cy.contains(LDAP_CONTRIBUTOR_USER.USERNAME, { timeout: 10000 }).should('not.exist');
@@ -141,9 +155,11 @@ describe('Verify model registry permissions can be managed', () => {
 
   it(
     'Contributor user cannot access model registry after being removed',
-    { tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'] },
+    {
+      tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'],
+    },
     () => {
-      cy.step(`Log into the application with ${LDAP_CONTRIBUTOR_USER.USERNAME}`);
+      cy.step('Log into the application as non-admin');
       cy.visitWithLogin(`/ai-hub/registry/${registryName}`, LDAP_CONTRIBUTOR_USER);
 
       cy.step('Verify contributor user sees request access message');
@@ -153,7 +169,9 @@ describe('Verify model registry permissions can be managed', () => {
 
   it(
     'Admin can add group permissions to model registry',
-    { tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'] },
+    {
+      tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'],
+    },
     () => {
       cy.step('Login as an Admin');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
@@ -188,9 +206,11 @@ describe('Verify model registry permissions can be managed', () => {
 
   it(
     'User can access model registry through group membership',
-    { tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'] },
+    {
+      tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'],
+    },
     () => {
-      cy.step(`Log into the application with ${LDAP_CONTRIBUTOR_USER.USERNAME}`);
+      cy.step('Log into the application as non-admin');
       cy.visitWithLogin(`/ai-hub/registry/${registryName}`, LDAP_CONTRIBUTOR_USER);
 
       cy.step('Verify user can access model registry through group membership');
@@ -201,7 +221,9 @@ describe('Verify model registry permissions can be managed', () => {
 
   it(
     'Admin can remove group permissions from model registry',
-    { tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'] },
+    {
+      tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'],
+    },
     () => {
       cy.step('Login as an Admin');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
@@ -217,8 +239,9 @@ describe('Verify model registry permissions can be managed', () => {
         .getUsersContent()
         .getGroupTable()
         .getTableRow(testData.rhodsUsersGroup)
-        .findKebabAction('Delete')
+        .findKebab()
         .click();
+      permissionActions.findDeletePermissionAction().click();
 
       cy.step('Verify rhods-users group was removed');
       cy.contains(testData.rhodsUsersGroup, { timeout: 10000 }).should('not.exist');
@@ -227,9 +250,11 @@ describe('Verify model registry permissions can be managed', () => {
 
   it(
     'User cannot access model registry after group is removed',
-    { tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'] },
+    {
+      tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'],
+    },
     () => {
-      cy.step(`Log into the application with ${LDAP_CONTRIBUTOR_USER.USERNAME}`);
+      cy.step('Log into the application as non-admin');
       cy.visitWithLogin(`/ai-hub/registry/${registryName}`, LDAP_CONTRIBUTOR_USER);
 
       cy.step('Verify user sees request access message after group removal');
@@ -239,7 +264,9 @@ describe('Verify model registry permissions can be managed', () => {
 
   it(
     'Admin can add project permissions to model registry',
-    { tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'] },
+    {
+      tags: ['@Dashboard', '@ModelRegistry', '@Sanity', '@SanitySet4', '@NonConcurrent'],
+    },
     () => {
       cy.step('Login as an Admin');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
@@ -278,8 +305,9 @@ describe('Verify model registry permissions can be managed', () => {
         .getProjectsContent()
         .getProjectTable()
         .getTableRow(testProjectName)
-        .findKebabAction('Delete')
+        .findKebab()
         .click();
+      permissionActions.findDeletePermissionAction().click();
 
       cy.step('Verify created project was deleted from registry permissions');
       cy.contains(testProjectName, { timeout: 10000 }).should('not.exist');
@@ -287,6 +315,12 @@ describe('Verify model registry permissions can be managed', () => {
   );
 
   after(() => {
+    // Skip cleanup on BYOIDC clusters since setup was skipped
+    if (isBYOIDCCluster()) {
+      cy.log('Skipping cleanup - tests were skipped on BYOIDC cluster');
+      return;
+    }
+
     cy.clearCookies();
     cy.clearLocalStorage();
 

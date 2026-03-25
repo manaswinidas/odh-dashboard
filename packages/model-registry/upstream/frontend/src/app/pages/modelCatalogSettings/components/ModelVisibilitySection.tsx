@@ -16,10 +16,11 @@ import {
   FORM_LABELS,
   PLACEHOLDERS,
   DESCRIPTIONS,
-  FIELD_HELPER_TEXT,
   getFilterInfoWithOrg,
   getAllowedModelsHelp,
   getExcludedModelsHelp,
+  getIncludedModelsFieldHelperText,
+  getExcludedModelsFieldHelperText,
 } from '~/app/pages/modelCatalogSettings/constants';
 import { CatalogSourceType } from '~/app/modelCatalogTypes';
 
@@ -101,7 +102,7 @@ const ModelVisibilitySection: React.FC<ModelVisibilitySectionProps> = ({
           </FormHelperText>
           <FormHelperText>
             <HelperText>
-              <HelperTextItem>{FIELD_HELPER_TEXT.INCLUDED_MODELS}</HelperTextItem>
+              <HelperTextItem>{getIncludedModelsFieldHelperText}</HelperTextItem>
             </HelperText>
           </FormHelperText>
         </FormGroup>
@@ -115,7 +116,7 @@ const ModelVisibilitySection: React.FC<ModelVisibilitySectionProps> = ({
           </FormHelperText>
           <FormHelperText>
             <HelperText>
-              <HelperTextItem>{FIELD_HELPER_TEXT.EXCLUDED_MODELS}</HelperTextItem>
+              <HelperTextItem>{getExcludedModelsFieldHelperText}</HelperTextItem>
             </HelperText>
           </FormHelperText>
         </FormGroup>

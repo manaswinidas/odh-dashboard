@@ -12,14 +12,16 @@ import {
 const reliantAreas = ['model-registry'];
 const PLUGIN_MODEL_REGISTRY = 'model-registry-plugin';
 const ADMIN_USER = 'ADMIN_USER';
-
 const extensions: (NavExtension | RouteExtension | AreaExtension)[] = [
   {
     type: 'app.area',
     properties: {
       id: PLUGIN_MODEL_REGISTRY,
       reliantAreas,
-      devFlags: ['Model Registry Plugin (unreleased pages)'],
+      devFlags: [
+        'Model Registry Plugin (unreleased pages)',
+        'KF MR Upstream: Catalog HuggingFace API Key',
+      ],
     },
   },
   {
@@ -31,7 +33,7 @@ const extensions: (NavExtension | RouteExtension | AreaExtension)[] = [
       id: 'modelCatalog',
       title: 'Catalog',
       href: '/ai-hub/catalog',
-      section: 'ai-hub',
+      section: 'models',
       path: '/ai-hub/catalog/*',
       group: '1_aihub',
     },
@@ -45,7 +47,7 @@ const extensions: (NavExtension | RouteExtension | AreaExtension)[] = [
       id: 'modelRegistry',
       title: 'Registry',
       href: '/ai-hub/registry',
-      section: 'ai-hub',
+      section: 'models',
       path: '/ai-hub/registry/*',
       group: '1_aihub',
     },
@@ -59,7 +61,7 @@ const extensions: (NavExtension | RouteExtension | AreaExtension)[] = [
       id: 'modelRegistry-kf',
       title: 'Model registry (KF)',
       href: '/ai-hub/registry',
-      section: 'ai-hub',
+      section: 'models',
       path: '/ai-hub/registry/*',
     },
   },
@@ -106,6 +108,29 @@ const extensions: (NavExtension | RouteExtension | AreaExtension)[] = [
     properties: {
       path: '/model-registry-settings/*',
       component: () => import('./ModelRegistrySettingsRoutesWrapper'),
+    },
+  },
+  {
+    type: 'app.navigation/href',
+    flags: {
+      required: [SupportedArea.MCP_CATALOG],
+    },
+    properties: {
+      id: 'mcpCatalog',
+      title: 'Catalog',
+      href: '/ai-hub/mcp-catalog',
+      section: 'mcp-servers',
+      path: '/ai-hub/mcp-catalog/*',
+    },
+  },
+  {
+    type: 'app.route',
+    flags: {
+      required: [SupportedArea.MCP_CATALOG],
+    },
+    properties: {
+      path: '/ai-hub/mcp-catalog/*',
+      component: () => import('./McpCatalogWrapper'),
     },
   },
   {

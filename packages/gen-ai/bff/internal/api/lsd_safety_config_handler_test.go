@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
 	"github.com/opendatahub-io/gen-ai/internal/config"
 	"github.com/opendatahub-io/gen-ai/internal/constants"
 	"github.com/opendatahub-io/gen-ai/internal/integrations"
@@ -20,48 +20,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLSDSafetyConfigHandler(t *testing.T) {
-	// Setup test environment
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+var _ = Describe("LSDSafetyConfigHandler", func() {
+	var app App
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	BeforeEach(func() {
+		logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	testEnv, ctrlClient, err := k8smocks.SetupEnvTest(k8smocks.TestEnvInput{
-		Users:  k8smocks.DefaultTestUsers,
-		Logger: logger,
-		Ctx:    ctx,
-		Cancel: cancel,
-	})
-	require.NoError(t, err)
-	defer func() {
-		if err := testEnv.Stop(); err != nil {
-			t.Logf("Failed to stop test environment: %v", err)
+		k8sFactory, err := k8smocks.NewTokenClientFactory(testK8sClient, testCfg, logger)
+		require.NoError(GinkgoT(), err)
+
+		llamaStackClientFactory := lsmocks.NewMockClientFactory()
+		app = App{
+			config: config.EnvConfig{
+				Port: 4000,
+			},
+			logger:                  logger,
+			kubernetesClientFactory: k8sFactory,
+			llamaStackClientFactory: llamaStackClientFactory,
+			repositories:            repositories.NewRepositories(),
 		}
-	}()
+	})
 
-	// Create mock factory
-	k8sFactory, err := k8smocks.NewTokenClientFactory(ctrlClient, testEnv.Config, logger)
-	require.NoError(t, err)
-
-	// Create test app with real mock infrastructure
-	llamaStackClientFactory := lsmocks.NewMockClientFactory()
-	app := App{
-		config: config.EnvConfig{
-			Port: 4000,
-		},
-		logger:                  logger,
-		kubernetesClientFactory: k8sFactory,
-		llamaStackClientFactory: llamaStackClientFactory,
-		repositories:            repositories.NewRepositories(),
-	}
-
-	t.Run("should return 200 with safety config when config is found", func(t *testing.T) {
-		// Create request with proper context
-		req, err := http.NewRequest(http.MethodGet, "/gen-ai/api/v1/lsd/safety/config?namespace=mock-test-namespace-1", nil)
+	It("should return 200 with safety config when config is found", func() {
+		t := GinkgoT()
+		req, err := http.NewRequest(http.MethodGet, "/gen-ai/api/v1/lsd/safety?namespace=mock-test-namespace-1", nil)
 		assert.NoError(t, err)
 
-		// Add namespace and identity to context
 		ctx := context.Background()
 		ctx = context.WithValue(ctx, constants.NamespaceQueryParameterKey, "mock-test-namespace-1")
 		ctx = context.WithValue(ctx, constants.RequestIdentityKey, &integrations.RequestIdentity{
@@ -85,32 +69,20 @@ func TestLSDSafetyConfigHandler(t *testing.T) {
 		err = json.Unmarshal(body, &response)
 		assert.NoError(t, err)
 
-		// Verify the response structure
-		assert.True(t, response.Data.Enabled, "Safety should be enabled")
 		assert.NotNil(t, response.Data.GuardrailModels)
 		assert.Len(t, response.Data.GuardrailModels, 1, "Should have 1 guardrail model from mock")
 
-		// Verify the guardrail model details
 		guardrailModel := response.Data.GuardrailModels[0]
 		assert.Equal(t, "llama-guard-3", guardrailModel.ModelName)
-		assert.Equal(t, "Llama Guard 3", guardrailModel.DisplayName)
 		assert.Equal(t, "trustyai_input", guardrailModel.InputShieldID)
 		assert.Equal(t, "trustyai_output", guardrailModel.OutputShieldID)
-
-		// Verify policies
-		assert.Contains(t, guardrailModel.InputPolicies, "jailbreak")
-		assert.Contains(t, guardrailModel.InputPolicies, "content-moderation")
-		assert.Contains(t, guardrailModel.InputPolicies, "pii")
-		assert.Contains(t, guardrailModel.OutputPolicies, "jailbreak")
-		assert.Contains(t, guardrailModel.OutputPolicies, "content-moderation")
-		assert.Contains(t, guardrailModel.OutputPolicies, "pii")
 	})
 
-	t.Run("should return 400 when namespace is missing from context", func(t *testing.T) {
-		req, err := http.NewRequest(http.MethodGet, "/gen-ai/api/v1/lsd/safety/config", nil)
+	It("should return 400 when namespace is missing from context", func() {
+		t := GinkgoT()
+		req, err := http.NewRequest(http.MethodGet, "/gen-ai/api/v1/lsd/safety", nil)
 		assert.NoError(t, err)
 
-		// Don't add namespace to context
 		rr := httptest.NewRecorder()
 
 		app.LSDSafetyConfigHandler(rr, req, nil)
@@ -131,11 +103,11 @@ func TestLSDSafetyConfigHandler(t *testing.T) {
 		assert.Contains(t, errorMap["message"], "missing namespace in the context")
 	})
 
-	t.Run("should return 401 when RequestIdentity is missing from context", func(t *testing.T) {
-		req, err := http.NewRequest(http.MethodGet, "/gen-ai/api/v1/lsd/safety/config?namespace=mock-test-namespace-1", nil)
+	It("should return 401 when RequestIdentity is missing from context", func() {
+		t := GinkgoT()
+		req, err := http.NewRequest(http.MethodGet, "/gen-ai/api/v1/lsd/safety?namespace=mock-test-namespace-1", nil)
 		assert.NoError(t, err)
 
-		// Add namespace to context but no RequestIdentity
 		ctx := context.WithValue(context.Background(), constants.NamespaceQueryParameterKey, "mock-test-namespace-1")
 		req = req.WithContext(ctx)
 
@@ -159,8 +131,9 @@ func TestLSDSafetyConfigHandler(t *testing.T) {
 		assert.Contains(t, errorMap["message"], "missing RequestIdentity in context")
 	})
 
-	t.Run("should return correct JSON structure for safety config", func(t *testing.T) {
-		req, err := http.NewRequest(http.MethodGet, "/gen-ai/api/v1/lsd/safety/config?namespace=test-namespace", nil)
+	It("should return correct JSON structure for safety config", func() {
+		t := GinkgoT()
+		req, err := http.NewRequest(http.MethodGet, "/gen-ai/api/v1/lsd/safety?namespace=test-namespace", nil)
 		assert.NoError(t, err)
 
 		ctx := context.Background()
@@ -182,43 +155,32 @@ func TestLSDSafetyConfigHandler(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rr.Code)
 
-		// Verify JSON structure using raw map
 		var rawResponse map[string]interface{}
 		err = json.Unmarshal(body, &rawResponse)
 		assert.NoError(t, err)
 
-		// Verify 'data' field exists
 		data, exists := rawResponse["data"]
 		assert.True(t, exists, "Response should contain 'data' field")
 
 		dataMap, ok := data.(map[string]interface{})
-		assert.True(t, ok, "Data should be a map")
+		require.True(t, ok, "Data should be a map")
 
-		// Verify 'enabled' field
-		enabled, exists := dataMap["enabled"]
-		assert.True(t, exists, "Data should contain 'enabled' field")
-		assert.Equal(t, true, enabled)
-
-		// Verify 'guardrail_models' field
 		guardrailModels, exists := dataMap["guardrail_models"]
 		assert.True(t, exists, "Data should contain 'guardrail_models' field")
 
 		modelsArray, ok := guardrailModels.([]interface{})
-		assert.True(t, ok, "guardrail_models should be an array")
+		require.True(t, ok, "guardrail_models should be an array")
 		assert.Greater(t, len(modelsArray), 0, "guardrail_models should not be empty")
 
-		// Verify first model structure
 		firstModel, ok := modelsArray[0].(map[string]interface{})
-		assert.True(t, ok, "Model should be a map")
+		require.True(t, ok, "Model should be a map")
 		assert.Contains(t, firstModel, "model_name")
-		assert.Contains(t, firstModel, "display_name")
 		assert.Contains(t, firstModel, "input_shield_id")
 		assert.Contains(t, firstModel, "output_shield_id")
-		assert.Contains(t, firstModel, "input_policies")
-		assert.Contains(t, firstModel, "output_policies")
 	})
 
-	t.Run("should work with different namespaces", func(t *testing.T) {
+	It("should work with different namespaces", func() {
+		t := GinkgoT()
 		testNamespaces := []string{
 			"mock-test-namespace-1",
 			"mock-test-namespace-2",
@@ -227,36 +189,34 @@ func TestLSDSafetyConfigHandler(t *testing.T) {
 		}
 
 		for _, namespace := range testNamespaces {
-			t.Run("namespace_"+namespace, func(t *testing.T) {
-				req, err := http.NewRequest(http.MethodGet, "/gen-ai/api/v1/lsd/safety/config?namespace="+namespace, nil)
-				assert.NoError(t, err)
+			req, err := http.NewRequest(http.MethodGet, "/gen-ai/api/v1/lsd/safety?namespace="+namespace, nil)
+			assert.NoError(t, err)
 
-				ctx := context.Background()
-				ctx = context.WithValue(ctx, constants.NamespaceQueryParameterKey, namespace)
-				ctx = context.WithValue(ctx, constants.RequestIdentityKey, &integrations.RequestIdentity{
-					Token: "FAKE_BEARER_TOKEN",
-				})
-				req = req.WithContext(ctx)
-
-				rr := httptest.NewRecorder()
-
-				app.LSDSafetyConfigHandler(rr, req, nil)
-
-				assert.Equal(t, http.StatusOK, rr.Code, "Should return 200 for namespace: %s", namespace)
-
-				var response SafetyConfigEnvelope
-				err = json.Unmarshal(rr.Body.Bytes(), &response)
-				assert.NoError(t, err)
-
-				// Mock returns same config for all namespaces
-				assert.True(t, response.Data.Enabled)
-				assert.Len(t, response.Data.GuardrailModels, 1)
+			ctx := context.Background()
+			ctx = context.WithValue(ctx, constants.NamespaceQueryParameterKey, namespace)
+			ctx = context.WithValue(ctx, constants.RequestIdentityKey, &integrations.RequestIdentity{
+				Token: "FAKE_BEARER_TOKEN",
 			})
+			req = req.WithContext(ctx)
+
+			rr := httptest.NewRecorder()
+
+			app.LSDSafetyConfigHandler(rr, req, nil)
+
+			assert.Equal(t, http.StatusOK, rr.Code, "Should return 200 for namespace: %s", namespace)
+
+			var response SafetyConfigEnvelope
+			err = json.Unmarshal(rr.Body.Bytes(), &response)
+			assert.NoError(t, err)
+
+			// Mock returns same config for all namespaces
+			assert.Len(t, response.Data.GuardrailModels, 1)
 		}
 	})
 
-	t.Run("should return proper content type header", func(t *testing.T) {
-		req, err := http.NewRequest(http.MethodGet, "/gen-ai/api/v1/lsd/safety/config?namespace=test", nil)
+	It("should return proper content type header", func() {
+		t := GinkgoT()
+		req, err := http.NewRequest(http.MethodGet, "/gen-ai/api/v1/lsd/safety?namespace=test", nil)
 		assert.NoError(t, err)
 
 		ctx := context.Background()
@@ -274,50 +234,18 @@ func TestLSDSafetyConfigHandler(t *testing.T) {
 		assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
 	})
 
-	t.Run("should verify guardrail model policies are arrays", func(t *testing.T) {
-		req, err := http.NewRequest(http.MethodGet, "/gen-ai/api/v1/lsd/safety/config?namespace=test-namespace", nil)
-		assert.NoError(t, err)
+})
 
-		ctx := context.Background()
-		ctx = context.WithValue(ctx, constants.NamespaceQueryParameterKey, "test-namespace")
-		ctx = context.WithValue(ctx, constants.RequestIdentityKey, &integrations.RequestIdentity{
-			Token: "FAKE_BEARER_TOKEN",
-		})
-		req = req.WithContext(ctx)
-
-		rr := httptest.NewRecorder()
-
-		app.LSDSafetyConfigHandler(rr, req, nil)
-
-		assert.Equal(t, http.StatusOK, rr.Code)
-
-		var response SafetyConfigEnvelope
-		err = json.Unmarshal(rr.Body.Bytes(), &response)
-		assert.NoError(t, err)
-
-		// Verify policies are proper arrays
-		for _, model := range response.Data.GuardrailModels {
-			assert.NotNil(t, model.InputPolicies, "InputPolicies should not be nil")
-			assert.NotNil(t, model.OutputPolicies, "OutputPolicies should not be nil")
-			assert.IsType(t, []string{}, model.InputPolicies, "InputPolicies should be string array")
-			assert.IsType(t, []string{}, model.OutputPolicies, "OutputPolicies should be string array")
-		}
-	})
-}
-
-func TestSafetyConfigEnvelope(t *testing.T) {
-	t.Run("should serialize correctly to JSON", func(t *testing.T) {
+var _ = Describe("SafetyConfigEnvelope", func() {
+	It("should serialize correctly to JSON", func() {
+		t := GinkgoT()
 		envelope := SafetyConfigEnvelope{
 			Data: models.SafetyConfigResponse{
-				Enabled: true,
 				GuardrailModels: []models.GuardrailModelConfig{
 					{
 						ModelName:      "test-model",
-						DisplayName:    "Test Model",
 						InputShieldID:  "input_shield",
 						OutputShieldID: "output_shield",
-						InputPolicies:  []string{"policy1", "policy2"},
-						OutputPolicies: []string{"policy3", "policy4"},
 					},
 				},
 			},
@@ -336,8 +264,6 @@ func TestSafetyConfigEnvelope(t *testing.T) {
 		dataMap, ok := data.(map[string]interface{})
 		assert.True(t, ok)
 
-		assert.Equal(t, true, dataMap["enabled"])
-
 		guardrailModels, ok := dataMap["guardrail_models"].([]interface{})
 		assert.True(t, ok)
 		assert.Len(t, guardrailModels, 1)
@@ -345,27 +271,14 @@ func TestSafetyConfigEnvelope(t *testing.T) {
 		model, ok := guardrailModels[0].(map[string]interface{})
 		assert.True(t, ok)
 		assert.Equal(t, "test-model", model["model_name"])
-		assert.Equal(t, "Test Model", model["display_name"])
 		assert.Equal(t, "input_shield", model["input_shield_id"])
 		assert.Equal(t, "output_shield", model["output_shield_id"])
-
-		inputPolicies, ok := model["input_policies"].([]interface{})
-		assert.True(t, ok)
-		assert.Len(t, inputPolicies, 2)
-		assert.Equal(t, "policy1", inputPolicies[0])
-		assert.Equal(t, "policy2", inputPolicies[1])
-
-		outputPolicies, ok := model["output_policies"].([]interface{})
-		assert.True(t, ok)
-		assert.Len(t, outputPolicies, 2)
-		assert.Equal(t, "policy3", outputPolicies[0])
-		assert.Equal(t, "policy4", outputPolicies[1])
 	})
 
-	t.Run("should handle empty guardrail models", func(t *testing.T) {
+	It("should handle empty guardrail models", func() {
+		t := GinkgoT()
 		envelope := SafetyConfigEnvelope{
 			Data: models.SafetyConfigResponse{
-				Enabled:         false,
 				GuardrailModels: []models.GuardrailModelConfig{},
 			},
 		}
@@ -377,34 +290,28 @@ func TestSafetyConfigEnvelope(t *testing.T) {
 		err = json.Unmarshal(jsonBytes, &decoded)
 		assert.NoError(t, err)
 
-		data := decoded["data"].(map[string]interface{})
-		assert.Equal(t, false, data["enabled"])
+		data, ok := decoded["data"].(map[string]interface{})
+		require.True(t, ok, "decoded[\"data\"] should be a map")
 
 		guardrailModels, ok := data["guardrail_models"].([]interface{})
-		assert.True(t, ok)
+		require.True(t, ok, "data[\"guardrail_models\"] should be a slice")
 		assert.Len(t, guardrailModels, 0)
 	})
 
-	t.Run("should handle multiple guardrail models", func(t *testing.T) {
+	It("should handle multiple guardrail models", func() {
+		t := GinkgoT()
 		envelope := SafetyConfigEnvelope{
 			Data: models.SafetyConfigResponse{
-				Enabled: true,
 				GuardrailModels: []models.GuardrailModelConfig{
 					{
 						ModelName:      "model-1",
-						DisplayName:    "Model One",
 						InputShieldID:  "shield_1_input",
 						OutputShieldID: "shield_1_output",
-						InputPolicies:  []string{"jailbreak"},
-						OutputPolicies: []string{"content-moderation"},
 					},
 					{
 						ModelName:      "model-2",
-						DisplayName:    "Model Two",
 						InputShieldID:  "shield_2_input",
 						OutputShieldID: "shield_2_output",
-						InputPolicies:  []string{"pii", "toxicity"},
-						OutputPolicies: []string{"pii"},
 					},
 				},
 			},
@@ -417,17 +324,18 @@ func TestSafetyConfigEnvelope(t *testing.T) {
 		err = json.Unmarshal(jsonBytes, &decoded)
 		assert.NoError(t, err)
 
-		data := decoded["data"].(map[string]interface{})
+		data, ok := decoded["data"].(map[string]interface{})
+		require.True(t, ok, "decoded[\"data\"] should be a map")
 		guardrailModels, ok := data["guardrail_models"].([]interface{})
-		assert.True(t, ok)
+		require.True(t, ok, "data[\"guardrail_models\"] should be a slice")
 		assert.Len(t, guardrailModels, 2)
 
-		// Verify first model
-		model1 := guardrailModels[0].(map[string]interface{})
+		model1, ok := guardrailModels[0].(map[string]interface{})
+		require.True(t, ok, "guardrailModels[0] should be a map")
 		assert.Equal(t, "model-1", model1["model_name"])
 
-		// Verify second model
-		model2 := guardrailModels[1].(map[string]interface{})
+		model2, ok := guardrailModels[1].(map[string]interface{})
+		require.True(t, ok, "guardrailModels[1] should be a map")
 		assert.Equal(t, "model-2", model2["model_name"])
 	})
-}
+})

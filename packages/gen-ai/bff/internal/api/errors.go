@@ -34,9 +34,6 @@ func (app *App) LogError(r *http.Request, err error) {
 	logger.Error(err.Error(), "method", method, "uri", uri)
 }
 
-// TODO: remove nolint comment below when we use this method
-//
-//nolint:unused
 func (app *App) badRequestResponse(w http.ResponseWriter, r *http.Request, err error) {
 	httpError := &integrations.HTTPError{
 		StatusCode: http.StatusBadRequest,
@@ -105,18 +102,6 @@ func (app *App) notFoundResponse(w http.ResponseWriter, r *http.Request) {
 		ErrorResponse: integrations.ErrorResponse{
 			Code:    strconv.Itoa(http.StatusNotFound),
 			Message: "the requested resource could not be found",
-		},
-	}
-	app.errorResponse(w, r, httpError)
-}
-
-func (app *App) modelNotFoundResponse(w http.ResponseWriter, r *http.Request, model string) {
-
-	httpError := &integrations.HTTPError{
-		StatusCode: http.StatusNotFound,
-		ErrorResponse: integrations.ErrorResponse{
-			Code:    strconv.Itoa(http.StatusNotFound),
-			Message: fmt.Sprintf("model '%s' not found or is not available", model),
 		},
 	}
 	app.errorResponse(w, r, httpError)

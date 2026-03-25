@@ -1,6 +1,9 @@
 import React from 'react';
 import { ToolbarFilter, ToolbarLabelGroup, ToolbarLabel } from '@patternfly/react-core';
 import { isEnumMember } from 'mod-arch-core';
+import { Theme } from 'mod-arch-kubeflow';
+import { STYLE_THEME } from '~/app/utilities/const';
+import './ModelCatalogActiveFilters.css';
 import { ModelCatalogContext } from '~/app/context/modelCatalog/ModelCatalogContext';
 import {
   ModelCatalogStringFilterKey,
@@ -9,27 +12,50 @@ import {
   MODEL_CATALOG_TASK_NAME_MAPPING,
   AllLanguageCodesMap,
   MODEL_CATALOG_FILTER_CATEGORY_NAMES,
+  MODEL_CATALOG_FILTER_CHIP_PREFIXES,
   ModelCatalogProvider,
   ModelCatalogLicense,
   ModelCatalogTask,
   AllLanguageCode,
   ModelCatalogNumberFilterKey,
   isCatalogFilterKey,
+  isPerformanceFilterKey,
+  parseLatencyFilterKey,
+  isLatencyFilterKey,
+  LatencyFilterKey,
 } from '~/concepts/modelCatalog/const';
 import { ModelCatalogFilterKey } from '~/app/modelCatalogTypes';
-import { parseLatencyFieldName } from '~/app/pages/modelCatalog/utils/hardwareConfigurationFilterUtils';
+import {
+  isUseCaseOptionValue,
+  getUseCaseDisplayLabel,
+} from '~/app/pages/modelCatalog/utils/workloadTypeUtils';
+import { isValueDifferentFromDefault } from '~/app/pages/modelCatalog/utils/modelCatalogUtils';
+import { formatLatency } from '~/app/pages/modelCatalog/utils/performanceMetricsUtils';
 
 type ModelCatalogActiveFiltersProps = {
   filtersToShow: ModelCatalogFilterKey[];
 };
 
 const ModelCatalogActiveFilters: React.FC<ModelCatalogActiveFiltersProps> = ({ filtersToShow }) => {
-  const { filterData, setFilterData } = React.useContext(ModelCatalogContext);
+  const {
+    filterData,
+    setFilterData,
+    resetSinglePerformanceFilterToDefault,
+    getPerformanceFilterDefaultValue,
+  } = React.useContext(ModelCatalogContext);
+
+  const isPatternfly = STYLE_THEME === Theme.Patternfly;
 
   const handleRemoveFilter = (categoryKey: string, labelKey: string) => {
     if (!isCatalogFilterKey(categoryKey)) {
       return;
     }
+
+    if (isPerformanceFilterKey(categoryKey)) {
+      resetSinglePerformanceFilterToDefault(categoryKey);
+      return;
+    }
+
     if (isEnumMember(categoryKey, ModelCatalogStringFilterKey)) {
       const currentValues = filterData[categoryKey];
       if (Array.isArray(currentValues)) {
@@ -37,7 +63,6 @@ const ModelCatalogActiveFilters: React.FC<ModelCatalogActiveFiltersProps> = ({ f
         setFilterData(categoryKey, newValues);
       }
     } else {
-      // For number filters and latency fields, clear the value
       setFilterData(categoryKey, undefined);
     }
   };
@@ -46,10 +71,15 @@ const ModelCatalogActiveFilters: React.FC<ModelCatalogActiveFiltersProps> = ({ f
     if (!isCatalogFilterKey(categoryKey)) {
       return;
     }
+
+    if (isPerformanceFilterKey(categoryKey)) {
+      resetSinglePerformanceFilterToDefault(categoryKey);
+      return;
+    }
+
     if (isEnumMember(categoryKey, ModelCatalogStringFilterKey)) {
       setFilterData(categoryKey, []);
     } else {
-      // For number filters and latency fields, clear the value
       setFilterData(categoryKey, undefined);
     }
   };
@@ -58,7 +88,6 @@ const ModelCatalogActiveFilters: React.FC<ModelCatalogActiveFiltersProps> = ({ f
    * Gets the display label for a filter value based on the filter key type
    */
   const getFilterLabel = (filterKey: ModelCatalogFilterKey, value: string | number): string => {
-    // Handle string filter keys
     if (isEnumMember(filterKey, ModelCatalogStringFilterKey)) {
       const valueStr = String(value);
       switch (filterKey) {
@@ -80,29 +109,30 @@ const ModelCatalogActiveFilters: React.FC<ModelCatalogActiveFiltersProps> = ({ f
         case ModelCatalogStringFilterKey.LANGUAGE: {
           return isEnumMember(valueStr, AllLanguageCode) ? AllLanguageCodesMap[valueStr] : valueStr;
         }
+        case ModelCatalogStringFilterKey.USE_CASE: {
+          if (isUseCaseOptionValue(valueStr)) {
+            return `${MODEL_CATALOG_FILTER_CHIP_PREFIXES.WORKLOAD_TYPE} ${getUseCaseDisplayLabel(valueStr)}`;
+          }
+          return valueStr;
+        }
         default:
           return valueStr;
       }
     }
 
-    // Handle number filter keys
-    // TODO: Remove this condition if we add more number filter keys
     if (isEnumMember(filterKey, ModelCatalogNumberFilterKey)) {
       switch (filterKey) {
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        case ModelCatalogNumberFilterKey.MIN_RPS:
-          return `≥${value} requests/sec`;
+        case ModelCatalogNumberFilterKey.MAX_RPS:
+          return `${MODEL_CATALOG_FILTER_CHIP_PREFIXES.MAX_RPS} ${value}`;
         default:
           return String(value);
       }
     }
 
-    // Handle latency field names - type is already narrowed to LatencyMetricFieldName
-    const parsed = parseLatencyFieldName(filterKey);
-    if (parsed) {
-      return `${parsed.metric} ${parsed.percentile}: ≤${value}ms`;
-    }
-    return `${filterKey}: ≤${value}ms`;
+    const parsed = parseLatencyFilterKey(filterKey);
+    const formattedValue = typeof value === 'number' ? formatLatency(value) : `${value}ms`;
+    return `${parsed.metric} | ${parsed.percentile} | ${formattedValue}`;
   };
 
   return (
@@ -110,33 +140,126 @@ const ModelCatalogActiveFilters: React.FC<ModelCatalogActiveFiltersProps> = ({ f
       {filtersToShow.map((filterKey) => {
         const filterValue = filterData[filterKey];
 
-        // Skip if no value is set
-        if (!filterValue) {
-          return null;
+        // Determine whether this filter has visible chips.
+        // TODO: PF's ToolbarFilter lacks componentWillUnmount cleanup for its internal
+        // filter count (https://github.com/patternfly/patternfly-react/issues/12247).
+        // Once fixed upstream, we can return null for empty filters instead of keeping
+        // every ToolbarFilter mounted with labels={[]}.
+        const hasValue = !!filterValue && !(Array.isArray(filterValue) && filterValue.length === 0);
+        const defaultValue = getPerformanceFilterDefaultValue(filterKey);
+        const isAtDefault =
+          hasValue &&
+          defaultValue !== undefined &&
+          !isValueDifferentFromDefault(filterValue, defaultValue);
+        const isVisible = hasValue && !isAtDefault;
+
+        // Performance filter chips use data-has-default to trigger undo icon styling via CSS
+        const filterHasDefault =
+          isPatternfly &&
+          isPerformanceFilterKey(filterKey) &&
+          getPerformanceFilterDefaultValue(filterKey) !== undefined;
+
+        // Latency: 3 separate chips in a group
+        if (isLatencyFilterKey(filterKey)) {
+          let latencyLabels: ToolbarLabel[] = [];
+
+          if (isVisible) {
+            const latencyFilterKey: LatencyFilterKey = filterKey;
+            const parsed = parseLatencyFilterKey(latencyFilterKey);
+            const formattedValue =
+              typeof filterValue === 'number' ? formatLatency(filterValue) : `${filterValue}ms`;
+
+            latencyLabels = [
+              {
+                key: `${filterKey}-metric`,
+                node: (
+                  <span data-testid={`${filterKey}-filter-chip-metric`} data-has-default="true">
+                    {MODEL_CATALOG_FILTER_CHIP_PREFIXES.LATENCY_METRIC} {parsed.metric}
+                  </span>
+                ),
+              },
+              {
+                key: `${filterKey}-percentile`,
+                node: (
+                  <span data-testid={`${filterKey}-filter-chip-percentile`} data-has-default="true">
+                    {MODEL_CATALOG_FILTER_CHIP_PREFIXES.LATENCY_PERCENTILE} {parsed.percentile}
+                  </span>
+                ),
+              },
+              {
+                key: `${filterKey}-threshold`,
+                node: (
+                  <span data-testid={`${filterKey}-filter-chip-threshold`} data-has-default="true">
+                    {MODEL_CATALOG_FILTER_CHIP_PREFIXES.LATENCY_THRESHOLD} {formattedValue}
+                  </span>
+                ),
+              },
+            ];
+          }
+
+          return (
+            <ToolbarFilter
+              key={filterKey}
+              categoryName={{
+                key: filterKey,
+                name: MODEL_CATALOG_FILTER_CATEGORY_NAMES[filterKey],
+              }}
+              labels={latencyLabels}
+              deleteLabel={(category) => {
+                const categoryKeyValue = typeof category === 'string' ? category : category.key;
+                handleClearCategory(categoryKeyValue);
+              }}
+              deleteLabelGroup={(category) => {
+                const categoryKeyValue = typeof category === 'string' ? category : category.key;
+                handleClearCategory(categoryKeyValue);
+              }}
+              data-testid={`${filterKey}-filter-container`}
+            >
+              {null}
+            </ToolbarFilter>
+          );
         }
 
-        // For array values (string filters), skip if empty
-        if (Array.isArray(filterValue) && filterValue.length === 0) {
-          return null;
+        // All other filters
+        const isSingleValuePerformanceFilter =
+          filterKey === ModelCatalogStringFilterKey.USE_CASE ||
+          filterKey === ModelCatalogNumberFilterKey.MAX_RPS;
+
+        let labels: ToolbarLabel[] = [];
+
+        if (isVisible) {
+          const filterValues = Array.isArray(filterValue) ? filterValue : [filterValue];
+
+          const hasDefaultAttr = filterHasDefault
+            ? isSingleValuePerformanceFilter
+              ? 'single'
+              : 'group'
+            : undefined;
+
+          labels = filterValues.map((value) => {
+            const valueStr = String(value);
+            const labelText = getFilterLabel(filterKey, value);
+            return {
+              key: valueStr,
+              node: (
+                <span
+                  data-testid={`${filterKey}-filter-chip-${valueStr}`}
+                  {...(hasDefaultAttr && { 'data-has-default': hasDefaultAttr })}
+                >
+                  {labelText}
+                </span>
+              ),
+            };
+          });
         }
 
-        // Normalize to array for consistent handling
-        const filterValues = Array.isArray(filterValue) ? filterValue : [filterValue];
-
-        const categoryName = MODEL_CATALOG_FILTER_CATEGORY_NAMES[filterKey];
-
-        const labels: ToolbarLabel[] = filterValues.map((value) => {
-          const valueStr = String(value);
-          const labelText = getFilterLabel(filterKey, value);
-          return {
-            key: valueStr,
-            node: <span data-testid={`${filterKey}-filter-chip-${valueStr}`}>{labelText}</span>,
-          };
-        });
-
+        // Empty name removes the category box/border. PF's LabelGroup only applies
+        // the category modifier class when categoryName is truthy.
         const categoryLabelGroup: ToolbarLabelGroup = {
           key: filterKey,
-          name: categoryName,
+          name: isSingleValuePerformanceFilter
+            ? ''
+            : MODEL_CATALOG_FILTER_CATEGORY_NAMES[filterKey],
         };
 
         return (
@@ -149,13 +272,14 @@ const ModelCatalogActiveFilters: React.FC<ModelCatalogActiveFiltersProps> = ({ f
               const labelKey = typeof label === 'string' ? label : label.key;
               handleRemoveFilter(categoryKeyValue, labelKey);
             }}
-            deleteLabelGroup={(category) => {
-              const categoryKeyValue = typeof category === 'string' ? category : category.key;
-              handleClearCategory(categoryKeyValue);
-            }}
+            {...(!isSingleValuePerformanceFilter && {
+              deleteLabelGroup: (category: string | ToolbarLabelGroup) => {
+                const categoryKeyValue = typeof category === 'string' ? category : category.key;
+                handleClearCategory(categoryKeyValue);
+              },
+            })}
             data-testid={`${filterKey}-filter-container`}
           >
-            {/* ToolbarFilter requires children but we only render labels, not filter controls */}
             {null}
           </ToolbarFilter>
         );

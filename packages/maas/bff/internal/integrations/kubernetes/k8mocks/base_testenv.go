@@ -1,8 +1,10 @@
 package k8mocks
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -53,17 +55,32 @@ type TestEnvInput struct {
 }
 
 func SetupEnvTest(input TestEnvInput) (*envtest.Environment, kubernetes.Interface, dynamic.Interface, error) {
-	projectRoot, err := getProjectRoot()
-	if err != nil {
-		input.Logger.Error("failed to find project root", slog.String("error", err.Error()))
-		input.Cancel()
-		os.Exit(1)
+	var binaryAssetsDir string
+	var projectRoot, err = getProjectRoot()
+
+	// Prefer ENVTEST_ASSETS (set by make test); fallback to ENVTEST_ASSETS_DIR or project root.
+	if envtestAssets := os.Getenv("ENVTEST_ASSETS"); envtestAssets != "" {
+		binaryAssetsDir = envtestAssets
+	} else if envDir := os.Getenv("ENVTEST_ASSETS_DIR"); envDir != "" {
+		// Construct full path with OS/ARCH suffix
+		binaryAssetsDir = filepath.Join(envDir, "k8s",
+			fmt.Sprintf("1.29.3-%s-%s", runtime.GOOS, runtime.GOARCH))
+	} else {
+		// Fall back to project root detection (local development)
+		projectRoot, err := getProjectRoot()
+		if err != nil {
+			input.Logger.Error("failed to find project root", slog.String("error", err.Error()))
+			input.Cancel()
+			os.Exit(1)
+		}
+		binaryAssetsDir = filepath.Join(projectRoot, "bin", "k8s",
+			fmt.Sprintf("1.29.3-%s-%s", runtime.GOOS, runtime.GOARCH))
 	}
 
 	testEnv := &envtest.Environment{
-		BinaryAssetsDirectory: filepath.Join(projectRoot, "bin", "k8s", fmt.Sprintf("1.29.0-%s-%s", runtime.GOOS, runtime.GOARCH)),
+		BinaryAssetsDirectory: binaryAssetsDir,
 		CRDDirectoryPaths: []string{
-			filepath.Join("internal", "testdata", "crd"),
+			filepath.Join(projectRoot, "internal", "testdata", "crd"),
 		},
 	}
 
@@ -137,6 +154,21 @@ func setupMock(mockK8sClient kubernetes.Interface, mockDynamicClient dynamic.Int
 	}
 
 	err = createMaaSLimitPolicies(mockDynamicClient, ctx, "openshift-ingress")
+	if err != nil {
+		return err
+	}
+
+	err = createNamespace(mockK8sClient, ctx, "maas-system")
+	if err != nil {
+		return err
+	}
+
+	err = createNamespace(mockK8sClient, ctx, "maas-models")
+	if err != nil {
+		return err
+	}
+
+	err = createMaaSModelRefs(mockDynamicClient, ctx)
 	if err != nil {
 		return err
 	}
@@ -458,7 +490,12 @@ func createMaaSTiersConfigMap(k8sClient kubernetes.Interface, ctx context.Contex
 }
 
 func createMaaSLimitPolicies(k8sClient dynamic.Interface, ctx context.Context, namespace string) error {
-	rateLimitYaml, err := os.ReadFile("internal/testdata/rate-limit-policy.yaml")
+	projectRoot, err := getProjectRoot()
+	if err != nil {
+		return err
+	}
+	rateLimitPath := filepath.Join(projectRoot, "internal", "testdata", "rate-limit-policy.yaml")
+	rateLimitYaml, err := os.ReadFile(rateLimitPath)
 	if err != nil {
 		return err
 	}
@@ -474,20 +511,70 @@ func createMaaSLimitPolicies(k8sClient dynamic.Interface, ctx context.Context, n
 		return err
 	}
 
-	tokenLimitYaml, err := os.ReadFile("internal/testdata/token-limit-policy.yaml")
+	tokenLimitPath := filepath.Join(projectRoot, "internal", "testdata", "token-limit-policy.yaml")
+	tokenLimitYaml, err := os.ReadFile(tokenLimitPath)
 	if err != nil {
 		return err
 	}
 
-	var tokenLimit map[string]interface{}
-	err = yaml.Unmarshal(tokenLimitYaml, &tokenLimit)
-	if err != nil {
-		return err
+	decoder := yaml.NewDecoder(bytes.NewReader(tokenLimitYaml))
+	for {
+		var tokenLimit map[string]interface{}
+		err = decoder.Decode(&tokenLimit)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to decode token limit policy: %w", err)
+		}
+
+		_, err = k8sClient.Resource(constants.TokenPolicyGvr).Namespace(namespace).Create(ctx, &unstructured.Unstructured{Object: tokenLimit}, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to create token limit policy: %w", err)
+		}
 	}
 
-	_, err = k8sClient.Resource(constants.TokenPolicyGvr).Namespace(namespace).Create(ctx, &unstructured.Unstructured{Object: tokenLimit}, metav1.CreateOptions{})
-	if err != nil {
-		return err
+	return nil
+}
+
+func createMaaSModelRefs(dynamicClient dynamic.Interface, ctx context.Context) error {
+	refs := []map[string]interface{}{
+		{
+			"apiVersion": "maas.opendatahub.io/v1alpha1",
+			"kind":       "MaaSModelRef",
+			"metadata": map[string]interface{}{
+				"name":      "granite-3-8b-instruct",
+				"namespace": "maas-models",
+			},
+			"spec": map[string]interface{}{
+				"modelRef": map[string]interface{}{
+					"kind": "LLMInferenceService",
+					"name": "granite-3-8b-instruct",
+				},
+			},
+		},
+		{
+			"apiVersion": "maas.opendatahub.io/v1alpha1",
+			"kind":       "MaaSModelRef",
+			"metadata": map[string]interface{}{
+				"name":      "flan-t5-small",
+				"namespace": "maas-models",
+			},
+			"spec": map[string]interface{}{
+				"modelRef": map[string]interface{}{
+					"kind": "LLMInferenceService",
+					"name": "flan-t5-small",
+				},
+			},
+		},
+	}
+
+	for _, ref := range refs {
+		_, err := dynamicClient.Resource(constants.MaaSModelRefGvr).Namespace(ref["metadata"].(map[string]interface{})["namespace"].(string)).Create(
+			ctx, &unstructured.Unstructured{Object: ref}, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to create MaaSModelRef: %w", err)
+		}
 	}
 
 	return nil

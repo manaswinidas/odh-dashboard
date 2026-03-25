@@ -4,6 +4,7 @@ import {
   buildSubjectRoleRows,
   SubjectRolesTableBase,
 } from '#~/pages/projects/projectPermissions/SubjectRolesTable';
+import SubjectRolesTableRow from '#~/pages/projects/projectPermissions/SubjectRolesTableRow';
 import { OPENSHIFT_BOOTSTRAPPING_DEFAULT_VALUE } from '#~/concepts/permissions/const';
 import { KnownLabels } from '#~/k8sTypes';
 import {
@@ -13,24 +14,36 @@ import {
   mockRoleK8sResource,
   mockUserRoleBindingSubject,
 } from '#~/__mocks__';
+import type { SubjectRoleRow } from '#~/pages/projects/projectPermissions/types';
 
 describe('SubjectRolesTable', () => {
   const emptyFilterData = { name: '', role: '' };
 
-  it('renders an empty state when there are no rows', () => {
+  const renderRow = (row: SubjectRoleRow, rowSpan: number): React.ReactNode => (
+    <SubjectRolesTableRow
+      key={row.key}
+      row={row}
+      subjectNameRowSpan={rowSpan}
+      onManageRoles={() => undefined}
+      onRemove={() => undefined}
+    />
+  );
+
+  it('should render an empty state when there are no rows', () => {
     render(
       <SubjectRolesTableBase
         ariaLabel="Users roles table"
         testId="permissions-user-roles-table"
         rows={[]}
         emptyTableView={<div>No users have roles assigned.</div>}
+        rowRenderer={(row, rowSpan) => renderRow(row, rowSpan)}
       />,
     );
 
     expect(screen.getByText('No users have roles assigned.')).toBeInTheDocument();
   });
 
-  it('renders role labels and rowSpan grouping, and splits rowSpan blocks after sorting', () => {
+  it('should render role links and rowSpan grouping, and split rowSpan blocks after sorting', () => {
     const namespace = 'test-ns';
     const withDisplayName = <T extends { metadata: { annotations?: Record<string, string> } }>(
       resource: T,
@@ -128,6 +141,7 @@ describe('SubjectRolesTable', () => {
         testId="permissions-user-roles-table"
         rows={rows}
         emptyTableView={<div>No users have roles assigned.</div>}
+        rowRenderer={(row, rowSpan) => renderRow(row, rowSpan)}
       />,
     );
 
@@ -135,9 +149,13 @@ describe('SubjectRolesTable', () => {
     const user1Cell = screen.getByText('test-user-1').closest('td');
     expect(user1Cell).toHaveAttribute('rowspan', '3');
 
-    // Label behavior: OpenShift default/custom render, Dashboard renders no badge
-    expect(screen.getByText('OpenShift default')).toBeInTheDocument();
-    expect(screen.getAllByText('OpenShift custom')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Role A' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Role B' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Role C' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Role D' })).toBeInTheDocument();
+    expect(screen.queryByText('AI role')).not.toBeInTheDocument();
+    expect(screen.queryByText('OpenShift default role')).not.toBeInTheDocument();
+    expect(screen.queryByText('OpenShift custom role')).not.toBeInTheDocument();
 
     // Sort by Date created (asc) -> test-user-1 should split into 2 blocks around test-user-2
     // There are two "Date created" buttons in the header: the sort button and the help popover button
@@ -148,7 +166,7 @@ describe('SubjectRolesTable', () => {
     expect(screen.getAllByText('test-user-1')).toHaveLength(2);
   });
 
-  it('filters rows by name and role (case-insensitive)', () => {
+  it('should filter rows by name and role (case-insensitive)', () => {
     const namespace = 'test-ns';
 
     const roleA = mockRoleK8sResource({ name: 'role-a', namespace, labels: { foo: 'bar' } });
@@ -220,40 +238,7 @@ describe('SubjectRolesTable', () => {
     expect(rowsByRoleFriendly[0].roleRef).toEqual({ kind: 'ClusterRole', name: 'admin' });
   });
 
-  it('calls onRoleClick when the role link is clicked', () => {
-    const namespace = 'test-ns';
-    const roleA = mockRoleK8sResource({ name: 'role-a', namespace, labels: { foo: 'bar' } });
-    roleA.metadata.annotations = { 'openshift.io/display-name': 'Role A' };
-
-    const user1 = mockUserRoleBindingSubject({ name: 'test-user-1' });
-    const roleBindings = [
-      mockRoleBindingK8sResource({
-        name: 'rb-1',
-        namespace,
-        roleRefKind: 'Role',
-        roleRefName: 'role-a',
-        subjects: [user1],
-      }),
-    ];
-
-    const rows = buildSubjectRoleRows('user', emptyFilterData, [roleA], [], roleBindings);
-    const onRoleClick = jest.fn();
-
-    render(
-      <SubjectRolesTableBase
-        ariaLabel="Users roles table"
-        testId="permissions-user-roles-table"
-        rows={rows}
-        emptyTableView={<div>No users have roles assigned.</div>}
-        onRoleClick={onRoleClick}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Role A' }));
-    expect(onRoleClick).toHaveBeenCalledWith({ kind: 'Role', name: 'role-a' });
-  });
-
-  it('renders friendly display names for well-known ClusterRoles (admin/edit)', () => {
+  it('should render friendly display names for well-known ClusterRoles (admin/edit)', () => {
     const namespace = 'test-ns';
     const clusterAdmin = mockClusterRoleK8sResource({ name: 'admin', labels: { foo: 'bar' } });
     const clusterEdit = mockClusterRoleK8sResource({ name: 'edit', labels: { foo: 'bar' } });
@@ -290,6 +275,7 @@ describe('SubjectRolesTable', () => {
         testId="permissions-user-roles-table"
         rows={rows}
         emptyTableView={<div>No users have roles assigned.</div>}
+        rowRenderer={(row, rowSpan) => renderRow(row, rowSpan)}
       />,
     );
 
@@ -297,7 +283,7 @@ describe('SubjectRolesTable', () => {
     expect(screen.getByRole('button', { name: 'Contributor' })).toBeInTheDocument();
   });
 
-  it('renders "-" when role binding creation timestamp is missing', () => {
+  it('should render "-" when role binding creation timestamp is missing', () => {
     const namespace = 'test-ns';
     const roleA = mockRoleK8sResource({ name: 'role-a', namespace, labels: { foo: 'bar' } });
 
@@ -319,13 +305,14 @@ describe('SubjectRolesTable', () => {
         testId="permissions-user-roles-table"
         rows={rows}
         emptyTableView={<div>No users have roles assigned.</div>}
+        rowRenderer={(row, rowSpan) => renderRow(row, rowSpan)}
       />,
     );
 
     expect(screen.getByText('-')).toBeInTheDocument();
   });
 
-  it('renders role metadata.name when openshift.io/display-name annotation is missing', () => {
+  it('should render role metadata.name when openshift.io/display-name annotation is missing', () => {
     const namespace = 'test-ns';
     const roleA = mockRoleK8sResource({ name: 'role-a', namespace, labels: { foo: 'bar' } });
     // Ensure no display-name annotation is present
@@ -350,13 +337,14 @@ describe('SubjectRolesTable', () => {
         testId="permissions-user-roles-table"
         rows={rows}
         emptyTableView={<div>No users have roles assigned.</div>}
+        rowRenderer={(row, rowSpan) => renderRow(row, rowSpan)}
       />,
     );
 
     expect(screen.getByRole('button', { name: 'role-a' })).toBeInTheDocument();
   });
 
-  it('builds group rows when subjectKind="group"', () => {
+  it('should build group rows when subjectKind="group"', () => {
     const namespace = 'test-ns';
     const roleA = mockRoleK8sResource({ name: 'role-a', namespace, labels: { foo: 'bar' } });
 

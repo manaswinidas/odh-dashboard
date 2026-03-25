@@ -3,7 +3,10 @@ import { Button, Popover, Tooltip } from '@patternfly/react-core';
 import { useNavigate } from 'react-router-dom';
 import { OutlinedQuestionCircleIcon } from '@patternfly/react-icons';
 import { ProjectSectionID } from '#~/pages/projects/screens/detail/types';
-import { ProjectSectionTitles } from '#~/pages/projects/screens/detail/const';
+import {
+  ProjectSectionTitles,
+  CREATE_WORKBENCH_DISABLED_MESSAGE,
+} from '#~/pages/projects/screens/detail/const';
 import { ProjectDetailsContext } from '#~/pages/projects/ProjectDetailsContext';
 import { FAST_POLL_INTERVAL, POLL_INTERVAL } from '#~/utilities/const';
 import DetailsSection from '#~/pages/projects/screens/detail/DetailsSection';
@@ -13,6 +16,9 @@ import { ProjectObjectType, typedEmptyImage } from '#~/concepts/design/utils';
 import useRefreshInterval from '#~/utilities/useRefreshInterval';
 import { useKueueConfiguration } from '#~/concepts/hardwareProfiles/kueueUtils';
 import { KUEUE_WORKBENCH_CREATION_DISABLED_MESSAGE } from '#~/concepts/hardwareProfiles/kueueConstants';
+import { useAccessReview } from '#~/api/useAccessReview';
+import { NotebookModel } from '#~/api/models/kubeflow';
+import useKueueNotebookAlerts from '#~/pages/projects/notebook/useKueueNotebookAlerts';
 import NotebookTable from './NotebookTable';
 
 const NotebookList: React.FC = () => {
@@ -24,6 +30,8 @@ const NotebookList: React.FC = () => {
       error: notebooksError,
       refresh: refreshNotebooks,
     },
+    kueueStatusByNotebookName,
+    isKueueLoaded,
   } = React.useContext(ProjectDetailsContext);
   const navigate = useNavigate();
   const projectName = currentProject.metadata.name;
@@ -41,12 +49,29 @@ const NotebookList: React.FC = () => {
       .forEach((notebookState) => notebookState.refresh()),
   );
 
+  useKueueNotebookAlerts(notebooks, kueueStatusByNotebookName, isKueueLoaded);
+
   const { isKueueDisabled } = useKueueConfiguration(currentProject);
 
+  const [allowCreate, allowCreateLoaded] = useAccessReview({
+    group: NotebookModel.apiGroup,
+    resource: NotebookModel.plural,
+    namespace: currentProject.metadata.name,
+    verb: 'create',
+  });
+
+  // Only disable for permission if the check has loaded and the user lacks permission
+  const isCreateDisabled = isKueueDisabled || (allowCreateLoaded && !allowCreate);
+  const createDisabledTooltip = isKueueDisabled
+    ? KUEUE_WORKBENCH_CREATION_DISABLED_MESSAGE
+    : !allowCreate
+    ? CREATE_WORKBENCH_DISABLED_MESSAGE
+    : undefined;
+
   const getCreateButton = () => {
-    if (isKueueDisabled) {
+    if (isCreateDisabled) {
       return (
-        <Tooltip content={KUEUE_WORKBENCH_CREATION_DISABLED_MESSAGE}>
+        <Tooltip content={createDisabledTooltip}>
           <Button
             key={`action-${ProjectSectionID.WORKBENCHES}`}
             onClick={() => navigate(`/projects/${projectName}/spawner`)}

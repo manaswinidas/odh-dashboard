@@ -1,3 +1,4 @@
+/* eslint-disable camelcase */
 import React from 'react';
 import { GenAiContext } from '~/app/context/GenAiContext';
 
@@ -19,12 +20,42 @@ export const mockGenAiContextValue: React.ContextType<typeof GenAiContext> = {
       installLSD: jest.fn().mockResolvedValue({ data: null }),
       deleteLSD: jest.fn().mockResolvedValue({ data: null }),
       getAAModels: jest.fn().mockResolvedValue([]),
+      getAAVectorStores: jest.fn().mockResolvedValue([]),
       listVectorStoreFiles: jest.fn().mockResolvedValue([]),
       deleteVectorStoreFile: jest.fn().mockResolvedValue({ data: null }),
       createVectorStore: jest.fn().mockResolvedValue({ data: null }),
       uploadSource: jest.fn().mockResolvedValue({ data: null }),
       getFileUploadStatus: jest.fn().mockResolvedValue({ data: null }),
       getBFFConfig: jest.fn().mockResolvedValue({ isCustomLSD: false }),
+      getGuardrailsStatus: jest.fn().mockResolvedValue({ data: null }),
+      getSafetyConfig: jest.fn().mockResolvedValue({ data: null }),
+      listMLflowPrompts: jest.fn().mockResolvedValue([]),
+      registerMLflowPrompt: jest.fn().mockResolvedValue({ data: null }),
+      getMLflowPrompt: jest.fn().mockResolvedValue({ data: null }),
+      listMLflowPromptVersions: jest.fn().mockResolvedValue([]),
+      createExternalModel: jest.fn().mockResolvedValue({
+        model_id: 'mock-model',
+        model_name: 'mock-model',
+        display_name: 'Mock Model',
+        description: 'Mock external model',
+        endpoints: [],
+        serving_runtime: 'remote::vllm',
+        api_protocol: 'REST',
+        version: 'v1',
+        usecase: 'llm',
+        status: 'Running',
+        sa_token: {
+          name: '',
+          token_name: '',
+          token: '',
+        },
+      }),
+      verifyExternalModel: jest.fn().mockResolvedValue({
+        success: true,
+        message: 'External model verified successfully',
+        response_time_ms: 500,
+      }),
+      deleteExternalModel: jest.fn().mockResolvedValue('Model deleted successfully'),
     },
   },
   refreshAPIState: jest.fn(),

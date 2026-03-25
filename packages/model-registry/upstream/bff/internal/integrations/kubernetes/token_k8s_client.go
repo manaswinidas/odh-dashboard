@@ -18,6 +18,7 @@ import (
 
 type TokenKubernetesClient struct {
 	SharedClientLogic
+	restConfig *rest.Config
 }
 
 func (kc *TokenKubernetesClient) IsClusterAdmin(_ *RequestIdentity) (bool, error) {
@@ -54,7 +55,7 @@ func (kc *TokenKubernetesClient) IsClusterAdmin(_ *RequestIdentity) (bool, error
 }
 
 // newTokenKubernetesClient creates a Kubernetes client using a user bearer token.
-func newTokenKubernetesClient(token string, logger *slog.Logger) (KubernetesClientInterface, error) {
+func NewTokenKubernetesClient(token string, logger *slog.Logger) (KubernetesClientInterface, error) {
 	baseConfig, err := helper.GetKubeconfig()
 	if err != nil {
 		logger.Error("failed to get kubeconfig", "error", err)
@@ -63,10 +64,7 @@ func newTokenKubernetesClient(token string, logger *slog.Logger) (KubernetesClie
 
 	// Start with an anonymous config to avoid preloaded auth
 	cfg := rest.AnonymousClientConfig(baseConfig)
-	if err != nil {
-		logger.Error("failed to create anonymous config", "error", err)
-		return nil, fmt.Errorf("failed to create anonymous config: %w", err)
-	}
+
 	cfg.BearerToken = token
 
 	// Explicitly clear all other auth mechanisms
@@ -89,6 +87,7 @@ func newTokenKubernetesClient(token string, logger *slog.Logger) (KubernetesClie
 			// Token is retained for follow-up calls; do not log it.
 			Token: NewBearerToken(token),
 		},
+		restConfig: cfg,
 	}, nil
 }
 
@@ -202,6 +201,10 @@ func (kc *TokenKubernetesClient) CanAccessServiceInNamespace(ctx context.Context
 	return true, nil
 }
 
+func (kc *TokenKubernetesClient) CanNamespaceAccessRegistry(ctx context.Context, _ *RequestIdentity, jobNamespace, registryName, registryNamespace string) (bool, error) {
+	return CanNamespaceAccessRegistry(ctx, kc.Client, kc.Logger, jobNamespace, registryName, registryNamespace)
+}
+
 // RequestIdentity is unused because the token already represents the user identity.
 // This endpoint is used only on dev mode that is why is safe to ignore permissions errors
 func (kc *TokenKubernetesClient) GetNamespaces(ctx context.Context, _ *RequestIdentity) ([]corev1.Namespace, error) {
@@ -251,4 +254,8 @@ func (kc *TokenKubernetesClient) GetUser(_ *RequestIdentity) (string, error) {
 	}
 
 	return username, nil
+}
+
+func (kc *TokenKubernetesClient) RESTConfig() *rest.Config {
+	return kc.restConfig
 }

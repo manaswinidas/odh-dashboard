@@ -9,6 +9,11 @@ jest.mock('~/app/services/llamaStackService');
 jest.mock('~/app/hooks/useGenAiAPI');
 jest.mock('~/app/utilities/utils', () => ({
   getId: jest.fn(() => 'mock-id'),
+  getLlamaModelDisplayName: jest.fn((modelId: string) => modelId || 'Bot'),
+  splitLlamaModelId: jest.fn((modelId: string) => ({
+    providerId: 'provider-id',
+    id: modelId,
+  })),
 }));
 
 jest.mock('~/app/Chatbot/ChatbotMessagesToolResponse', () => ({
@@ -65,8 +70,8 @@ const setupMocks = (): void => {
   jest.clearAllMocks();
   // Ensure createResponse mock is properly reset
   mockCreateResponse.mockReset();
-  // Mock useContext to return the namespace
-  mockUseContext.mockReturnValue({ namespace: mockNamespace });
+  // Mock useContext for ChatbotContext (aiModels) and other contexts (namespace)
+  mockUseContext.mockReturnValue({ namespace: mockNamespace, aiModels: [] });
 
   // Mock useGenAiAPI to return the API object with mocked functions
   mockUseGenAiAPI.mockReturnValue({
@@ -449,8 +454,9 @@ describe('useChatbotMessages - controls', () => {
       expect(result.current.messages).toHaveLength(1);
       expect(result.current.messages[0]).toMatchObject({
         role: 'bot',
-        content: 'Send a message to test your configuration',
-        name: 'Bot',
+        content:
+          'Before you begin chatting, you can change the model, edit the system prompt, adjust model parameters to fit your specific use case.',
+        name: mockModelId,
       });
     });
 
@@ -505,7 +511,9 @@ describe('useChatbotMessages - controls', () => {
 
       // Messages should be reset
       expect(result.current.messages).toHaveLength(1);
-      expect(result.current.messages[0].content).toBe('Send a message to test your configuration');
+      expect(result.current.messages[0].content).toBe(
+        'Before you begin chatting, you can change the model, edit the system prompt, adjust model parameters to fit your specific use case.',
+      );
     });
 
     it('should preserve model and configuration settings', async () => {
@@ -558,7 +566,9 @@ describe('useChatbotMessages - controls', () => {
       }).not.toThrow();
 
       expect(result.current.messages).toHaveLength(1);
-      expect(result.current.messages[0].content).toBe('Send a message to test your configuration');
+      expect(result.current.messages[0].content).toBe(
+        'Before you begin chatting, you can change the model, edit the system prompt, adjust model parameters to fit your specific use case.',
+      );
     });
 
     it('should clear conversation history but retain RAG configuration', async () => {
@@ -624,7 +634,9 @@ describe('useChatbotMessages - controls', () => {
 
       // Should only have the initial message - abort error was silently ignored
       expect(result.current.messages).toHaveLength(1);
-      expect(result.current.messages[0].content).toBe('Send a message to test your configuration');
+      expect(result.current.messages[0].content).toBe(
+        'Before you begin chatting, you can change the model, edit the system prompt, adjust model parameters to fit your specific use case.',
+      );
     });
 
     it('should silently handle abort when clearing during streaming', async () => {
@@ -671,7 +683,9 @@ describe('useChatbotMessages - controls', () => {
 
       // Should only have the initial message - abort was silently handled
       expect(result.current.messages).toHaveLength(1);
-      expect(result.current.messages[0].content).toBe('Send a message to test your configuration');
+      expect(result.current.messages[0].content).toBe(
+        'Before you begin chatting, you can change the model, edit the system prompt, adjust model parameters to fit your specific use case.',
+      );
     });
   });
 });

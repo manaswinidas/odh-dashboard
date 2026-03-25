@@ -14,6 +14,7 @@ import { UpdateObjectAtPropAndValue } from 'mod-arch-shared';
 import PasswordInput from '~/app/shared/components/PasswordInput';
 import FormFieldset from '~/app/pages/modelRegistry/screens/components/FormFieldset';
 import FormSection from '~/app/pages/modelRegistry/components/pf-overrides/FormSection';
+import ThemeAwareFormGroupWrapper from '~/app/pages/settings/components/ThemeAwareFormGroupWrapper';
 import { ManageSourceFormData } from '~/app/pages/modelCatalogSettings/useManageSourceData';
 import { validateOrganization } from '~/app/pages/modelCatalogSettings/utils/validation';
 import {
@@ -22,6 +23,7 @@ import {
   HELP_TEXT,
   PLACEHOLDERS,
 } from '~/app/pages/modelCatalogSettings/constants';
+import { TempDevFeature, useTempDevFeatureAvailable } from '~/app/hooks/useTempDevFeatureAvailable';
 
 type CredentialsSectionProps = {
   formData: ManageSourceFormData;
@@ -61,6 +63,41 @@ const CredentialsSection: React.FC<CredentialsSectionProps> = ({
     />
   );
 
+  const organizationDescriptionTxtNode = (
+    <>
+      <FormHelperText>
+        <HelperText>
+          <HelperTextItem>{HELP_TEXT.ORGANIZATION}</HelperTextItem>
+        </HelperText>
+      </FormHelperText>
+    </>
+  );
+
+  const organizationHelperTxtNode =
+    isOrganizationTouched && !isOrganizationValid ? (
+      <>
+        <FormHelperText>
+          <HelperText>
+            <HelperTextItem variant="error" data-testid="organization-error">
+              {VALIDATION_MESSAGES.ORGANIZATION_REQUIRED}
+            </HelperTextItem>
+          </HelperText>
+        </FormHelperText>
+      </>
+    ) : undefined;
+
+  const organizationFormGroup = (
+    <ThemeAwareFormGroupWrapper
+      label={FORM_LABELS.ORGANIZATION}
+      fieldId="organization"
+      isRequired
+      descriptionTextNode={organizationDescriptionTxtNode}
+      helperTextNode={organizationHelperTxtNode}
+    >
+      {organizationInput}
+    </ThemeAwareFormGroupWrapper>
+  );
+
   const accessTokenInput = (
     <PasswordInput
       isRequired
@@ -74,26 +111,8 @@ const CredentialsSection: React.FC<CredentialsSectionProps> = ({
     />
   );
 
-  return (
-    <FormSection title={FORM_LABELS.CREDENTIALS} data-testid="credentials-section">
-      <FormGroup label={FORM_LABELS.ORGANIZATION} isRequired fieldId="organization">
-        <FormHelperText>
-          <HelperText>
-            <HelperTextItem>{HELP_TEXT.ORGANIZATION}</HelperTextItem>
-          </HelperText>
-        </FormHelperText>
-        <FormFieldset component={organizationInput} field="Allowed organization" />
-        {isOrganizationTouched && !isOrganizationValid && (
-          <FormHelperText>
-            <HelperText>
-              <HelperTextItem variant="error" data-testid="organization-error">
-                {VALIDATION_MESSAGES.ORGANIZATION_REQUIRED}
-              </HelperTextItem>
-            </HelperText>
-          </FormHelperText>
-        )}
-      </FormGroup>
-
+  const accessTokenFormGroup = (
+    <>
       <FormGroup label={FORM_LABELS.ACCESS_TOKEN} fieldId="access-token">
         <FormHelperText>
           <HelperText>
@@ -129,6 +148,20 @@ const CredentialsSection: React.FC<CredentialsSectionProps> = ({
           Validate
         </Button>
       </ActionList>
+    </>
+  );
+
+  const accessTokenFeatureAvailable = useTempDevFeatureAvailable(
+    TempDevFeature.CatalogHuggingFaceApiKey,
+  );
+
+  return (
+    <FormSection
+      title={accessTokenFeatureAvailable ? FORM_LABELS.CREDENTIALS : undefined}
+      data-testid="credentials-section"
+    >
+      {organizationFormGroup}
+      {accessTokenFeatureAvailable && accessTokenFormGroup}
     </FormSection>
   );
 };

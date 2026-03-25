@@ -74,8 +74,8 @@ class WorkbenchPage {
     cy.testA11y();
   }
 
-  private findNotebookTable() {
-    return cy.findByTestId('notebook-table');
+  findNotebookTable(timeout?: number) {
+    return cy.findByTestId('notebook-table', ...(timeout != null ? [{ timeout }] : []));
   }
 
   findNotebookTableHeaderButton(name: string) {
@@ -88,8 +88,8 @@ class WorkbenchPage {
     );
   }
 
-  findEmptyState() {
-    return cy.findByTestId('empty-state-title');
+  findEmptyState(timeout?: number) {
+    return cy.findByTestId('empty-state-title', timeout !== undefined ? { timeout } : {});
   }
 
   findCreateButton() {
@@ -138,12 +138,28 @@ class EnvironmentVariableTypeField extends Contextual<HTMLElement> {
       .click();
   }
 
+  selectEnvDataTypeByTestId(testId: string) {
+    this.find()
+      .findByTestId('env-data-type-field')
+      .findByRole('button', { name: 'Options menu' })
+      .click();
+    cy.findByTestId(testId).click();
+  }
+
   selectEnvironmentVariableType(name: string) {
     this.find()
       .findByTestId('environment-variable-type-select')
       .findByRole('button', { name: 'Options menu' })
       .findSelectOption(name)
       .click();
+  }
+
+  selectEnvironmentVariableTypeByTestId(testId: string) {
+    this.find()
+      .findByTestId('environment-variable-type-select')
+      .findByRole('button', { name: 'Options menu' })
+      .click();
+    cy.findByTestId(testId).click();
   }
 
   findAnotherKeyValuePairButton() {
@@ -224,6 +240,18 @@ class NotebookImageVersionPopover extends Contextual<HTMLElement> {
 class NotebookRow extends TableRow {
   shouldHaveNotebookImageName(name: string) {
     return this.find().findByTestId('image-display-name').should('contain.text', name);
+  }
+
+  findMigrationRequiredLabel() {
+    return this.find().findByTestId('workbench-migration-required-label');
+  }
+
+  findMigrationRequiredPopoverTitle() {
+    return cy.findByTestId('workbench-migration-required-popover-title');
+  }
+
+  findMigrationRequiredPopover() {
+    return cy.findByTestId('workbench-migration-required-popover');
   }
 
   findNotebookImageAvailability() {
@@ -537,6 +565,19 @@ class CreateSpawnerPage {
     return cy.findByTestId('submit-button');
   }
 
+  handleConflictIfPresent() {
+    // Wait for the submit API call to complete: the button is disabled while
+    // the request is in-flight, then either removed (success) or re-enabled (error).
+    this.findSubmitButton().should('be.disabled');
+    cy.get('[data-testid="submit-button"]:disabled', { timeout: 30000 }).should('not.exist');
+
+    cy.get('body').then(($body) => {
+      if ($body.find('[data-testid="force-update-button"]').length) {
+        cy.findByTestId('force-update-button').click();
+      }
+    });
+  }
+
   findCancelButton() {
     return cy.findByTestId('cancel-button');
   }
@@ -646,6 +687,115 @@ class CreateSpawnerPage {
     this.findConnectionsTable().find(`[data-label=Name]`).contains(name);
     this.findConnectionsTable().find(`[data-label=Type]`).contains(type);
   }
+
+  findFeatureStoreSection() {
+    return cy.findByTestId('feature-store-section');
+  }
+
+  findFeatureStoreSelector() {
+    return cy.findByTestId('feature-store-typeahead');
+  }
+
+  shouldHaveFeatureStoreSelectorDisabled() {
+    this.findFeatureStoreSelector()
+      .should('have.class', 'pf-m-disabled')
+      .and('have.attr', 'disabled');
+    return this;
+  }
+
+  findFeatureStoreInput() {
+    return cy.findByTestId('feature-store-select-input');
+  }
+
+  findFeatureStoreTypeaheadList() {
+    return cy.findByTestId('feature-store-typeahead-list');
+  }
+
+  selectFeatureStore(projectName: string) {
+    this.findFeatureStoreSelector().click();
+    this.findFeatureStoreTypeaheadList().findByText(projectName).click();
+    return this;
+  }
+
+  deselectFeatureStore(projectName: string) {
+    this.findFeatureStoreSelector().click();
+    this.findFeatureStoreTypeaheadList().findByText(projectName).click();
+    return this;
+  }
+
+  shouldHaveFeatureStoreSelected(projectName: string) {
+    this.findFeatureStoreSelector().should('contain.text', projectName);
+    return this;
+  }
+
+  shouldNotHaveFeatureStoreSelected(projectName: string) {
+    this.findFeatureStoreSelector().should('not.contain.text', projectName);
+    return this;
+  }
+
+  findFeatureStoreCodeBlock() {
+    return cy.findByTestId('feature-store-code-block');
+  }
+
+  findFeatureStoreCodeBlockInstructionText() {
+    return cy.findByText(/Modify and run this example code/);
+  }
+
+  findFeatureStoreLabel() {
+    return cy.findByText('Feature store selection');
+  }
+
+  findFeatureStoreOptionInList(projectName: string) {
+    return this.findFeatureStoreTypeaheadList().findByText(projectName);
+  }
+
+  shouldHaveFeatureStoreOptionsInList(projectNames: string[]) {
+    this.findFeatureStoreTypeaheadList().within(() => {
+      projectNames.forEach((name) => {
+        cy.findByText(name).should('exist');
+      });
+    });
+    return this;
+  }
+
+  findFeatureStoreTooltip() {
+    return cy.findByRole('tooltip');
+  }
+
+  findFeatureStoreTooltipText() {
+    return cy.findByText(
+      'The current project doesn’t have access to any feature stores. Contact your admin to request access.',
+    );
+  }
+
+  findFeatureStoreCodeBlockTitle() {
+    return cy.findByText('Example code');
+  }
+
+  shouldHaveFeatureStoreCodeBlock() {
+    this.findFeatureStoreCodeBlockTitle().should('exist');
+    this.findFeatureStoreCodeBlock().should('exist');
+    return this;
+  }
+
+  shouldNotHaveFeatureStoreCodeBlock() {
+    this.findFeatureStoreCodeBlockTitle().should('not.exist');
+    this.findFeatureStoreCodeBlock().should('not.exist');
+    return this;
+  }
+
+  findFeatureStoreErrorAlert() {
+    return cy.findByTestId('feature-store-error-alert-message');
+  }
+
+  shouldHaveFeatureStoreError(message?: string) {
+    this.findFeatureStoreErrorAlert().should('exist');
+    this.findFeatureStoreErrorAlert().should('contain.text', 'Failed to load feature stores');
+    if (message) {
+      this.findFeatureStoreErrorAlert().should('contain.text', message);
+    }
+    return this;
+  }
 }
 
 class EditSpawnerPage extends CreateSpawnerPage {
@@ -727,8 +877,36 @@ class WorkbenchStatusModal extends Modal {
     return cy.findByTestId('expand-logs');
   }
 
+  findResourcesTab() {
+    return cy.findByTestId('expand-resources');
+  }
+
   findLogEntry(text: string) {
     return cy.findByTestId('event-logs').find('li span').contains(text);
+  }
+
+  findResourcesNoQueueMessage() {
+    return cy.findByTestId('resources-no-queue');
+  }
+
+  findClusterQueueSection() {
+    return cy.findByTestId('cluster-queue-section');
+  }
+
+  findQuotasSection() {
+    return cy.findByTestId('quotas-section');
+  }
+
+  findQueueValue() {
+    return cy.findByTestId('queue-value');
+  }
+
+  findQuotaSourceValue() {
+    return cy.findByTestId('quota-source-value');
+  }
+
+  findConsumedQuotaValue() {
+    return cy.findByTestId('consumed-quota-value');
   }
 
   getNotebookStatus(expectedStatus: string, timeout?: number) {
@@ -767,6 +945,15 @@ class WorkbenchStatusModal extends Modal {
 }
 
 export const workbenchPage = new WorkbenchPage();
+
+export const workbenchActions = {
+  findEditWorkbenchAction(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return cy.findByTestId('edit-workbench-action');
+  },
+  findDeleteWorkbenchAction(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return cy.findByTestId('delete-workbench-action');
+  },
+};
 export const createSpawnerPage = new CreateSpawnerPage();
 export const notebookConfirmModal = new NotebookConfirmModal();
 export const notebookDeleteModal = new NotebookDeleteModal();

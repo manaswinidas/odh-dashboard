@@ -1,3 +1,4 @@
+// eslint-disable-next-line @odh-dashboard/no-restricted-imports
 import {
   AccessMode,
   StorageProvisioner,
@@ -13,19 +14,34 @@ import {
   storageClassesPage,
   storageClassesTable,
   storageClassEditModal,
+  storageClassActions,
 } from '../../../pages/storageClasses';
+import { ensureOpenshiftDefaultStorageClass } from '../../../utils/oc_commands/storageClass';
 import { retryableBefore, wasSetupPerformed } from '../../../utils/retryableHooks';
 
 const scName = 'qe-settings-sc';
 const scAccessModeName1 = `${scName}-manila-csi`;
 const scAccessModeName2 = `${scName}-vsphere-volume`;
+const testDefaultScName = 'test-default-sc';
 
 // Using testIsolation will reuse the login (cache)
 // describe('An admin user can manage Storage Classes', { testIsolation: false }, () => {
 describe('An admin user can manage Storage Classes from Settings -> Storage classes view', () => {
   let createdStorageClasses: string[];
   let accessModeStorageClasses: string[];
+  let createdDefaultSc = false;
+
   retryableBefore(() => {
+    // Ensure an OpenShift default storage class exists before running tests.
+    // If no storage classes exist (e.g., disconnected environments), one will be created.
+    ensureOpenshiftDefaultStorageClass().then((defaultSC) => {
+      cy.log(`Using OpenShift default storage class: ${defaultSC}`);
+      // Track if we created the default SC so we can clean it up
+      if (defaultSC === testDefaultScName) {
+        createdDefaultSc = true;
+      }
+    });
+
     // Provision different SCs
     createdStorageClasses = provisionStorageClassFeature(scName);
     accessModeStorageClasses = [
@@ -51,11 +67,16 @@ describe('An admin user can manage Storage Classes from Settings -> Storage clas
     // Delete provisioned SCs
     tearDownStorageClassFeature(createdStorageClasses);
     tearDownStorageClassFeature(accessModeStorageClasses);
+
+    // Clean up the default SC if we created it
+    if (createdDefaultSc) {
+      tearDownStorageClassFeature([testDefaultScName]);
+    }
   });
 
   it(
     'An admin user can enable a disabled Storage Class',
-    { tags: ['@Smoke', '@SmokeSet2', '@Dashboard', '@NonConcurrent'] },
+    { tags: ['@Smoke', '@SmokeSet2', '@Dashboard', '@StorageClassesCI'] },
     () => {
       cy.step('Navigate to Storage Classes view');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
@@ -92,7 +113,7 @@ describe('An admin user can manage Storage Classes from Settings -> Storage clas
 
   it(
     'An admin user can disable an enabled Storage Class',
-    { tags: ['@Smoke', '@SmokeSet2', '@Dashboard', '@NonConcurrent'] },
+    { tags: ['@Smoke', '@SmokeSet2', '@Dashboard', '@StorageClassesCI'] },
     () => {
       cy.step('Navigate to Storage Classes view');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
@@ -124,7 +145,7 @@ describe('An admin user can manage Storage Classes from Settings -> Storage clas
 
   it(
     'An admin user can set an enabled Storage Class as the default one',
-    { tags: ['@Smoke', '@SmokeSet2', '@Dashboard', '@NonConcurrent'] },
+    { tags: ['@Smoke', '@SmokeSet2', '@Dashboard', '@StorageClassesCI'] },
     () => {
       cy.step('Navigate to Storage Classes view');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
@@ -151,8 +172,8 @@ describe('An admin user can manage Storage Classes from Settings -> Storage clas
   );
 
   it(
-    '[Product Bug: RHOAIENG-34808] An admin user can edit the access mode of a storage class',
-    { tags: ['@Smoke', '@SmokeSet2', '@Dashboard', '@NonConcurrent', '@Bug'] },
+    'An admin user can edit the access mode of a storage class',
+    { tags: ['@Smoke', '@SmokeSet2', '@Dashboard', '@StorageClassesCI'] },
     () => {
       cy.step('Navigate to Storage Classes view');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
@@ -165,7 +186,8 @@ describe('An admin user can manage Storage Classes from Settings -> Storage clas
       scAccessModeRow.shouldContainAccessModeLabels(['RWO']);
 
       cy.step('Navigate to edit SC');
-      storageClassesTable.getRowByConfigName(scAccessModeName1).findKebabAction('Edit').click();
+      storageClassesTable.getRowByConfigName(scAccessModeName1).findKebab().click();
+      storageClassActions.findEditStorageClassAction().click();
 
       cy.step('Check initial access mode checkboxes state');
       storageClassEditModal
@@ -199,7 +221,8 @@ describe('An admin user can manage Storage Classes from Settings -> Storage clas
       });
 
       cy.step('Check that an alert shows up when unchecking RWX');
-      storageClassesTable.getRowByConfigName(scAccessModeName1).findKebabAction('Edit').click();
+      storageClassesTable.getRowByConfigName(scAccessModeName1).findKebab().click();
+      storageClassActions.findEditStorageClassAction().click();
       storageClassEditModal.findAccessModeCheckbox(AccessMode.RWX).click(); // uncheck
       storageClassEditModal.findAccessModeAlert().should('be.visible');
       storageClassEditModal.findAccessModeCheckbox(AccessMode.RWX).click(); // re-check

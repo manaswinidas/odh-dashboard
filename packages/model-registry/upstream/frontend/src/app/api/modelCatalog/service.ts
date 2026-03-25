@@ -2,16 +2,17 @@ import { APIOptions, handleRestFailures, isModArchResponse, restGET } from 'mod-
 import {
   CatalogArtifactList,
   CatalogFilterOptionsList,
+  CatalogLabelList,
   CatalogModel,
   CatalogModelList,
+  CatalogPerformanceArtifactList,
   CatalogSourceList,
+  CatalogSourceListParams,
+  CatalogLabelListParams,
   ModelCatalogFilterStates,
   PerformanceArtifactsParams,
 } from '~/app/modelCatalogTypes';
-import {
-  filtersToFilterQuery,
-  filtersToArtifactsFilterQuery,
-} from '~/app/pages/modelCatalog/utils/modelCatalogUtils';
+import { filtersToFilterQuery } from '~/app/pages/modelCatalog/utils/modelCatalogUtils';
 
 export const getCatalogModelsBySource =
   (hostPath: string, queryParams: Record<string, unknown> = {}) =>
@@ -28,15 +29,31 @@ export const getCatalogModelsBySource =
     searchKeyword?: string,
     filterData?: ModelCatalogFilterStates,
     filterOptions?: CatalogFilterOptionsList | null,
+    filterQuery?: string,
+    performanceParams?: {
+      targetRPS?: number;
+      latencyProperty?: string;
+      recommendations?: boolean;
+    },
   ): Promise<CatalogModelList> => {
+    const computedFilterQuery =
+      filterQuery ??
+      (filterData && filterOptions ? filtersToFilterQuery(filterData, filterOptions) : '');
+
     const allParams = {
       source: sourceId,
       sourceLabel,
       ...paginationParams,
       ...(searchKeyword && { q: searchKeyword }),
       ...queryParams,
-      ...(filterData &&
-        filterOptions && { filterQuery: filtersToFilterQuery(filterData, filterOptions) }),
+      ...(computedFilterQuery && { filterQuery: computedFilterQuery }),
+      ...(performanceParams?.targetRPS !== undefined && { targetRPS: performanceParams.targetRPS }),
+      ...(performanceParams?.latencyProperty && {
+        latencyProperty: performanceParams.latencyProperty,
+      }),
+      ...(performanceParams?.recommendations !== undefined && {
+        recommendations: performanceParams.recommendations,
+      }),
     };
     return handleRestFailures(restGET(hostPath, '/models', allParams, opts)).then((response) => {
       if (isModArchResponse<CatalogModelList>(response)) {
@@ -60,13 +77,15 @@ export const getCatalogFilterOptionList =
 
 export const getListSources =
   (hostPath: string, queryParams: Record<string, unknown> = {}) =>
-  (opts: APIOptions): Promise<CatalogSourceList> =>
-    handleRestFailures(restGET(hostPath, '/sources', queryParams, opts)).then((response) => {
-      if (isModArchResponse<CatalogSourceList>(response)) {
-        return response.data;
-      }
-      throw new Error('Invalid response format');
-    });
+  (opts: APIOptions, listParams?: CatalogSourceListParams): Promise<CatalogSourceList> =>
+    handleRestFailures(restGET(hostPath, '/sources', { ...queryParams, ...listParams }, opts)).then(
+      (response) => {
+        if (isModArchResponse<CatalogSourceList>(response)) {
+          return response.data;
+        }
+        throw new Error('Invalid response format');
+      },
+    );
 
 export const getCatalogModel =
   (hostPath: string, queryParams: Record<string, unknown> = {}) =>
@@ -101,7 +120,7 @@ export const getPerformanceArtifacts =
     params?: PerformanceArtifactsParams,
     filterData?: ModelCatalogFilterStates,
     filterOptions?: CatalogFilterOptionsList | null,
-  ): Promise<CatalogArtifactList> => {
+  ): Promise<CatalogPerformanceArtifactList> => {
     const allParams: Record<string, unknown> = {
       ...queryParams,
       ...(params?.targetRPS !== undefined && { targetRPS: params.targetRPS }),
@@ -115,14 +134,28 @@ export const getPerformanceArtifacts =
       ...(params?.sortOrder && { sortOrder: params.sortOrder }),
       ...(params?.nextPageToken && { nextPageToken: params.nextPageToken }),
       ...(filterData &&
-        filterOptions && { filterQuery: filtersToArtifactsFilterQuery(filterData, filterOptions) }),
+        filterOptions && {
+          filterQuery: filtersToFilterQuery(filterData, filterOptions, 'artifacts'),
+        }),
     };
     return handleRestFailures(
       restGET(hostPath, `/sources/${sourceId}/performance_artifacts/${modelName}`, allParams, opts),
     ).then((response) => {
-      if (isModArchResponse<CatalogArtifactList>(response)) {
+      if (isModArchResponse<CatalogPerformanceArtifactList>(response)) {
         return response.data;
       }
       throw new Error('Invalid response format');
     });
   };
+
+export const getCatalogLabels =
+  (hostPath: string, queryParams: Record<string, unknown> = {}) =>
+  (opts: APIOptions, listParams?: CatalogLabelListParams): Promise<CatalogLabelList> =>
+    handleRestFailures(restGET(hostPath, '/labels', { ...queryParams, ...listParams }, opts)).then(
+      (response) => {
+        if (isModArchResponse<CatalogLabelList>(response)) {
+          return response.data;
+        }
+        throw new Error('Invalid response format');
+      },
+    );

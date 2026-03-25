@@ -49,6 +49,8 @@ type MockResourceConfigType = {
   region?: string;
   uid?: string;
   uri?: string;
+  annotations?: Record<string, string>;
+  type?: 'Opaque' | 'kubernetes.io/service-account-token' | 'kubernetes.io/dockerconfigjson';
 };
 
 export const mockSecretK8sResource = ({
@@ -61,6 +63,8 @@ export const mockSecretK8sResource = ({
   endPoint = 'aHR0cHM6Ly9zMy5hbWF6b25hd3MuY29tLw==',
   region = 'dXMtZWFzdC0x',
   uid = genUID('secret'),
+  annotations = {},
+  type = 'Opaque',
 }: MockResourceConfigType): SecretKind =>
   mockCustomSecretK8sResource({
     name,
@@ -72,6 +76,7 @@ export const mockSecretK8sResource = ({
     annotations: {
       'opendatahub.io/connection-type': connectionType,
       'openshift.io/display-name': displayName,
+      ...annotations,
     },
     data: data || {
       AWS_ACCESS_KEY_ID: 'c2RzZA==',
@@ -80,6 +85,7 @@ export const mockSecretK8sResource = ({
       AWS_S3_ENDPOINT: endPoint,
       AWS_SECRET_ACCESS_KEY: 'c2RzZA==',
     },
+    type,
   });
 
 export const mockURISecretK8sResource = ({

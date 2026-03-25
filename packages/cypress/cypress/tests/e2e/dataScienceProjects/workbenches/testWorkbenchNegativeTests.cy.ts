@@ -1,5 +1,6 @@
 import yaml from 'js-yaml';
 import type { WBNegativeTestsData } from '../../../../types';
+import { NotebookStatusLabel } from '../../../../types';
 import { projectListPage, projectDetails } from '../../../../pages/projects';
 import {
   workbenchPage,
@@ -16,6 +17,7 @@ import {
   cleanupHardwareProfiles,
   createCleanHardwareProfile,
 } from '../../../../utils/oc_commands/hardwareProfiles';
+import { deriveWorkbenchName } from '../../../../utils/nameGenerator';
 
 describe('Workbenches - negative tests', () => {
   let testData: WBNegativeTestsData;
@@ -63,7 +65,7 @@ describe('Workbenches - negative tests', () => {
     'Verify UI informs users about workbenches failed to start',
     { tags: ['@Sanity', '@SanitySet2', '@ODS-1973', '@Dashboard', '@Workbenches'] },
     () => {
-      const workbenchName = `${projectName.replace('dsp-', '')}-large`;
+      const workbenchName = `${deriveWorkbenchName(projectName)}-large`;
 
       // Authentication and navigation
       cy.step('Log into the application');
@@ -82,7 +84,7 @@ describe('Workbenches - negative tests', () => {
       createSpawnerPage.getNameInput().fill(workbenchName);
 
       // Select notebook image with fallback
-      selectNotebookImageWithBackendFallback('code-server-notebook', createSpawnerPage).then(
+      selectNotebookImageWithBackendFallback(testData.notebookImage, createSpawnerPage).then(
         (imageStreamName) => {
           cy.log(`Selected imagestream: ${imageStreamName}`);
 
@@ -93,10 +95,10 @@ describe('Workbenches - negative tests', () => {
           // Confirm that the Workbench does not start and is at Failed status
           cy.step(`Wait for workbench ${workbenchName} to display a "Failed" status`);
           const notebookRow = workbenchPage.getNotebookRow(workbenchName);
-          notebookRow.expectStatusLabelToBe('Failed', 120000);
+          notebookRow.expectStatusLabelToBe(NotebookStatusLabel.Failed, 120000);
           cy.step(`Open the Modal and confirm the status is Failed`);
           notebookRow.findHaveNotebookStatusText().click();
-          workbenchStatusModal.getNotebookStatus('Failed');
+          workbenchStatusModal.getNotebookStatus(NotebookStatusLabel.Failed);
         },
       );
     },
@@ -105,7 +107,7 @@ describe('Workbenches - negative tests', () => {
     'Verify User cannot create a workbench using special characters or long names in the Resource name field',
     { tags: ['@Sanity', '@SanitySet2', '@ODS-1973', '@Dashboard', '@Workbenches'] },
     () => {
-      const workbenchName = projectName.replace('dsp-', '');
+      const workbenchName = deriveWorkbenchName(projectName);
 
       // Authentication and navigation
       cy.step('Log into the application');
@@ -124,7 +126,7 @@ describe('Workbenches - negative tests', () => {
       createSpawnerPage.getNameInput().fill(workbenchName);
 
       // Select notebook image with fallback
-      selectNotebookImageWithBackendFallback('code-server-notebook', createSpawnerPage).then(
+      selectNotebookImageWithBackendFallback(testData.notebookImage, createSpawnerPage).then(
         (imageStreamName) => {
           cy.log(`Selected imagestream: ${imageStreamName}`);
 

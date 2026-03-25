@@ -1,4 +1,7 @@
-import { ModelTypeLabel } from '@odh-dashboard/model-serving/components/deploymentWizard/types';
+import {
+  ModelLocationSelectOption,
+  ModelTypeLabel,
+} from '@odh-dashboard/model-serving/components/deploymentWizard/types';
 import type { ModelTolerationsTestData } from '../../../../types';
 import { addUserToProject, deleteOpenShiftProject } from '../../../../utils/oc_commands/project';
 import { loadModelTolerationsFixture } from '../../../../utils/dataLoader';
@@ -31,6 +34,8 @@ let modelName: string;
 let modelFilePath: string;
 let hardwareProfileResourceName: string;
 let tolerationValue: string;
+let modelFormat: string;
+let servingRuntime: string;
 const awsBucket = 'BUCKET_3' as const;
 const projectUuid = generateTestUUID();
 const hardwareProfileUuid = generateTestUUID();
@@ -53,6 +58,8 @@ describe('ModelServing - tolerations tests', () => {
         modelFilePath = testData.modelFilePath;
         hardwareProfileResourceName = `${testData.hardwareProfileName}-${hardwareProfileUuid}`;
         tolerationValue = testData.tolerationValue;
+        modelFormat = testData.modelFormat;
+        servingRuntime = testData.servingRuntime;
 
         if (!projectName) {
           throw new Error('Project name is undefined or empty in the loaded fixture');
@@ -110,7 +117,7 @@ describe('ModelServing - tolerations tests', () => {
     () => {
       cy.log('Model Name:', modelName);
       // Authentication and navigation
-      cy.step(`Log into the application with ${LDAP_CONTRIBUTOR_USER.USERNAME}`);
+      cy.step('Log into the application as non-admin');
       cy.visitWithLogin('/', LDAP_CONTRIBUTOR_USER);
 
       // Project navigation, add user and provide contributor permissions
@@ -132,19 +139,25 @@ describe('ModelServing - tolerations tests', () => {
         'Launch a Single Serving Model using OpenVINO Model Server and by selecting the Hardware Profile',
       );
       cy.step('Step 1: Model details');
-      modelServingWizard.findModelLocationSelectOption('Existing connection').click();
+      modelServingWizard.findModelLocationSelectOption(ModelLocationSelectOption.EXISTING).click();
       modelServingWizard.findLocationPathInput().clear().type(modelFilePath);
       modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.PREDICTIVE).click();
       modelServingWizard.findNextButton().click();
 
       cy.step('Step 2: Model deployment');
       modelServingWizard.findModelDeploymentNameInput().clear().type(modelName);
+      modelServingWizard.findResourceNameButton().click();
+      modelServingWizard
+        .findResourceNameInput()
+        .should('be.visible')
+        .invoke('val')
+        .as('resourceName');
       inferenceServiceModal.selectPotentiallyDisabledProfile(
         testData.hardwareProfileDeploymentSize,
         hardwareProfileResourceName,
       );
-      modelServingWizard.findModelFormatSelectOption('openvino_ir - opset13').click();
-      modelServingWizard.selectServingRuntimeOption('OpenVINO Model Server');
+      modelServingWizard.findModelFormatSelectOption(modelFormat).click();
+      modelServingWizard.selectServingRuntimeOption(servingRuntime);
       modelServingWizard.findNextButton().click();
 
       cy.step('Step 3: Advanced settings');
@@ -156,7 +169,9 @@ describe('ModelServing - tolerations tests', () => {
 
       //Verify the model created
       cy.step('Verify that the Model is created Successfully on the backend and frontend');
-      checkInferenceServiceState(modelName, projectName);
+      cy.get<string>('@resourceName').then((resourceName) => {
+        checkInferenceServiceState(resourceName, projectName, { checkReady: true });
+      });
       // Note reload is required as status tooltip was not found due to a stale element
       cy.reload();
       modelServingSection.findModelMetricsLink(modelName);
@@ -164,16 +179,18 @@ describe('ModelServing - tolerations tests', () => {
 
       // Validate that the toleration applied earlier displays in the newly created pod
       cy.step('Validate the Tolerations for the pod include the newly added toleration');
-      validateInferenceServiceTolerations(
-        projectName,
-        modelName, // InferenceService name
-        {
-          key: 'test-taint',
-          operator: 'Equal',
-          effect: tolerationValue,
-        },
-      ).then(() => {
-        cy.log(`✅ Toleration value "${tolerationValue}" displays in the pod as expected`);
+      cy.get<string>('@resourceName').then((resourceName) => {
+        validateInferenceServiceTolerations(
+          projectName,
+          resourceName, // InferenceService name
+          {
+            key: 'test-taint',
+            operator: 'Equal',
+            effect: tolerationValue,
+          },
+        ).then(() => {
+          cy.log(`✅ Toleration value "${tolerationValue}" displays in the pod as expected`);
+        });
       });
     },
   );

@@ -84,6 +84,7 @@ export type PVCReplacements = {
   PVC_DISPLAY_NAME: string;
   PVC_SIZE: string;
   STORAGE_CLASS: string;
+  notebookImage?: string;
 };
 
 export type PVCLoaderPodReplacements = {
@@ -104,11 +105,27 @@ export type WBEditTestData = {
   editedTestDescription: string;
   pvcEditDisplayName: string;
   pvcStorageName: string;
+  connectionDescription: string;
+  notebookImage: string;
+};
+
+export type KueueWorkbenchTestData = {
+  projectName: string;
+  flavorName: string;
+  clusterQueueName: string;
+  localQueueName: string;
+  hardwareProfileName: string;
+  hardwareProfileDisplayName: string;
+  cpuQuota: number;
+  memoryQuota: number;
+  sectionTab: string;
+  notebookImage: string;
 };
 
 export type WBControlSuiteTestData = {
   controlSuiteTestNamespace: string;
   controlSuiteTestDescription: string;
+  notebookImage: string;
 };
 
 export type WBVariablesTestData = {
@@ -124,21 +141,47 @@ export type WBVariablesTestData = {
   FAKE_SECRET_VALUE: string;
   FAKE_CM_KEY: string;
   FAKE_CM_VALUE: string;
+  notebookImage: string;
 };
 
 export type WBTolerationsTestData = {
   wbTolerationsTestNamespace: string;
   wbTolerationsTestDescription: string;
   workbenchName: string;
+  notebookImageName: string;
   resourceYamlPath: string;
   hardwareProfileName: string;
   tolerationValue: string;
   hardwareProfileDeploymentSize: string;
+  hardwareProfileDisplayName?: string;
+  hardwareProfileDescription?: string;
+  deleteModalMessage?: string;
+  deletedStatusBadge: string;
+};
+
+export type ModifyHardwareProfileTestData = {
+  wbTolerationsTestNamespace: string;
+  wbTolerationsTestDescription: string;
+  workbenchName: string;
+  notebookImageName: string;
+  resourceYamlPathA: string;
+  resourceYamlPathB: string;
+  hardwareProfileNameA: string;
+  hardwareProfileNameB: string;
+  hardwareProfileDisplayNameA: string;
+  hardwareProfileDisplayNameB: string;
+  tolerationValueA: string;
+  tolerationValueB: string;
+  tolerationKeyA: string;
+  tolerationKeyB: string;
+  hardwareProfileDeploymentSizeA: string;
+  hardwareProfileDeploymentSizeB: string;
 };
 
 export type WBStatusTestData = {
   wbStatusTestNamespace: string;
   wbStatusTestDescription: string;
+  notebookImage: string;
 };
 
 export type WBStorageClassesTestData = {
@@ -150,6 +193,7 @@ export type WBStorageClassesTestData = {
   workbenchMultiAccessB: string;
   storageRWO: string;
   storageMultiAccess: string;
+  notebookImage: string;
   mountPathA: string;
   mountPathB: string;
   mountPathC: string;
@@ -171,10 +215,16 @@ export type WBNegativeTestsData = {
   hardwareProfileName: string;
   resourceYamlPath: string;
   invalidResourceNames: string[];
+  notebookImage: string;
 };
 
 export type WBImagesTestData = {
   wbImagesTestNamespace: string;
+};
+
+export type StandaloneNotebookTestData = {
+  notebookImage: string;
+  notebookPodPrefix: string;
 };
 
 export type CommandLineResult = {
@@ -196,6 +246,9 @@ export type TestConfig = {
   NGC_API_KEY: string;
   OCI_SECRET_VALUE: string;
   OCI_MODEL_URI: string;
+  // BYOIDC cluster authentication settings
+  CLUSTER_AUTH?: string;
+  CLUSTER_OIDC_ISSUER?: string;
 };
 
 export type DataScienceProjectData = {
@@ -226,11 +279,22 @@ export type DataScienceProjectData = {
   pvStorageDescription: string;
   pvStorageNameEdited: string;
   invalidResourceNames: string[];
+  modelFormat: string;
   servingRuntime: string;
   modelStatus: string;
   hardwareProfileName: string;
   resourceType: string;
-  Image: string;
+  existingImage: string;
+  replaceImage: string;
+  serviceAccountName1: string;
+  serviceAccountName2: string;
+  connectionNameSuffix: string;
+  adminRoleName: string;
+  contributorRoleName: string;
+  connectionDescription: string;
+  userSubjectKind: string;
+  groupSubjectKind: string;
+  yamlEditorModelName: string;
 };
 
 export type NotebookImageData = {
@@ -294,6 +358,15 @@ export type HardwareProfilesData = {
   hardwareProfileName: string;
   hardwareProfileDescription: string;
   hardwareProfileEditedDescription: string;
+  updatedHardwareProfileName: string;
+  projectNamespace: string;
+  projectDescription: string;
+  workbenchName: string;
+  hardwareProfileDeploymentSize: string;
+  workbenchRunningStatus: string;
+  notebookImageName: string;
+  editWorkbenchAction: string;
+  settingsHardwareProfilesUrl: string;
 };
 
 export type NamespaceConfig = {
@@ -331,7 +404,7 @@ export type WorkloadMetricsTestData = {
   localQueue: string;
   cpuQuota: number;
   memoryQuota: number;
-  refreshIntervals: number[];
+  refreshIntervals: string[];
 };
 
 export type DeployOCIModelData = {
@@ -339,6 +412,8 @@ export type DeployOCIModelData = {
   connectionName: string;
   ociRegistryHost: string;
   modelDeploymentName: string;
+  modelFormat: string;
+  servingRuntime: string;
 };
 
 export type ModelTolerationsTestData = {
@@ -349,13 +424,20 @@ export type ModelTolerationsTestData = {
   hardwareProfileDeploymentSize: string;
   modelName: string;
   modelFilePath: string;
+  modelFormat: string;
+  servingRuntime: string;
 };
 
 export type NotebookTolerationsTestData = {
   codeserverImageName: string;
+  notebookImageName: string;
   resourceYamlPath: string;
   hardwareProfileName: string;
+  tolerationKey: string;
+  tolerationOperator: string;
   tolerationValue: string;
+  podPrefix: string;
+  podReadyTimeout: string;
   hardwareProfileDeploymentSize: string;
 };
 
@@ -383,6 +465,8 @@ export type ModelRegistryTestData = {
   modelFormatPytorch: string;
   formatVersion2_0: string;
   uriPrimary: string;
+  modelFormat: string;
+  servingRuntime: string;
   // New version registration (Versions view)
   version2Name: string;
   version2Description: string;
@@ -398,6 +482,28 @@ export type ModelRegistryTestData = {
   permissionsRegistryNamePrefix: string;
   testProjectNamePrefix: string;
   rhodsUsersGroup: string;
+
+  // Database credentials
+  mysqlUsername: string;
+  postgresUsername: string;
+  databasePassword: string;
+
+  // Default database form values
+  defaultMysqlPort: string;
+  defaultPostgresPort: string;
+  defaultDatabaseName: string;
+  statusAvailable: string;
+
+  // Database configuration testing
+  databaseName: string;
+  newDatabaseHost: string;
+  newDatabasePort: string;
+  newDatabaseName: string;
+  newDatabaseUsername: string;
+  newDatabasePassword: string;
+
+  // Object storage paths
+  objectStoragePathV2: string;
 };
 
 export type ManageRegistryPermissionsTestData = {
@@ -415,11 +521,36 @@ export enum AccessMode {
   RWOP = 'ReadWriteOncePod',
 }
 
+export const AccessModeLabelMap: Record<AccessMode, string> = {
+  [AccessMode.RWO]: 'RWO',
+  [AccessMode.RWX]: 'RWX',
+  [AccessMode.ROX]: 'ROX',
+  [AccessMode.RWOP]: 'RWOP',
+};
+
+export enum NotebookStatusLabel {
+  Running = 'Running',
+  Starting = 'Starting',
+  Stopping = 'Stopping',
+  Stopped = 'Stopped',
+  Failed = 'Failed',
+}
+
 export type SCAccessMode = {
   ReadWriteOnce?: boolean;
   ReadWriteMany?: boolean;
   ReadOnlyMany?: boolean;
   ReadWriteOncePod?: boolean;
+};
+
+export type ResourcesFiltersTestData = {
+  enabledFilterId: string;
+  notEnabledFilterId: string;
+  resourceTypeFilters: string[];
+  providerTypeFilter: string;
+  multiFilterIds: string[];
+  multiFilterCountId: string;
+  rhoaiProviderFilters: string[];
 };
 
 export type FeatureStoreTestData = {
@@ -449,6 +580,14 @@ export type GenAiTestData = {
   hardwareProfileDeploymentSize: string;
   configMapName: string;
   playgroundServiceName: string;
+  servingRuntimesPath: string;
+};
+
+export type ModelCatalogSourceTestData = {
+  sourceName: string;
+  redhatAiSourceId: string;
+  sourceName2: string;
+  redhatAiSourceId2: string;
 };
 
 export type TrainJobTestData = {
@@ -461,4 +600,39 @@ export type TrainJobTestData = {
   cpuQuota: number;
   memoryQuota: number;
   gpuQuota: number;
+};
+
+export type PipelineTestData = {
+  projectNamePrefix: string;
+  pipelineName: string;
+  pipelineDescription: string;
+  runName: string;
+  runDescription: string;
+  experimentName: string;
+  dspaSecretName: string;
+  pipelineUrl: string;
+};
+
+export type TiersTestData = {
+  projectName: string;
+  name: string;
+  description: string;
+  level: number;
+  groups: string[];
+  tokenRateLimit: {
+    count: string;
+    time: string;
+    unit: string;
+  };
+  requestRateLimit: {
+    count: string;
+    time: string;
+    unit: string;
+  };
+  editGroup: string;
+  editTokenRateLimitUnit: string;
+  editRequestRateLimitUnit: string;
+  tierDeploymentOption: string;
+  groupsCount: number;
+  limits: string;
 };

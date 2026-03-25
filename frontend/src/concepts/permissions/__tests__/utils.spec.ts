@@ -1,14 +1,14 @@
 import {
   buildGroupRoleMap,
   buildUserRoleMap,
-  getRoleBindingsForSubject,
-  getRoleBindingsForSubjectAndRoleRef,
   getRoleByRef,
-  getRoleLabelType,
+  getRoleLabelTypeForRole,
+  getRoleLabelTypeForRoleRef,
   getRoleRefsForSubject,
   getRoleRefKey,
-  getSubjectsForRoleRef,
+  getRoleAssignmentsForRoleRef,
   getSubjectKey,
+  roleBindingHasSubject,
 } from '#~/concepts/permissions/utils';
 import { RoleLabelType, RoleRef, SupportedSubjectRef } from '#~/concepts/permissions/types';
 import { KnownLabels } from '#~/k8sTypes';
@@ -78,81 +78,165 @@ describe('permissions utils', () => {
     labels: { foo: 'bar' },
   });
 
-  it('creates stable keys for roleRefs and subjects', () => {
-    expect(getRoleRefKey(roleRefEdit)).toBe('Role:edit');
-    expect(getRoleRefKey(roleRefView)).toBe('ClusterRole:view');
-    expect(getSubjectKey(userAlice)).toBe('User:alice');
-    expect(getSubjectKey(groupTeam)).toBe('Group:team-a');
-  });
-
-  it('classifies role label type', () => {
-    expect(getRoleLabelType(dashboardRole)).toBe(RoleLabelType.Dashboard);
-    expect(getRoleLabelType(openshiftDefaultRole)).toBe(RoleLabelType.OpenshiftDefault);
-    expect(getRoleLabelType(openshiftCustomRole)).toBe(RoleLabelType.OpenshiftCustom);
-  });
-
-  it('builds user and group role maps', () => {
-    const userMap = buildUserRoleMap(roleBindings);
-    const groupMap = buildGroupRoleMap(roleBindings);
-
-    expect(userMap.get('alice')).toEqual([roleBindings[0], roleBindings[1]]);
-    expect(groupMap.get('team-a')).toEqual([roleBindings[0], roleBindings[2]]);
-  });
-
-  it('returns all roleBindings for a subject', () => {
-    expect(getRoleBindingsForSubject(roleBindings, userAlice)).toEqual([
-      roleBindings[0],
-      roleBindings[1],
-    ]);
-    expect(getRoleBindingsForSubject(roleBindings, groupTeam)).toEqual([
-      roleBindings[0],
-      roleBindings[2],
-    ]);
-  });
-
-  it('returns roleRefs for a subject (deduped)', () => {
-    expect(getRoleRefsForSubject(roleBindings, userAlice)).toEqual([roleRefEdit]);
-    expect(getRoleRefsForSubject(roleBindings, groupTeam)).toEqual([roleRefEdit, roleRefView]);
-  });
-
-  it('returns subjects for a roleRef (deduped) and ignores ServiceAccounts', () => {
-    expect(getSubjectsForRoleRef(roleBindings, roleRefEdit)).toEqual([userAlice, groupTeam]);
-    expect(getSubjectsForRoleRef(roleBindings, roleRefView)).toEqual([groupTeam]);
-  });
-
-  it('returns all roleBindings for a subject + roleRef', () => {
-    expect(getRoleBindingsForSubjectAndRoleRef(roleBindings, userAlice, roleRefEdit)).toEqual([
-      roleBindings[0],
-      roleBindings[1],
-    ]);
-    expect(getRoleBindingsForSubjectAndRoleRef(roleBindings, groupTeam, roleRefEdit)).toEqual([
-      roleBindings[0],
-    ]);
-  });
-
-  it('handles RoleBindings with subjects omitted (valid per k8s spec)', () => {
-    const rbNoSubjects = mockRoleBindingK8sResource({
-      name: 'rb-no-subjects',
-      namespace,
-      roleRefKind: 'Role',
-      roleRefName: 'edit',
-      subjects: undefined,
+  describe('getRoleRefKey and getSubjectKey', () => {
+    it('should create stable key for Role roleRef', () => {
+      expect(getRoleRefKey(roleRefEdit)).toBe('Role:edit');
     });
 
-    const all = [...roleBindings, rbNoSubjects];
-    expect(buildUserRoleMap(all).get('alice')).toEqual([roleBindings[0], roleBindings[1]]);
-    expect(buildGroupRoleMap(all).get('team-a')).toEqual([roleBindings[0], roleBindings[2]]);
-    expect(getRoleBindingsForSubject(all, userAlice)).toEqual([roleBindings[0], roleBindings[1]]);
-    expect(getRoleRefsForSubject(all, userAlice)).toEqual([roleRefEdit]);
-    expect(getSubjectsForRoleRef(all, roleRefEdit)).toEqual([userAlice, groupTeam]);
+    it('should create stable key for ClusterRole roleRef', () => {
+      expect(getRoleRefKey(roleRefView)).toBe('ClusterRole:view');
+    });
+
+    it('should create stable key for User subject', () => {
+      expect(getSubjectKey(userAlice)).toBe('User:alice');
+    });
+
+    it('should create stable key for Group subject', () => {
+      expect(getSubjectKey(groupTeam)).toBe('Group:team-a');
+    });
   });
 
-  it('resolves role by roleRef', () => {
-    expect(getRoleByRef([role], [clusterRole], roleRefEdit)).toBe(role);
-    expect(getRoleByRef([role], [clusterRole], roleRefView)).toBe(clusterRole);
+  describe('getRoleLabelTypeForRole', () => {
+    it('should classify dashboard-labeled role as Dashboard type', () => {
+      expect(getRoleLabelTypeForRole(dashboardRole)).toBe(RoleLabelType.Dashboard);
+    });
+
+    it('should classify OpenShift bootstrapping role as OpenshiftDefault type', () => {
+      expect(getRoleLabelTypeForRole(openshiftDefaultRole)).toBe(RoleLabelType.OpenshiftDefault);
+    });
+
+    it('should classify other roles as OpenshiftCustom type', () => {
+      expect(getRoleLabelTypeForRole(openshiftCustomRole)).toBe(RoleLabelType.OpenshiftCustom);
+    });
   });
 
-  it('returns undefined when a ClusterRoleRef cannot be resolved (e.g. cluster roles not listable)', () => {
-    expect(getRoleByRef([role], [], roleRefView)).toBeUndefined();
+  describe('getRoleLabelTypeForRoleRef', () => {
+    it('should return OpenshiftDefault for admin ClusterRole', () => {
+      expect(getRoleLabelTypeForRoleRef({ kind: 'ClusterRole', name: 'admin' })).toBe(
+        RoleLabelType.OpenshiftDefault,
+      );
+    });
+
+    it('should return OpenshiftDefault for edit ClusterRole', () => {
+      expect(getRoleLabelTypeForRoleRef({ kind: 'ClusterRole', name: 'edit' })).toBe(
+        RoleLabelType.OpenshiftDefault,
+      );
+    });
+
+    it('should return OpenshiftCustom for unknown ClusterRole', () => {
+      expect(getRoleLabelTypeForRoleRef({ kind: 'ClusterRole', name: 'unknown' })).toBe(
+        RoleLabelType.OpenshiftCustom,
+      );
+    });
+
+    it('should return OpenshiftCustom for unknown Role', () => {
+      expect(getRoleLabelTypeForRoleRef({ kind: 'Role', name: 'unknown' })).toBe(
+        RoleLabelType.OpenshiftCustom,
+      );
+    });
+  });
+
+  describe('buildUserRoleMap and buildGroupRoleMap', () => {
+    it('should build user role map with correct roleBindings', () => {
+      const userMap = buildUserRoleMap(roleBindings);
+      expect(userMap.get('alice')).toEqual([roleBindings[0], roleBindings[1]]);
+    });
+
+    it('should build group role map with correct roleBindings', () => {
+      const groupMap = buildGroupRoleMap(roleBindings);
+      expect(groupMap.get('team-a')).toEqual([roleBindings[0], roleBindings[2]]);
+    });
+  });
+
+  describe('getRoleRefsForSubject', () => {
+    it('should return deduped roleRefs for user subject', () => {
+      expect(getRoleRefsForSubject(roleBindings, userAlice)).toEqual([roleRefEdit]);
+    });
+
+    it('should return all roleRefs for group subject', () => {
+      expect(getRoleRefsForSubject(roleBindings, groupTeam)).toEqual([roleRefEdit, roleRefView]);
+    });
+  });
+
+  describe('getRoleAssignmentsForRoleRef', () => {
+    it('should return all role assignments for edit roleRef', () => {
+      expect(getRoleAssignmentsForRoleRef(roleBindings, roleRefEdit)).toEqual([
+        { subject: aliceSubject, roleBinding: roleBindings[0] },
+        { subject: teamSubject, roleBinding: roleBindings[0] },
+        { subject: aliceSubject, roleBinding: roleBindings[1] },
+      ]);
+    });
+
+    it('should return role assignments for view roleRef', () => {
+      expect(getRoleAssignmentsForRoleRef(roleBindings, roleRefView)).toEqual([
+        { subject: teamSubject, roleBinding: roleBindings[2] },
+      ]);
+    });
+  });
+
+  describe('edge cases - RoleBindings with undefined subjects', () => {
+    it('should handle RoleBindings with subjects omitted (valid per k8s spec)', () => {
+      const rbNoSubjects = mockRoleBindingK8sResource({
+        name: 'rb-no-subjects',
+        namespace,
+        roleRefKind: 'Role',
+        roleRefName: 'edit',
+        subjects: undefined,
+      });
+
+      const all = [...roleBindings, rbNoSubjects];
+      expect(buildUserRoleMap(all).get('alice')).toEqual([roleBindings[0], roleBindings[1]]);
+      expect(buildGroupRoleMap(all).get('team-a')).toEqual([roleBindings[0], roleBindings[2]]);
+      expect(getRoleRefsForSubject(all, userAlice)).toEqual([roleRefEdit]);
+      expect(getRoleAssignmentsForRoleRef(all, roleRefEdit)).toEqual([
+        { subject: aliceSubject, roleBinding: roleBindings[0] },
+        { subject: teamSubject, roleBinding: roleBindings[0] },
+        { subject: aliceSubject, roleBinding: roleBindings[1] },
+      ]);
+    });
+  });
+
+  describe('getRoleByRef', () => {
+    it('should resolve Role by roleRef', () => {
+      expect(getRoleByRef([role], [clusterRole], roleRefEdit)).toBe(role);
+    });
+
+    it('should resolve ClusterRole by roleRef', () => {
+      expect(getRoleByRef([role], [clusterRole], roleRefView)).toBe(clusterRole);
+    });
+
+    it('should return undefined when ClusterRole cannot be resolved', () => {
+      expect(getRoleByRef([role], [], roleRefView)).toBeUndefined();
+    });
+  });
+
+  describe('roleBindingHasSubject', () => {
+    it('should return true when roleBinding has user subject', () => {
+      expect(roleBindingHasSubject(roleBindings[0], userAlice)).toBe(true);
+    });
+
+    it('should return true when roleBinding has group subject', () => {
+      expect(roleBindingHasSubject(roleBindings[0], groupTeam)).toBe(true);
+    });
+
+    it('should return true when roleBinding has service account subject', () => {
+      expect(roleBindingHasSubject(roleBindings[0], serviceAccountSubject)).toBe(true);
+    });
+
+    it('should return false when roleBinding does not have user subject', () => {
+      expect(roleBindingHasSubject(roleBindings[0], { kind: 'User', name: 'unknown' })).toBe(false);
+    });
+
+    it('should return false when roleBinding does not have group subject', () => {
+      expect(roleBindingHasSubject(roleBindings[0], { kind: 'Group', name: 'unknown' })).toBe(
+        false,
+      );
+    });
+
+    it('should return false when roleBinding does not have service account subject', () => {
+      expect(
+        roleBindingHasSubject(roleBindings[0], { kind: 'ServiceAccount', name: 'unknown' }),
+      ).toBe(false);
+    });
   });
 });

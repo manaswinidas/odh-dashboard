@@ -8,6 +8,7 @@ import {
   getListModelArtifacts,
   getListModelVersions,
   getListRegisteredModels,
+  getListModelTransferJobs,
   getModelArtifactsByModelVersion,
   getModelVersion,
   getModelVersionsByRegisteredModel,
@@ -15,6 +16,11 @@ import {
   patchModelArtifact,
   patchModelVersion,
   patchRegisteredModel,
+  getModelTransferJobByName,
+  createModelTransferJob,
+  updateModelTransferJob,
+  deleteModelTransferJob,
+  getModelTransferJobEvents,
 } from '~/app/api/service';
 
 export type ModelRegistryAPIState = APIState<ModelRegistryAPIs>;
@@ -41,6 +47,12 @@ const useModelRegistryAPIState = (
       patchRegisteredModel: patchRegisteredModel(path, queryParameters),
       patchModelVersion: patchModelVersion(path, queryParameters),
       patchModelArtifact: patchModelArtifact(path, queryParameters),
+      listModelTransferJobs: getListModelTransferJobs(path, queryParameters),
+      getModelTransferJobByName: getModelTransferJobByName(path, queryParameters),
+      createModelTransferJob: createModelTransferJob(path, queryParameters),
+      updateModelTransferJob: updateModelTransferJob(path, queryParameters),
+      deleteModelTransferJob: deleteModelTransferJob(path, queryParameters),
+      getModelTransferJobEvents: getModelTransferJobEvents(path, queryParameters),
     }),
     [queryParameters],
   );

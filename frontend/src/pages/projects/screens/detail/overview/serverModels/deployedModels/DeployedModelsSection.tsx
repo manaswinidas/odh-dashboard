@@ -22,7 +22,7 @@ import OverviewCard from '#~/pages/projects/screens/detail/overview/components/O
 import AddModelFooter from '#~/pages/projects/screens/detail/overview/serverModels/AddModelFooter';
 import { InferenceServiceKind } from '#~/k8sTypes';
 import ModelServingContextProvider from '#~/pages/modelServing/ModelServingContext';
-import { isProjectNIMSupported } from '#~/pages/modelServing/screens/projects/nimUtils';
+import { isProjectNIMSupported } from '#~/pages/modelServing/screens/projects/nim/nimUtils';
 import { NamespaceApplicationCase } from '#~/pages/projects/types';
 import ModelServingPlatformSelectButton from '#~/pages/modelServing/screens/projects/ModelServingPlatformSelectButton';
 import ModelServingPlatformSelectErrorAlert from '#~/concepts/modelServing/Platforms/ModelServingPlatformSelectErrorAlert.tsx';
@@ -58,7 +58,7 @@ const DeployedModelsSection: React.FC = () => {
     }
 
     setDeployedModels(inferenceServices);
-  }, [inferenceServices, inferenceServicesLoaded]);
+  }, [inferenceServices, inferenceServicesLoaded, modelServersLoaded]);
 
   const renderError = (message?: string): React.ReactElement => (
     <Bullseye>
@@ -90,7 +90,7 @@ const DeployedModelsSection: React.FC = () => {
         <OverviewCard
           objectType={ProjectObjectType.deployedModels}
           sectionType={SectionType.serving}
-          title={'Deployments'}
+          title="Deployments"
           headerInfo={
             <Flex gap={{ default: 'gapSm' }}>
               <Label>
@@ -122,9 +122,7 @@ const DeployedModelsSection: React.FC = () => {
                   {platformError.message}
                 </Alert>
               ) : (
-                <Content component="small">
-                  {'Each model is deployed on its own model server.'}
-                </Content>
+                <Content component="small">Each model is deployed on its own model server.</Content>
               )}
             </Stack>
           </CardBody>

@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 
 	"github.com/julienschmidt/httprouter"
+	. "github.com/onsi/ginkgo/v2"
 	"github.com/opendatahub-io/gen-ai/internal/config"
 	"github.com/opendatahub-io/gen-ai/internal/constants"
 	"github.com/opendatahub-io/gen-ai/internal/integrations"
@@ -28,13 +28,14 @@ type CapturingMockClientFactory struct {
 	CapturedURL string
 }
 
-func (f *CapturingMockClientFactory) CreateClient(baseURL string, authToken string, insecureSkipVerify bool, rootCAs *x509.CertPool) llamastack.LlamaStackClientInterface {
+func (f *CapturingMockClientFactory) CreateClient(baseURL string, authToken string, insecureSkipVerify bool, rootCAs *x509.CertPool, apiPath string) llamastack.LlamaStackClientInterface {
 	f.CapturedURL = baseURL
 	return lsmocks.NewMockLlamaStackClient()
 }
 
-func TestAttachLlamaStackClient(t *testing.T) {
-	t.Run("should attach mock client when MockLSClient is true", func(t *testing.T) {
+var _ = Describe("AttachLlamaStackClient", func() {
+	It("should attach mock client when MockLSClient is true", func() {
+		t := GinkgoT()
 		app := App{
 			config:                  config.EnvConfig{MockLSClient: true},
 			llamaStackClientFactory: lsmocks.NewMockClientFactory(),
@@ -48,7 +49,6 @@ func TestAttachLlamaStackClient(t *testing.T) {
 		app.AttachLlamaStackClient(func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 			client := r.Context().Value(constants.LlamaStackClientKey)
 			assert.NotNil(t, client)
-			// Verify the mock client is attached and is functional
 			mockClient := client.(*lsmocks.MockLlamaStackClient)
 			models, _ := mockClient.ListModels(r.Context())
 			assert.Len(t, models, 4)
@@ -58,7 +58,8 @@ func TestAttachLlamaStackClient(t *testing.T) {
 		assert.Equal(t, http.StatusOK, rr.Code)
 	})
 
-	t.Run("should use LLAMA_STACK_URL environment override when set", func(t *testing.T) {
+	It("should use LLAMA_STACK_URL environment override when set", func() {
+		t := GinkgoT()
 		mockFactory := &CapturingMockClientFactory{}
 
 		app := App{
@@ -82,22 +83,14 @@ func TestAttachLlamaStackClient(t *testing.T) {
 		assert.Equal(t, testutil.TestLlamaStackURL, mockFactory.CapturedURL)
 	})
 
-	t.Run("should retrieve service url from LlamaStackDistribution when no env provided", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		testEnv, ctrlClient, err := k8smocks.SetupEnvTest(k8smocks.TestEnvInput{
-			Users: k8smocks.DefaultTestUsers, Logger: slog.Default(), Ctx: ctx, Cancel: cancel,
-		})
+	It("should retrieve service url from LlamaStackDistribution when no env provided", func() {
+		t := GinkgoT()
+		k8sFactory, err := k8smocks.NewTokenClientFactory(testK8sClient, testCfg, slog.Default())
 		require.NoError(t, err)
-		defer func() {
-			_ = testEnv.Stop()
-		}()
-
-		k8sFactory, _ := k8smocks.NewTokenClientFactory(ctrlClient, testEnv.Config, slog.Default())
 		mockFactory := &CapturingMockClientFactory{}
 
 		app := App{
+			logger:                  slog.Default(),
 			kubernetesClientFactory: k8sFactory,
 			llamaStackClientFactory: mockFactory,
 			repositories:            repositories.NewRepositories(),
@@ -118,8 +111,8 @@ func TestAttachLlamaStackClient(t *testing.T) {
 		assert.Equal(t, "http://mock-lsd.test-namespace.svc.cluster.local:8321", mockFactory.CapturedURL)
 	})
 
-	// Error cases
-	t.Run("should return error when namespace is missing from context", func(t *testing.T) {
+	It("should return error when namespace is missing from context", func() {
+		t := GinkgoT()
 		app := App{
 			llamaStackClientFactory: lsmocks.NewMockClientFactory(),
 			repositories:            repositories.NewRepositories(),
@@ -136,7 +129,8 @@ func TestAttachLlamaStackClient(t *testing.T) {
 		assert.Contains(t, rr.Body.String(), "missing namespace in context")
 	})
 
-	t.Run("should return error when RequestIdentity is missing from context", func(t *testing.T) {
+	It("should return error when RequestIdentity is missing from context", func() {
+		t := GinkgoT()
 		app := App{
 			llamaStackClientFactory: lsmocks.NewMockClientFactory(),
 			repositories:            repositories.NewRepositories(),
@@ -154,10 +148,11 @@ func TestAttachLlamaStackClient(t *testing.T) {
 		assert.Contains(t, rr.Body.String(), "the server encountered a problem")
 	})
 
-}
+})
 
-func TestRequireAccessToService(t *testing.T) {
-	t.Run("should skip authorization checks when auth is disabled", func(t *testing.T) {
+var _ = Describe("RequireAccessToService", func() {
+	It("should skip authorization checks when auth is disabled", func() {
+		t := GinkgoT()
 		app := App{
 			config: config.EnvConfig{AuthMethod: config.AuthMethodDisabled},
 		}
@@ -175,7 +170,8 @@ func TestRequireAccessToService(t *testing.T) {
 		assert.True(t, handlerCalled, "Next handler should be called when auth is disabled")
 	})
 
-	t.Run("should return bad request when RequestIdentity is missing", func(t *testing.T) {
+	It("should return bad request when RequestIdentity is missing", func() {
+		t := GinkgoT()
 		app := App{
 			config: config.EnvConfig{AuthMethod: config.AuthMethodUser},
 		}
@@ -191,7 +187,8 @@ func TestRequireAccessToService(t *testing.T) {
 		assert.Contains(t, rr.Body.String(), "missing RequestIdentity in context")
 	})
 
-	t.Run("should return bad request when ValidateRequestIdentity fails", func(t *testing.T) {
+	It("should return bad request when ValidateRequestIdentity fails", func() {
+		t := GinkgoT()
 		mockFactory := k8smocks.NewMockTokenClientFactory()
 		app := App{
 			config:                  config.EnvConfig{AuthMethod: config.AuthMethodUser},
@@ -199,7 +196,6 @@ func TestRequireAccessToService(t *testing.T) {
 		}
 
 		req := httptest.NewRequest("GET", "/gen-ai/api/v1/test", nil)
-		// Add invalid identity (missing token)
 		ctx := context.WithValue(req.Context(), constants.RequestIdentityKey, &integrations.RequestIdentity{Token: ""})
 		req = req.WithContext(ctx)
 		rr := httptest.NewRecorder()
@@ -212,7 +208,8 @@ func TestRequireAccessToService(t *testing.T) {
 		assert.Contains(t, rr.Body.String(), "token is required")
 	})
 
-	t.Run("should skip namespace authorization when namespace is not in context", func(t *testing.T) {
+	It("should skip namespace authorization when namespace is not in context", func() {
+		t := GinkgoT()
 		mockFactory := k8smocks.NewMockTokenClientFactory()
 		app := App{
 			config:                  config.EnvConfig{AuthMethod: config.AuthMethodUser},
@@ -235,8 +232,8 @@ func TestRequireAccessToService(t *testing.T) {
 		assert.True(t, handlerCalled, "Next handler should be called when namespace is not present")
 	})
 
-	t.Run("should return server error when k8sClient.GetClient fails", func(t *testing.T) {
-		// Create a mock factory that returns an error when GetClient is called
+	It("should return server error when k8sClient.GetClient fails", func() {
+		t := GinkgoT()
 		mockFactory := &k8smocks.FailingMockTokenClientFactory{
 			GetClientError: assert.AnError,
 		}
@@ -261,7 +258,8 @@ func TestRequireAccessToService(t *testing.T) {
 		assert.Contains(t, rr.Body.String(), "the server encountered a problem")
 	})
 
-	t.Run("should return 401 with clear message when k8s API returns Unauthorized", func(t *testing.T) {
+	It("should return 401 with clear message when k8s API returns Unauthorized", func() {
+		t := GinkgoT()
 		mockFactory := &k8smocks.ConfigurableMockTokenClientFactory{
 			CanListLSDError: k8smocks.NewUnauthorizedError(),
 		}
@@ -284,7 +282,8 @@ func TestRequireAccessToService(t *testing.T) {
 		assert.Contains(t, rr.Body.String(), "authentication failed: invalid or expired token")
 	})
 
-	t.Run("should return 403 with clear message when k8s API returns Forbidden", func(t *testing.T) {
+	It("should return 403 with clear message when k8s API returns Forbidden", func() {
+		t := GinkgoT()
 		mockFactory := &k8smocks.ConfigurableMockTokenClientFactory{
 			CanListLSDError: k8smocks.NewForbiddenError(),
 		}
@@ -307,7 +306,8 @@ func TestRequireAccessToService(t *testing.T) {
 		assert.Contains(t, rr.Body.String(), "insufficient permissions to access services in this namespace")
 	})
 
-	t.Run("should return server error when CanListLlamaStackDistributions returns other error", func(t *testing.T) {
+	It("should return server error when CanListLlamaStackDistributions returns other error", func() {
+		t := GinkgoT()
 		// Use a K8sError to match what the real implementation returns after wrapping
 		mockFactory := &k8smocks.ConfigurableMockTokenClientFactory{
 			CanListLSDError: kubernetes.NewK8sErrorWithNamespace(
@@ -337,7 +337,8 @@ func TestRequireAccessToService(t *testing.T) {
 		assert.Contains(t, rr.Body.String(), "failed to verify user permissions")
 	})
 
-	t.Run("should return 403 when user is not allowed to access namespace", func(t *testing.T) {
+	It("should return 403 when user is not allowed to access namespace", func() {
+		t := GinkgoT()
 		mockFactory := &k8smocks.ConfigurableMockTokenClientFactory{
 			CanListLSDAllowed: false, // User not allowed
 		}
@@ -360,7 +361,8 @@ func TestRequireAccessToService(t *testing.T) {
 		assert.Contains(t, rr.Body.String(), "user does not have permission to access services in this namespace")
 	})
 
-	t.Run("should call next handler when user is allowed to access namespace", func(t *testing.T) {
+	It("should call next handler when user is allowed to access namespace", func() {
+		t := GinkgoT()
 		mockFactory := &k8smocks.ConfigurableMockTokenClientFactory{
 			CanListLSDAllowed: true, // User allowed
 		}
@@ -384,4 +386,4 @@ func TestRequireAccessToService(t *testing.T) {
 		assert.Equal(t, http.StatusOK, rr.Code)
 		assert.True(t, handlerCalled, "Next handler should be called when user is authorized")
 	})
-}
+})

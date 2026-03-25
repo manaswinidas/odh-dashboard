@@ -10,6 +10,8 @@ import {
   Label,
   Flex,
   FlexItem,
+  Spinner,
+  Bullseye,
 } from '@patternfly/react-core';
 import { useExtensions, LazyCodeRefComponent } from '@odh-dashboard/plugin-core';
 import GenAiCoreHeader from '~/app/GenAiCoreHeader';
@@ -84,7 +86,14 @@ export const AIAssetsPage: React.FC = () => {
           >
             <TabContentBody>
               {activeTabKey === extension.properties.id && (
-                <LazyCodeRefComponent component={extension.properties.component} />
+                <LazyCodeRefComponent
+                  component={extension.properties.component}
+                  fallback={
+                    <Bullseye>
+                      <Spinner />
+                    </Bullseye>
+                  }
+                />
               )}
             </TabContentBody>
           </TabContent>

@@ -4,15 +4,18 @@ import { MessageProps, ToolResponseProps } from '@patternfly/chatbot';
 import { fireMiscTrackingEvent } from '@odh-dashboard/internal/concepts/analyticsTracking/segmentIOUtils';
 import userAvatar from '~/app/bgimages/user_avatar.svg';
 import botAvatar from '~/app/bgimages/bot_avatar.svg';
-import { getId } from '~/app/utilities/utils';
+import { getId, getLlamaModelDisplayName, splitLlamaModelId } from '~/app/utilities/utils';
 import {
   ChatbotSourceSettings,
   ChatMessageRole,
   CreateResponseRequest,
+  GuardrailModelConfig,
   MCPToolCallData,
   MCPServerFromAPI,
+  ResponseMetrics,
   TokenInfo,
 } from '~/app/types';
+import { GuardrailsConfig } from '~/app/Chatbot/components/guardrails/GuardrailsPanel';
 import { ERROR_MESSAGES, initialBotMessage } from '~/app/Chatbot/const';
 import { getSelectedServersForAPI } from '~/app/utilities/mcp';
 import { ServerStatusInfo } from '~/app/hooks/useMCPServerStatuses';
@@ -21,9 +24,15 @@ import {
   ToolResponseCardBody,
 } from '~/app/Chatbot/ChatbotMessagesToolResponse';
 import { useGenAiAPI } from '~/app/hooks/useGenAiAPI';
+import { ChatbotContext } from '~/app/context/ChatbotContext';
+
+// Extended message type that includes metrics data for display
+export type ChatbotMessageProps = MessageProps & {
+  metrics?: ResponseMetrics;
+};
 
 export interface UseChatbotMessagesReturn {
-  messages: MessageProps[];
+  messages: ChatbotMessageProps[];
   isMessageSendButtonDisabled: boolean;
   isLoading: boolean;
   isStreamingWithoutContent: boolean;
@@ -31,6 +40,10 @@ export interface UseChatbotMessagesReturn {
   handleStopStreaming: () => void;
   clearConversation: () => void;
   scrollToBottomRef: React.RefObject<HTMLDivElement>;
+  /** Metrics from the last bot response (latency, tokens, TTFT) */
+  lastResponseMetrics: ResponseMetrics | null;
+  /** Display name of the selected model (for showing in message headers) */
+  modelDisplayName: string;
 }
 
 interface UseChatbotMessagesProps {
@@ -49,6 +62,9 @@ interface UseChatbotMessagesProps {
   mcpServerTokens: Map<string, TokenInfo>;
   toolSelections?: (ns: string, url: string) => string[] | undefined;
   namespace?: string;
+  // Guardrails configuration
+  guardrailsConfig?: GuardrailsConfig;
+  guardrailModelConfigs?: GuardrailModelConfig[];
 }
 
 const useChatbotMessages = ({
@@ -66,17 +82,28 @@ const useChatbotMessages = ({
   mcpServerTokens,
   toolSelections,
   namespace,
+  guardrailsConfig,
+  guardrailModelConfigs = [],
 }: UseChatbotMessagesProps): UseChatbotMessagesReturn => {
-  const [messages, setMessages] = React.useState<MessageProps[]>([initialBotMessage()]);
+  const [messages, setMessages] = React.useState<ChatbotMessageProps[]>([initialBotMessage()]);
   const [isMessageSendButtonDisabled, setIsMessageSendButtonDisabled] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isStreamingWithoutContent, setIsStreamingWithoutContent] = React.useState(false);
+  const [lastResponseMetrics, setLastResponseMetrics] = React.useState<ResponseMetrics | null>(
+    null,
+  );
   const scrollToBottomRef = React.useRef<HTMLDivElement>(null);
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = React.useRef<AbortController | null>(null);
   const isStoppingStreamRef = React.useRef<boolean>(false);
   const isClearingRef = React.useRef<boolean>(false);
   const { api, apiAvailable } = useGenAiAPI();
+  const { aiModels } = React.useContext(ChatbotContext);
+
+  const modelDisplayName = React.useMemo(
+    () => (modelId ? getLlamaModelDisplayName(modelId, aiModels) || modelId : 'Bot'),
+    [modelId, aiModels],
+  );
 
   const getSelectedServersForAPICallback = React.useCallback(
     () =>
@@ -91,6 +118,40 @@ const useChatbotMessages = ({
     [selectedServerIds, mcpServers, mcpServerStatuses, mcpServerTokens, toolSelections, namespace],
   );
 
+  // Get guardrail shield IDs based on user selections
+  const getGuardrailShieldIds = React.useCallback((): {
+    input_shield_id?: string;
+    output_shield_id?: string;
+  } => {
+    // Only apply shields if guardrails feature is enabled and a model is selected
+    if (!guardrailsConfig?.enabled || !guardrailsConfig.guardrail) {
+      return {};
+    }
+
+    // Find the selected guardrail model config to get shield IDs
+    const selectedModelConfig = guardrailModelConfigs.find(
+      (config) => config.model_name === guardrailsConfig.guardrail,
+    );
+
+    if (!selectedModelConfig) {
+      return {};
+    }
+
+    const shieldIds: { input_shield_id?: string; output_shield_id?: string } = {};
+
+    // Only add input_shield_id if user input guardrails is enabled
+    if (guardrailsConfig.userInputEnabled && selectedModelConfig.input_shield_id) {
+      shieldIds.input_shield_id = selectedModelConfig.input_shield_id;
+    }
+
+    // Only add output_shield_id if model output guardrails is enabled
+    if (guardrailsConfig.modelOutputEnabled && selectedModelConfig.output_shield_id) {
+      shieldIds.output_shield_id = selectedModelConfig.output_shield_id;
+    }
+
+    return shieldIds;
+  }, [guardrailsConfig, guardrailModelConfigs]);
+
   // Cleanup timeout and abort controller on unmount
   React.useEffect(
     () => () => {
@@ -103,6 +164,15 @@ const useChatbotMessages = ({
     },
     [],
   );
+
+  // Update initial message name with the initially selected model (runs once on mount)
+  React.useEffect(() => {
+    setMessages((prev) =>
+      prev.length === 1 && prev[0].role === 'bot' && prev[0].name !== modelDisplayName
+        ? [{ ...prev[0], name: modelDisplayName }]
+        : prev,
+    );
+  }, [modelDisplayName]);
 
   // Auto-scroll to bottom when messages change
   React.useEffect(() => {
@@ -164,11 +234,12 @@ const useChatbotMessages = ({
       abortControllerRef.current = null;
     }
 
-    // Reset everything to initial state
-    setMessages([initialBotMessage()]);
+    // Reset everything to initial state (use model display name for consistency)
+    setMessages([{ ...initialBotMessage(), name: modelDisplayName }]);
     setIsMessageSendButtonDisabled(false);
     setIsLoading(false);
     setIsStreamingWithoutContent(false);
+    setLastResponseMetrics(null);
     isStoppingStreamRef.current = false;
 
     // Reset clearing flag after state updates complete
@@ -176,7 +247,7 @@ const useChatbotMessages = ({
     setTimeout(() => {
       isClearingRef.current = false;
     }, 0);
-  }, []);
+  }, [modelDisplayName]);
 
   const handleMessageSend = async (message: string) => {
     const userMessage: MessageProps = {
@@ -209,6 +280,14 @@ const useChatbotMessages = ({
       // Determine vector store ID to use for RAG
       const vectorStoreIdToUse = selectedSourceSettings?.vectorStore || currentVectorStoreId;
 
+      // Get guardrail shield IDs based on user configuration
+      const guardrailShieldIds = getGuardrailShieldIds();
+
+      // Find the selected model to get its model_source_type
+      // Strip provider prefix from LlamaStack model ID (e.g., "endpoint-1/gpt-4o" → "gpt-4o")
+      const { id: baseModelId } = splitLlamaModelId(modelId);
+      const selectedModel = aiModels.find((model) => model.model_id === baseModelId);
+
       const responsesPayload: CreateResponseRequest = {
         input: message,
         model: modelId,
@@ -227,6 +306,10 @@ const useChatbotMessages = ({
         stream: isStreamingEnabled,
         temperature,
         ...(selectedMcpServers.length > 0 && { mcp_servers: selectedMcpServers }),
+        ...guardrailShieldIds,
+        ...(selectedModel?.model_source_type && {
+          model_source_type: selectedModel.model_source_type,
+        }),
       };
 
       fireMiscTrackingEvent('Playground Query Submitted', {
@@ -249,7 +332,7 @@ const useChatbotMessages = ({
           id: botMessageId,
           role: 'bot',
           content: '',
-          name: 'Bot',
+          name: modelDisplayName,
           avatar: botAvatar,
           isLoading: true, // Show loading dots until first content
           timestamp: new Date().toLocaleString(),
@@ -283,7 +366,12 @@ const useChatbotMessages = ({
 
         const streamingResponse = await api.createResponse(responsesPayload, {
           abortSignal: abortControllerRef.current.signal,
-          onStreamData: (chunk: string) => {
+          onStreamData: (chunk: string, clearPrevious?: boolean) => {
+            if (clearPrevious) {
+              completeLines.length = 0;
+              currentPartialLine = '';
+            }
+
             // Track if we have any content
             const hasAnyContent =
               completeLines.length > 0 || currentPartialLine.length > 0 || chunk.length > 0;
@@ -355,12 +443,26 @@ const useChatbotMessages = ({
           ),
         );
 
-        // Add tool response if available from streaming response
-        if (streamingResponse.toolCallData) {
-          const toolResponse = createToolResponse(streamingResponse.toolCallData);
+        // Add tool response and metrics if available from streaming response
+        if (streamingResponse.toolCallData || streamingResponse.metrics) {
+          const toolResponse = streamingResponse.toolCallData
+            ? createToolResponse(streamingResponse.toolCallData)
+            : undefined;
           setMessages((prevMessages) =>
-            prevMessages.map((msg) => (msg.id === botMessageId ? { ...msg, toolResponse } : msg)),
+            prevMessages.map((msg) =>
+              msg.id === botMessageId
+                ? {
+                    ...msg,
+                    ...(toolResponse && { toolResponse }),
+                    ...(streamingResponse.metrics && { metrics: streamingResponse.metrics }),
+                  }
+                : msg,
+            ),
           );
+          // Update last response metrics for pane header display
+          if (streamingResponse.metrics) {
+            setLastResponseMetrics(streamingResponse.metrics);
+          }
         }
       } else {
         // Handle non-streaming response
@@ -385,17 +487,22 @@ const useChatbotMessages = ({
             }
           : {};
 
-        const botMessage: MessageProps = {
+        const botMessage: ChatbotMessageProps = {
           id: getId(),
           role: 'bot',
           content: response.content || 'No response received',
-          name: 'Bot',
+          name: modelDisplayName,
           avatar: botAvatar,
           timestamp: new Date().toLocaleString(),
           ...(toolResponse && { toolResponse }),
           ...sourcesProps,
+          ...(response.metrics && { metrics: response.metrics }),
         };
         setMessages((prevMessages) => [...prevMessages, botMessage]);
+        // Update last response metrics for pane header display
+        if (response.metrics) {
+          setLastResponseMetrics(response.metrics);
+        }
       }
     } catch (error) {
       // Check if this is an abort error
@@ -445,7 +552,7 @@ const useChatbotMessages = ({
           id: getId(),
           role: 'bot',
           content: wasUserStopped ? '*You stopped this message*' : errorMessage,
-          name: 'Bot',
+          name: modelDisplayName,
           avatar: botAvatar,
           timestamp: new Date().toLocaleString(),
         };
@@ -469,6 +576,8 @@ const useChatbotMessages = ({
     handleStopStreaming,
     clearConversation,
     scrollToBottomRef,
+    lastResponseMetrics,
+    modelDisplayName,
   };
 };
 

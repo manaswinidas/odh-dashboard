@@ -2,18 +2,19 @@ import React from 'react';
 import { setupDefaults } from '@odh-dashboard/internal/concepts/k8s/K8sNameDescriptionField/utils';
 import { useDashboardNamespace } from '@odh-dashboard/internal/redux/selectors/project';
 import { type InitialWizardFormData } from './types';
-import {
-  getModelTypeFromDeployment,
-  getExternalRouteFromDeployment,
-  getTokenAuthenticationFromDeployment,
-} from './utils';
+import { getExternalRouteFromDeployment, getTokenAuthenticationFromDeployment } from './utils';
 import { useWizardFieldExtractors } from './useWizardFieldExtractors';
 import {
   type Deployment,
+  type ExtractionResult,
   isModelServingDeploymentFormDataExtension,
 } from '../../../extension-points';
 import { useResolvedDeploymentExtension } from '../../concepts/extensionUtils';
 import { useDeploymentAuthTokens } from '../../concepts/auth';
+
+const collectExtractionErrors = (
+  ...results: (ExtractionResult<unknown> | undefined | null)[]
+): string[] => results.flatMap((r) => (r?.error ? [r.error] : []));
 
 /**
  * Return type for the useExtractFormDataFromDeployment hook
@@ -81,7 +82,7 @@ export const useExtractFormDataFromDeployment = (
     !deployment || (formDataExtensionLoaded && deploymentSecretsLoaded && extractorsLoaded);
 
   // Memoize error computation to prevent unnecessary recalculations
-  const error = React.useMemo((): Error | undefined => {
+  const loadingError = React.useMemo((): Error | undefined => {
     if (!deployment) {
       return undefined;
     }
@@ -100,25 +101,39 @@ export const useExtractFormDataFromDeployment = (
     return undefined;
   }, [deployment, formDataExtensionErrors, deploymentSecretsError, extractorErrors]);
 
+  const hardwareProfileResult = React.useMemo(
+    () =>
+      deployment && loaded && !loadingError
+        ? formDataExtension?.properties.extractHardwareProfileConfig(deployment)
+        : undefined,
+    [deployment, loaded, loadingError, formDataExtension],
+  );
+
+  const replicasResult = React.useMemo(
+    () =>
+      deployment && loaded && !loadingError
+        ? formDataExtension?.properties.extractReplicas(deployment)
+        : undefined,
+    [deployment, loaded, loadingError, formDataExtension],
+  );
+
   // Memoize the form data extraction to prevent unnecessary recalculations
   const formData = React.useMemo((): InitialWizardFormData | undefined => {
-    // Only extract form data if everything is loaded and there are no errors
-    if (!deployment || !loaded || error) {
+    // Only extract form data if everything is loaded and there are no loading errors
+    if (!deployment || !loaded || loadingError) {
       return undefined;
     }
 
     return {
-      // Extract model type information from deployment metadata
-      modelTypeField: getModelTypeFromDeployment(deployment),
+      modelTypeField:
+        typeof formDataExtension?.properties.extractModelType === 'function'
+          ? formDataExtension.properties.extractModelType(deployment) ?? undefined
+          : undefined,
 
       // Setup K8s name and description fields with deployment model data
       k8sNameDesc: setupDefaults({ initialData: deployment.model }),
 
-      // Extract hardware profile configuration if the extension supports it
-      hardwareProfile:
-        typeof formDataExtension?.properties.extractHardwareProfileConfig === 'function'
-          ? formDataExtension.properties.extractHardwareProfileConfig(deployment) ?? undefined
-          : undefined,
+      hardwareProfile: hardwareProfileResult?.data ?? undefined,
 
       // Extract model format information if available
       modelFormat:
@@ -126,17 +141,11 @@ export const useExtractFormDataFromDeployment = (
           ? formDataExtension.properties.extractModelFormat(deployment) ?? undefined
           : undefined,
 
-      // Extract replica count configuration
-      numReplicas:
-        typeof formDataExtension?.properties.extractReplicas === 'function'
-          ? formDataExtension.properties.extractReplicas(deployment) ?? undefined
-          : undefined,
+      numReplicas: replicasResult?.data ?? undefined,
 
       // Extract model location data (where the model is stored)
       modelLocationData:
-        typeof formDataExtension?.properties.extractModelLocationData === 'function'
-          ? formDataExtension.properties.extractModelLocationData(deployment) ?? undefined
-          : undefined,
+        formDataExtension?.properties.extractModelLocationData(deployment) ?? undefined,
 
       // Determine if external route is enabled for this deployment
       externalRoute: getExternalRouteFromDeployment(deployment),
@@ -154,31 +163,20 @@ export const useExtractFormDataFromDeployment = (
           : undefined,
 
       // Extract runtime arguments if available
-      runtimeArgs:
-        typeof formDataExtension?.properties.extractRuntimeArgs === 'function'
-          ? formDataExtension.properties.extractRuntimeArgs(deployment) ?? undefined
-          : undefined,
+      runtimeArgs: formDataExtension?.properties.extractRuntimeArgs(deployment) ?? undefined,
 
       // Extract environment variables configuration
       environmentVariables:
-        typeof formDataExtension?.properties.extractEnvironmentVariables === 'function'
-          ? formDataExtension.properties.extractEnvironmentVariables(deployment) ?? undefined
-          : undefined,
+        formDataExtension?.properties.extractEnvironmentVariables(deployment) ?? undefined,
 
       // Extract model availability data
       modelAvailability:
-        typeof formDataExtension?.properties.extractModelAvailabilityData === 'function'
-          ? formDataExtension.properties.extractModelAvailabilityData(deployment) ?? undefined
-          : undefined,
+        formDataExtension?.properties.extractModelAvailabilityData(deployment) ?? undefined,
 
       // Determine model server configuration based on deployment type
       modelServer:
-        typeof formDataExtension?.properties.extractModelServerTemplate === 'function'
-          ? formDataExtension.properties.extractModelServerTemplate(
-              deployment,
-              dashboardNamespace,
-            ) ?? undefined
-          : undefined,
+        formDataExtension?.properties.extractModelServerTemplate(deployment, dashboardNamespace) ??
+        undefined,
       // Always set to true for existing deployments
       isEditing: true,
       // Include extracted data from dynamic wizard fields (spread as top-level properties)
@@ -187,12 +185,52 @@ export const useExtractFormDataFromDeployment = (
   }, [
     deployment,
     formDataExtension,
+    hardwareProfileResult,
+    replicasResult,
     deploymentSecrets,
     dashboardNamespace,
     loaded,
-    error,
+    loadingError,
     extractedFieldData,
   ]);
+
+  // Collect errors from platform-specific extract functions and validation
+  const validationError = React.useMemo((): Error | undefined => {
+    if (!deployment || loadingError || !formData) {
+      return undefined;
+    }
+
+    const errors: string[] = [];
+
+    errors.push(...collectExtractionErrors(hardwareProfileResult, replicasResult));
+
+    if (typeof formDataExtension?.properties.validateExtraction === 'function') {
+      errors.push(...formDataExtension.properties.validateExtraction(deployment));
+    }
+
+    const rawModelType = deployment.model.metadata.annotations?.['opendatahub.io/model-type'];
+    if (rawModelType && !formData.modelTypeField) {
+      errors.push(
+        `Unsupported model type "${rawModelType}". Only "predictive" and "generative" are supported.`,
+      );
+    }
+
+    if (errors.length > 0) {
+      return new Error(
+        'This deployment contains custom configuration that cannot be displayed in the form.',
+      );
+    }
+    return undefined;
+  }, [
+    deployment,
+    formData,
+    formDataExtension,
+    hardwareProfileResult,
+    replicasResult,
+    loadingError,
+  ]);
+
+  const error = loadingError || validationError;
 
   return {
     formData,

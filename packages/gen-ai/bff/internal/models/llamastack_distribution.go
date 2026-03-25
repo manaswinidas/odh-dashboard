@@ -1,5 +1,10 @@
 package models
 
+import (
+	"encoding/json"
+	"fmt"
+)
+
 // LlamaStackDistributionModel represents a Llama Stack Distribution
 type LlamaStackDistributionModel struct {
 	Name               string                 `json:"name"`
@@ -16,20 +21,80 @@ type LlamaStackDistributionResponse struct {
 
 // LlamaStackDistributionInstallRequest represents the request body for installing models
 type LlamaStackDistributionInstallRequest struct {
-	Models         []InstallModel  `json:"models"`
-	GuardrailModel *GuardrailModel `json:"guardrail_model,omitempty"` // Optional guardrail model configuration
+	Models           []InstallModel `json:"models"`
+	EnableGuardrails bool           `json:"enable_guardrails,omitempty"` // If true, adds safety configuration with guardrail shields for all selected models
+}
+
+// installModelJSON is used for JSON unmarshaling to handle max_tokens as either int or float64
+type installModelJSON struct {
+	ModelName       string      `json:"model_name"`
+	ModelSourceType string      `json:"model_source_type"`    // Source type as string for unmarshaling (required)
+	MaxTokens       interface{} `json:"max_tokens,omitempty"` // Can be int, float64, or nil
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling for InstallModel to handle max_tokens
+// as either int or float64. This is necessary because JSON numbers are unmarshaled as float64
+// by default, but we need to validate that the value is a whole number and convert it to int.
+//
+// The method validates that max_tokens is a numeric type and converts it to an integer pointer,
+// ensuring no fractional values are accepted. Returns an error if max_tokens contains a
+// non-numeric type or a fractional value.
+func (im *InstallModel) UnmarshalJSON(data []byte) error {
+	var raw installModelJSON
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	im.ModelName = raw.ModelName
+
+	// Validate and set ModelSourceType (now required)
+	switch raw.ModelSourceType {
+	case string(ModelSourceTypeNamespace):
+		im.ModelSourceType = ModelSourceTypeNamespace
+	case string(ModelSourceTypeCustomEndpoint):
+		im.ModelSourceType = ModelSourceTypeCustomEndpoint
+	case string(ModelSourceTypeMaaS):
+		im.ModelSourceType = ModelSourceTypeMaaS
+	case "":
+		return fmt.Errorf("model_source_type is required")
+	default:
+		return fmt.Errorf("invalid model_source_type: %q, must be one of: namespace, custom_endpoint, maas", raw.ModelSourceType)
+	}
+
+	// Handle max_tokens conversion from interface{} to *int
+	if raw.MaxTokens != nil {
+		var maxTokens int
+		switch v := raw.MaxTokens.(type) {
+		case float64:
+			// JSON numbers unmarshal as float64, convert to int
+			if v != float64(int(v)) {
+				return fmt.Errorf("max_tokens must be an integer, got %f", v)
+			}
+			maxTokens = int(v)
+		case int:
+			maxTokens = v
+		case int64:
+			maxTokens = int(v)
+		case float32:
+			if v != float32(int(v)) {
+				return fmt.Errorf("max_tokens must be an integer, got %f", v)
+			}
+			maxTokens = int(v)
+		default:
+			return fmt.Errorf("max_tokens must be a number, got %T", v)
+		}
+		im.MaxTokens = &maxTokens
+	} else {
+		im.MaxTokens = nil
+	}
+
+	return nil
 }
 
 type InstallModel struct {
-	ModelName   string `json:"model_name"`
-	IsMaaSModel bool   `json:"is_maas_model"`
-}
-
-// GuardrailModel represents the guardrail model configuration for safety
-type GuardrailModel struct {
-	ModelName   string `json:"model_name"`          // e.g., "vllm/qwen3"
-	IsMaaSModel bool   `json:"is_maas_model"`       // Whether this is a MaaS model
-	ModelURL    string `json:"model_url,omitempty"` // Optional: model endpoint URL
+	ModelName       string              `json:"model_name"`
+	ModelSourceType ModelSourceTypeEnum `json:"model_source_type"`    // Source type of the model (required: namespace, custom_endpoint, maas)
+	MaxTokens       *int                `json:"max_tokens,omitempty"` // Optional per-model token limit (128-128000)
 }
 
 type LlamaStackDistributionInstallModel struct {

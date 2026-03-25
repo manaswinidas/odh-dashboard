@@ -6,8 +6,15 @@ import {
   ServingRuntimeKind,
 } from '@odh-dashboard/internal/k8sTypes';
 import { isServingRuntimeKind } from '@odh-dashboard/internal/pages/modelServing/customServingRuntimes/utils';
-import { Form, Stack, StackItem, Alert, FormGroup, FormSection } from '@patternfly/react-core';
-import { useAccessReview } from '@odh-dashboard/internal/api/index';
+import {
+  Form,
+  Stack,
+  StackItem,
+  Alert,
+  FormGroup,
+  FormSection,
+  Spinner,
+} from '@patternfly/react-core';
 import { ExternalRouteField } from '../fields/ExternalRouteField';
 import { TokenAuthenticationField } from '../fields/TokenAuthenticationField';
 import { RuntimeArgsField } from '../fields/RuntimeArgsField';
@@ -16,8 +23,9 @@ import { DeploymentStrategyField } from '../fields/DeploymentStrategyField';
 import { type UseModelDeploymentWizardState } from '../useDeploymentWizard';
 import { AvailableAiAssetsFieldsComponent } from '../fields/ModelAvailabilityFields';
 import { showAuthWarning } from '../hooks/useAuthWarning';
+import type { ExternalDataMap } from '../ExternalDataLoader';
 
-const accessReviewResource: AccessReviewResourceAttributes = {
+export const accessReviewResource: AccessReviewResourceAttributes = {
   group: 'rbac.authorization.k8s.io',
   resource: 'rolebindings',
   verb: 'create',
@@ -25,12 +33,14 @@ const accessReviewResource: AccessReviewResourceAttributes = {
 
 type AdvancedSettingsStepContentProps = {
   wizardState: UseModelDeploymentWizardState;
-  projectName?: string;
+  externalData: ExternalDataMap;
+  allowCreate: boolean;
 };
 
 export const AdvancedSettingsStepContent: React.FC<AdvancedSettingsStepContentProps> = ({
   wizardState,
-  projectName,
+  externalData,
+  allowCreate,
 }) => {
   const externalRouteData = wizardState.state.externalRoute.data;
   const tokenAuthData = wizardState.state.tokenAuthentication.data;
@@ -43,7 +53,9 @@ export const AdvancedSettingsStepContent: React.FC<AdvancedSettingsStepContentPr
     if (!modelServerData || !templates || templates.length === 0) {
       return undefined;
     }
-    const template = templates.find((tmpl) => tmpl.metadata.name === modelServerData.name);
+    const template = templates.find(
+      (tmpl) => tmpl.metadata.name === modelServerData.selection?.name,
+    );
 
     return template?.objects[0];
   }, [
@@ -80,11 +92,9 @@ export const AdvancedSettingsStepContent: React.FC<AdvancedSettingsStepContentPr
     }
     return kserveContainer.env?.map((ev) => `${ev.name}=${ev.value ?? ''}`) || [];
   };
-
-  const [allowCreate] = useAccessReview({
-    ...accessReviewResource,
-    namespace: projectName,
-  });
+  if (!wizardState.loaded.advancedOptionsLoaded) {
+    return <Spinner data-testid="spinner" />;
+  }
 
   const handleExternalRouteChange = (checked: boolean) => {
     wizardState.state.externalRoute.setData(checked);
@@ -116,6 +126,7 @@ export const AdvancedSettingsStepContent: React.FC<AdvancedSettingsStepContentPr
                     data={wizardState.state.modelAvailability.data}
                     setData={wizardState.state.modelAvailability.setData}
                     wizardState={wizardState}
+                    externalData={externalData}
                   />
                 </FormGroup>
               </StackItem>
@@ -177,7 +188,6 @@ export const AdvancedSettingsStepContent: React.FC<AdvancedSettingsStepContentPr
                     <RuntimeArgsField
                       data={wizardState.state.runtimeArgs.data}
                       onChange={wizardState.state.runtimeArgs.setData}
-                      allowCreate={allowCreate}
                       predefinedArgs={getKServeContainerArgs(selectedModelServer)}
                     />
                   </StackItem>
@@ -185,7 +195,6 @@ export const AdvancedSettingsStepContent: React.FC<AdvancedSettingsStepContentPr
                     <EnvironmentVariablesField
                       data={wizardState.state.environmentVariables.data}
                       onChange={wizardState.state.environmentVariables.setData}
-                      allowCreate={allowCreate}
                       predefinedVars={getKServeContainerEnvVarStrs(selectedModelServer)}
                     />
                   </StackItem>

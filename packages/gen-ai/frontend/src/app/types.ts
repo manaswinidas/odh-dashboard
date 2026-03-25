@@ -17,7 +17,8 @@ export type LlamaModel = LlamaModelResponse & {
 
 export type LSDInstallModel = {
   model_name: string;
-  is_maas_model: boolean;
+  model_source_type: 'namespace' | 'custom_endpoint' | 'maas'; // Source type of the model (required)
+  max_tokens?: number; // Optional per-model token limit (128-128000)
 };
 
 export type FileCounts = {
@@ -83,7 +84,7 @@ export type ChatContextMessage = {
 export type MCPServerConfig = {
   server_label: string;
   server_url: string;
-  headers: Record<string, string>;
+  authorization?: string;
   allowed_tools?: string[]; // Backend rules: undefined=all, []=none, ["x"]=specific
 };
 
@@ -96,12 +97,22 @@ export type CreateResponseRequest = {
   instructions?: string;
   stream?: boolean;
   mcp_servers?: MCPServerConfig[];
+  input_shield_id?: string;
+  output_shield_id?: string;
+  model_source_type?: string;
 };
 
 export type SimplifiedUsage = {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+};
+
+// Response metrics from BFF (latency, TTFT, usage)
+export type ResponseMetrics = {
+  latency_ms: number;
+  time_to_first_token_ms?: number; // Only present for streaming responses
+  usage?: SimplifiedUsage;
 };
 
 // File citation annotation from RAG responses
@@ -123,7 +134,8 @@ export type ContentAnnotation = FileCitationAnnotation | { type: string; [key: s
 // Backend response types (matches the actual API structure)
 export type ContentItem = {
   type: string;
-  text: string;
+  text?: string;
+  refusal?: string;
   annotations?: ContentAnnotation[];
 };
 
@@ -142,6 +154,7 @@ export type BackendResponseData = {
   created_at: number;
   output?: OutputItem[];
   usage?: SimplifiedUsage;
+  metrics?: ResponseMetrics; // Response metrics from BFF (latency, TTFT, usage)
 };
 
 // MCP tool call data extracted from backend response
@@ -169,6 +182,7 @@ export type SimplifiedResponseData = {
   usage?: SimplifiedUsage; // Optional - only present when Llama Stack API returns token data
   toolCallData?: MCPToolCallData; // Optional - only present when MCP tool calls exist
   sources?: SourceItem[]; // Optional - file sources from RAG annotations
+  metrics?: ResponseMetrics; // Optional - response metrics (latency, TTFT, usage)
 };
 
 export type FileError = {
@@ -309,6 +323,32 @@ export type BFFConfig = {
   isCustomLSD: boolean;
 };
 
+export type GuardrailsCondition = {
+  type: string;
+  status: string;
+  reason?: string;
+  message?: string;
+  lastTransitionTime?: string;
+};
+
+export type GuardrailsStatus = {
+  name: string;
+  phase: string;
+  conditions?: GuardrailsCondition[];
+};
+
+/** Guardrail model config from safety config endpoint */
+export type GuardrailModelConfig = {
+  model_name: string;
+  input_shield_id: string;
+  output_shield_id: string;
+};
+
+/** Response from /lsd/safety endpoint */
+export type SafetyConfigResponse = {
+  guardrail_models: GuardrailModelConfig[];
+};
+
 export interface AAModelResponse {
   model_name: string;
   model_id: string;
@@ -318,42 +358,81 @@ export interface AAModelResponse {
   usecase: string;
   description: string;
   endpoints: string[];
-  status: 'Running' | 'Stop';
+  status: string; // Kubernetes resource status - can be 'Running', 'Stop', or other values
   display_name: string;
   sa_token: {
     name: string;
     token_name: string;
     token: string;
   };
+  model_source_type: 'namespace' | 'custom_endpoint' | 'maas';
+  model_type?: 'llm' | 'embedding';
 }
 
 export interface AIModel extends AAModelResponse {
   // Parse endpoints into usable format
   internalEndpoint?: string;
   externalEndpoint?: string;
-  // Flag to identify if this is a MaaS model
-  isMaaSModel?: boolean;
-  // The MaaS model ID if this is a MaaS model (needed for LSD installation)
-  maasModelId?: string;
 }
 
-export interface MaaSModel {
-  id: string;
-  object: string;
-  created: number;
-  owned_by: string;
-  ready: boolean;
-  url: string;
-}
-
-export type MaaSTokenRequest = {
-  expiration?: string; // Optional - only present when expiration is provided
+export type ExternalModelRequest = {
+  model_id: string;
+  model_display_name: string;
+  base_url: string;
+  secret_value: string;
+  model_type: 'llm' | 'embedding';
+  use_cases?: string;
+  embedding_dimension?: number;
 };
 
-export interface MaaSTokenResponse {
-  token: string;
-  expiresAt: number;
-}
+export type ExternalModelResponse = AAModelResponse;
+
+/** Single external vector store summary returned by the BFF (secrets and connection config not included). */
+export type ExternalVectorStoreSummary = {
+  vector_store_id: string;
+  vector_store_name: string;
+  provider_id: string;
+  provider_type: string;
+  embedding_model: string;
+  embedding_dimension: number;
+  description?: string;
+};
+
+/** ConfigMap metadata included in the detailed vector stores list response. */
+export type VectorStoreConfigMapInfo = {
+  name: string;
+  namespace: string;
+  last_updated: string;
+};
+
+/** Response body from GET /gen-ai/api/v1/vectorstores/external (includes ConfigMap metadata). */
+export type ExternalVectorStoresListData = {
+  vector_stores: ExternalVectorStoreSummary[];
+  total_count: number;
+  config_map_info: VectorStoreConfigMapInfo;
+};
+
+export type VerifyExternalModelRequest = {
+  model_id: string;
+  base_url: string;
+  secret_value: string;
+  model_type: ExternalModelRequest['model_type'];
+  embedding_dimension?: number;
+};
+
+export type VerifyExternalModelResponse = {
+  success: boolean;
+  message: string;
+  response_time_ms?: number;
+};
+
+// Error response structure (matches BFF)
+export type ExternalModelVerificationError = {
+  code: 'CONNECTION_FAILED' | 'TIMEOUT' | 'UNAUTHORIZED' | 'NOT_OPENAI_COMPATIBLE';
+  message: string;
+  base_url?: string;
+  model_id?: string;
+};
 
 export type {
   MCPServerFromAPI,
@@ -376,8 +455,62 @@ export type {
 
 export type IconType = React.ComponentType<{ style?: React.CSSProperties }>;
 
+/** MLflow Prompt Registry Types */
+export type MLflowPrompt = {
+  name: string;
+  description: string;
+  latest_version: number;
+  tags?: Record<string, string>;
+  creation_timestamp: string;
+};
+
+export type MLflowPromptsResponse = {
+  prompts: MLflowPrompt[];
+  next_page_token?: string;
+};
+
+export type MLflowMessage = {
+  role: string;
+  content: string;
+};
+
+export type MLflowRegisterPromptRequest = {
+  name: string;
+  messages?: MLflowMessage[];
+  template?: string;
+  commit_message?: string;
+  tags?: Record<string, string>;
+};
+
+export type MLflowPromptVersion = {
+  name: string;
+  version: number;
+  template?: string;
+  messages?: MLflowMessage[];
+  commit_message?: string;
+  aliases?: string[];
+  tags?: Record<string, string>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MLflowPromptVersionMeta = {
+  version: number;
+  commit_message?: string;
+  aliases?: string[];
+  tags?: Record<string, string>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MLflowPromptVersionsResponse = {
+  versions: MLflowPromptVersionMeta[];
+  next_page_token?: string;
+};
+
 export type InstallLSDRequest = {
   models: LSDInstallModel[];
+  enable_guardrails?: boolean; // If true, adds safety configuration with guardrail shields for all selected models
 };
 
 export type DeleteLSDRequest = {
@@ -402,13 +535,48 @@ export type GenAiAPIs = {
   installLSD: InstallLSD;
   deleteLSD: DeleteLSD;
   getAAModels: GetAAModels;
+  getAAVectorStores: GetAAVectorStores;
   getMaaSModels: GetMaaSModels;
   generateMaaSToken: GenerateMaaSToken;
   getMCPServerTools: GetMCPServerTools;
   getMCPServers: GetMCPServers;
   getMCPServerStatus: GetMCPServerStatus;
   getBFFConfig: GetBFFConfig;
+  getGuardrailsStatus: GetGuardrailsStatus;
+  getSafetyConfig: GetSafetyConfig;
+  listMLflowPrompts: ListMLflowPrompts;
+  registerMLflowPrompt: RegisterMLflowPrompt;
+  getMLflowPrompt: GetMLflowPrompt;
+  listMLflowPromptVersions: ListMLflowPromptVersions;
+  createExternalModel: CreateExternalModel;
+  verifyExternalModel: VerifyExternalModel;
+  deleteExternalModel: DeleteExternalModel;
 };
+
+export interface MaaSModel {
+  id: string;
+  object: string;
+  created: number;
+  owned_by: string;
+  ready: boolean;
+  url?: string;
+  // Optional fields for display name, description, and use case
+  // These may not be provided by all backends, so we use id as fallback for display_name
+  display_name?: string;
+  description?: string;
+  usecase?: string;
+  model_type?: 'llm' | 'embedding';
+}
+
+export type MaaSTokenRequest = {
+  name?: string;
+  description?: string;
+  expiresIn?: string;
+};
+export interface MaaSTokenResponse {
+  key: string;
+  expiresAt?: string;
+}
 
 export type ModArchRestGET<T> = (
   queryParams?: Record<string, unknown>,
@@ -432,16 +600,32 @@ type UploadSource = ModArchRestCREATE<FileUploadJobResponse, FormData>;
 type GetFileUploadStatus = ModArchRestGET<FileUploadStatusResponse>;
 type CreateResponse = (
   data: CreateResponseRequest,
-  opts?: APIOptions & { onStreamData?: (chunk: string) => void; abortSignal?: AbortSignal },
+  opts?: APIOptions & {
+    onStreamData?: (chunk: string, clearPrevious?: boolean) => void;
+    abortSignal?: AbortSignal;
+  },
 ) => Promise<SimplifiedResponseData>;
 type ExportCode = ModArchRestCREATE<CodeExportData, CodeExportRequest>;
 type GetLSDStatus = ModArchRestGET<LlamaStackDistributionModel>;
 type InstallLSD = ModArchRestCREATE<LlamaStackDistributionModel, InstallLSDRequest>;
 type DeleteLSD = ModArchRestDELETE<string, DeleteLSDRequest>;
 type GetAAModels = ModArchRestGET<AAModelResponse[]>;
+type GetAAVectorStores = ModArchRestGET<ExternalVectorStoreSummary[]>;
 type GetMaaSModels = ModArchRestGET<MaaSModel[]>;
 type GenerateMaaSToken = ModArchRestCREATE<MaaSTokenResponse, MaaSTokenRequest>;
 type GetMCPServerTools = ModArchRestGET<MCPToolsStatus>;
 type GetMCPServers = ModArchRestGET<MCPServersResponse>;
 type GetMCPServerStatus = ModArchRestGET<MCPConnectionStatus>;
 type GetBFFConfig = ModArchRestGET<BFFConfig>;
+type GetGuardrailsStatus = ModArchRestGET<GuardrailsStatus>;
+type GetSafetyConfig = ModArchRestGET<SafetyConfigResponse>;
+type ListMLflowPrompts = ModArchRestGET<MLflowPromptsResponse>;
+type RegisterMLflowPrompt = ModArchRestCREATE<MLflowPromptVersion, MLflowRegisterPromptRequest>;
+type GetMLflowPrompt = ModArchRestGET<MLflowPromptVersion>;
+type ListMLflowPromptVersions = ModArchRestGET<MLflowPromptVersionsResponse>;
+type CreateExternalModel = ModArchRestCREATE<ExternalModelResponse, ExternalModelRequest>;
+type VerifyExternalModel = ModArchRestCREATE<
+  VerifyExternalModelResponse,
+  VerifyExternalModelRequest
+>;
+type DeleteExternalModel = ModArchRestDELETE<string, Record<string, never>>;

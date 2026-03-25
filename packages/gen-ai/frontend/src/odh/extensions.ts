@@ -14,7 +14,10 @@ import {
 import type { AIAssetsTabExtension } from '~/odh/extension-points';
 
 const PLUGIN_GEN_AI = 'plugin-gen-ai';
-const MODEL_AS_SERVICE = 'model-as-service';
+const GUARDRAILS = 'guardrails';
+const PROMPT_MANAGEMENT = 'promptManagement';
+const AI_ASSET_CUSTOM_ENDPOINTS = 'aiAssetCustomEndpoints';
+const AI_ASSET_VECTOR_STORES = 'ai-asset-vector-stores';
 
 const extensions: (NavExtension | RouteExtension | AreaExtension | AIAssetsTabExtension)[] = [
   {
@@ -28,9 +31,33 @@ const extensions: (NavExtension | RouteExtension | AreaExtension | AIAssetsTabEx
   {
     type: 'app.area',
     properties: {
-      id: MODEL_AS_SERVICE,
+      id: GUARDRAILS,
       reliantAreas: [PLUGIN_GEN_AI],
-      featureFlags: ['modelAsService'],
+      devFlags: [GUARDRAILS],
+    },
+  },
+  {
+    type: 'app.area',
+    properties: {
+      id: AI_ASSET_CUSTOM_ENDPOINTS,
+      reliantAreas: [PLUGIN_GEN_AI],
+      featureFlags: [AI_ASSET_CUSTOM_ENDPOINTS],
+    },
+  },
+  {
+    type: 'app.area',
+    properties: {
+      id: PROMPT_MANAGEMENT,
+      reliantAreas: [PLUGIN_GEN_AI],
+      devFlags: [PROMPT_MANAGEMENT],
+    },
+  },
+  {
+    type: 'app.area',
+    properties: {
+      id: AI_ASSET_VECTOR_STORES,
+      reliantAreas: [PLUGIN_GEN_AI],
+      devFlags: [AI_ASSET_VECTOR_STORES],
     },
   },
   {
@@ -109,12 +136,12 @@ const extensions: (NavExtension | RouteExtension | AreaExtension | AIAssetsTabEx
   {
     type: 'gen-ai.ai-assets/tab',
     flags: {
-      required: [MODEL_AS_SERVICE],
+      required: [PLUGIN_GEN_AI, AI_ASSET_VECTOR_STORES],
     },
     properties: {
-      id: 'maasmodels',
-      title: 'Models as a service',
-      component: () => import('../app/AIAssets/AIAssetsMaaSTab').then((m) => m.default),
+      id: 'vectorstores',
+      title: 'Vector stores',
+      component: () => import('../app/AIAssets/AIAssetsVectorStoresTab').then((m) => m.default),
     },
   },
 ];

@@ -1301,11 +1301,17 @@ export type DashboardCommonConfig = {
   trainingJobs: boolean;
   disableFeatureStore?: boolean;
   genAiStudio?: boolean;
+  automl?: boolean;
+  autorag?: boolean;
   modelAsService?: boolean;
+  aiAssetCustomEndpoints?: boolean;
   mlflow?: boolean;
+  mcpCatalog?: boolean;
   projectRBAC?: boolean;
-  embedMLflow?: boolean;
   observabilityDashboard?: boolean;
+  disableLLMd?: boolean;
+  deploymentWizardYAMLViewer?: boolean;
+  vLLMDeploymentOnMaaS?: boolean;
 };
 
 // [1] Intentionally disjointed fields from the CRD in this type definition
@@ -1332,6 +1338,12 @@ export type DashboardConfigKind = K8sResourceCommon & {
     modelServing?: {
       deploymentStrategy?: string;
       isLLMdDefault?: boolean;
+    };
+    genAiStudioConfig?: {
+      aiAssetCustomEndpoints?: {
+        externalProviders?: boolean;
+        clusterDomains?: string[];
+      };
     };
   };
 };
@@ -1528,6 +1540,10 @@ export type DataScienceClusterInitializationKindStatus = {
   };
   components?: Record<string, never>;
   phase?: string;
+  // Added by the backend to identify the monitoring namespace
+  monitoring?: {
+    namespace?: string;
+  };
 };
 
 export type ModelRegistryKind = K8sResourceCommon & {
@@ -1543,8 +1559,8 @@ export type ModelRegistryKind = K8sResourceCommon & {
   } & EitherNotBoth<
     {
       mysql?: {
-        database: string;
-        host: string;
+        database?: string;
+        host?: string;
         passwordSecret?: {
           key: string;
           name: string;
@@ -1569,17 +1585,31 @@ export type ModelRegistryKind = K8sResourceCommon & {
     },
     {
       postgres?: {
-        database: string;
+        database?: string;
         host?: string;
         passwordSecret?: {
           key: string;
           name: string;
         };
-        port: number;
+        port?: number;
         skipDBCreation?: boolean;
+        generateDeployment?: boolean;
         sslMode?: string;
         username?: string;
-      };
+      } & EitherNotBoth<
+        {
+          sslRootCertificateConfigMap?: {
+            name: string;
+            key: string;
+          } | null;
+        },
+        {
+          sslRootCertificateSecret?: {
+            name: string;
+            key: string;
+          } | null;
+        }
+      >;
     }
   >;
   status?: {

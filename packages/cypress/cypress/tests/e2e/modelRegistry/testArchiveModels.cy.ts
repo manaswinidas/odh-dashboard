@@ -19,7 +19,6 @@ import {
 import { loadModelRegistryFixture } from '../../../utils/dataLoader';
 import { generateTestUUID } from '../../../utils/uuidGenerator';
 import type { ModelRegistryTestData } from '../../../types';
-import { appChrome } from '../../../pages/appChrome';
 import {
   archiveVersionModal,
   modelVersionArchive,
@@ -73,13 +72,13 @@ describe('Verify that models and versions can be archived and restored via model
 
   it(
     'Registers model, adds versions, archives version, restores version, archives whole model, restores whole model',
-    { tags: ['@Dashboard', '@ModelRegistry', '@NonConcurrent', '@Sanity', '@SanitySet4'] },
+    {
+      tags: ['@Dashboard', '@ModelRegistry', '@NonConcurrent', '@Sanity', '@SanitySet4'],
+    },
     () => {
-      cy.step('Login as an Admin');
+      cy.step('Login as an Admin and navigate to Model Registry');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
-
-      cy.step('Navigate to Model Registry');
-      appChrome.findNavItem({ name: 'Registry', rootSection: 'AI hub' }).click();
+      modelRegistry.visit();
 
       cy.step('Select the created model registry');
       modelRegistry.findSelectModelRegistry(registryName);
@@ -93,24 +92,32 @@ describe('Verify that models and versions can be archived and restored via model
         .type(testData.objectStorageModelName);
       registerModelPage
         .findFormField(FormFieldSelector.MODEL_DESCRIPTION)
-        .type('E2E test model using object storage');
+        .type(testData.objectStorageModelDescription);
       registerModelPage.findFormField(FormFieldSelector.VERSION_NAME).type(testData.version1Name);
       registerModelPage
         .findFormField(FormFieldSelector.VERSION_DESCRIPTION)
-        .type('First version of the test model');
-      registerModelPage.findFormField(FormFieldSelector.SOURCE_MODEL_FORMAT).type('onnx');
-      registerModelPage.findFormField(FormFieldSelector.SOURCE_MODEL_FORMAT_VERSION).type('1.0');
+        .type(testData.version1Description);
+      registerModelPage
+        .findFormField(FormFieldSelector.SOURCE_MODEL_FORMAT)
+        .type(testData.modelFormatOnnx);
+      registerModelPage
+        .findFormField(FormFieldSelector.SOURCE_MODEL_FORMAT_VERSION)
+        .type(testData.formatVersion1_0);
 
       // Configure object storage location
       registerModelPage.findFormField(FormFieldSelector.LOCATION_TYPE_OBJECT_STORAGE).click();
       registerModelPage
         .findFormField(FormFieldSelector.LOCATION_ENDPOINT)
-        .type('http://minio.example.com:9000');
-      registerModelPage.findFormField(FormFieldSelector.LOCATION_BUCKET).type('test-models');
-      registerModelPage.findFormField(FormFieldSelector.LOCATION_REGION).type('us-east-1');
+        .type(testData.objectStorageEndpoint);
+      registerModelPage
+        .findFormField(FormFieldSelector.LOCATION_BUCKET)
+        .type(testData.objectStorageBucket);
+      registerModelPage
+        .findFormField(FormFieldSelector.LOCATION_REGION)
+        .type(testData.objectStorageRegion);
       registerModelPage
         .findFormField(FormFieldSelector.LOCATION_PATH)
-        .type('models/test-model/v1.0');
+        .type(testData.objectStoragePath);
 
       registerModelPage.findSubmitButton().should('be.enabled').click();
 
@@ -124,7 +131,7 @@ describe('Verify that models and versions can be archived and restored via model
 
       // Navigate to versions tab and register new version
       modelRegistry.findModelVersionsTab().click();
-      cy.findByRole('button', { name: 'Register new version' }).click();
+      modelRegistry.findRegisterNewVersionButton().click();
 
       // Fill in version details for v2.0
       registerVersionPage
@@ -132,11 +139,13 @@ describe('Verify that models and versions can be archived and restored via model
         .type(testData.version2Name);
       registerVersionPage
         .findFormField(VersionFormFieldSelector.VERSION_DESCRIPTION)
-        .type('Second version of the test model');
-      registerVersionPage.findFormField(VersionFormFieldSelector.SOURCE_MODEL_FORMAT).type('onnx');
+        .type(testData.version2Description);
+      registerVersionPage
+        .findFormField(VersionFormFieldSelector.SOURCE_MODEL_FORMAT)
+        .type(testData.modelFormatOnnx);
       registerVersionPage
         .findFormField(VersionFormFieldSelector.SOURCE_MODEL_FORMAT_VERSION)
-        .type('1.0');
+        .type(testData.formatVersion1_0);
 
       // Configure object storage location for v2.0
       registerVersionPage
@@ -144,14 +153,16 @@ describe('Verify that models and versions can be archived and restored via model
         .click();
       registerVersionPage
         .findFormField(VersionFormFieldSelector.LOCATION_ENDPOINT)
-        .type('http://minio.example.com:9000');
+        .type(testData.objectStorageEndpoint);
       registerVersionPage
         .findFormField(VersionFormFieldSelector.LOCATION_BUCKET)
-        .type('test-models');
-      registerVersionPage.findFormField(VersionFormFieldSelector.LOCATION_REGION).type('us-east-1');
+        .type(testData.objectStorageBucket);
+      registerVersionPage
+        .findFormField(VersionFormFieldSelector.LOCATION_REGION)
+        .type(testData.objectStorageRegion);
       registerVersionPage
         .findFormField(VersionFormFieldSelector.LOCATION_PATH)
-        .type('models/test-model/v2.0');
+        .type(testData.objectStoragePathV2);
 
       registerVersionPage.findSubmitButton().should('be.enabled').click();
 
@@ -167,7 +178,8 @@ describe('Verify that models and versions can be archived and restored via model
       cy.step('Archive version v1.0');
       // Find the v1.0 version row and archive it
       const modelVersionRow = modelRegistry.getModelVersionRow(testData.version1Name);
-      modelVersionRow.findKebabAction('Archive model version').click({ force: true });
+      modelVersionRow.findKebab().click();
+      modelRegistry.findArchiveModelVersionAction().click({ force: true });
 
       // Confirm archiving in the modal
       archiveVersionModal.findArchiveButton().should('be.disabled');
@@ -176,10 +188,8 @@ describe('Verify that models and versions can be archived and restored via model
 
       cy.step('Verify version v1.0 is archived');
       // Navigate to archived versions to verify
-      modelRegistry
-        .findModelVersionsTableKebab()
-        .findDropdownItem('View archived versions')
-        .click();
+      modelRegistry.findModelVersionsTableKebab().click();
+      modelRegistry.findViewArchivedVersionsAction().click();
       modelVersionArchive
         .findArchiveVersionTable()
         .contains('td', testData.version1Name, { timeout: 10000 })
@@ -191,7 +201,8 @@ describe('Verify that models and versions can be archived and restored via model
       cy.step('Restore the archived version');
       // Find the archived version row and restore it
       const archivedVersionRow = modelVersionArchive.getRow(testData.version1Name);
-      archivedVersionRow.findKebabAction('Restore model version').click();
+      archivedVersionRow.findKebab().click();
+      modelRegistry.findRestoreModelVersionAction().click();
 
       // Confirm restore in the modal
       restoreVersionModal.findRestoreButton().click();

@@ -53,6 +53,7 @@ export enum ProjectObjectType {
   multiModel = 'multi-model',
   modelServer = 'model-server',
   modelCatalog = 'model-catalog',
+  mlflow = 'mlflow',
   registeredModels = 'registered-models',
   modelRegistryContext = 'modelRegistryContext',
   deployedModels = 'deployed-models',
@@ -74,6 +75,7 @@ export enum ProjectObjectType {
   exploreApplications = 'explore-applications',
   resources = 'resources',
   featureStore = 'feature-store',
+  promptManagement = 'prompt-management',
 }
 
 export const typedIconColor = (objectType: ProjectObjectType): string => {
@@ -92,6 +94,7 @@ export const typedIconColor = (objectType: ProjectObjectType): string => {
     case ProjectObjectType.pipelineExecution:
     case ProjectObjectType.pipelineArtifact:
     case ProjectObjectType.modelCatalog:
+    case ProjectObjectType.promptManagement:
       return 'var(--ai-pipeline--IconColor)';
     case ProjectObjectType.pipelineSetup:
       return 'var(--ai-set-up--IconColor)';
@@ -154,6 +157,7 @@ export const typedBackgroundColor = (objectType: ProjectObjectType): string => {
     case ProjectObjectType.pipelineExecution:
     case ProjectObjectType.pipelineArtifact:
     case ProjectObjectType.modelCatalog:
+    case ProjectObjectType.promptManagement:
       return 'var(--ai-pipeline--BackgroundColor)';
     case ProjectObjectType.pipelineSetup:
       return 'var(--ai-set-up--BackgroundColor)';

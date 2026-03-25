@@ -1,7 +1,12 @@
 import React from 'react';
 import { useHardwareProfileConfig } from '@odh-dashboard/internal/concepts/hardwareProfiles/useHardwareProfileConfig';
 import { useK8sNameDescriptionFieldData } from '@odh-dashboard/internal/concepts/k8s/K8sNameDescriptionField/K8sNameDescriptionField';
-import { extractK8sNameDescriptionFieldData } from '@odh-dashboard/internal/concepts/k8s/K8sNameDescriptionField/utils';
+import {
+  extractK8sNameDescriptionFieldData,
+  LimitNameResourceType,
+} from '@odh-dashboard/internal/concepts/k8s/K8sNameDescriptionField/utils';
+import { useAccessReview } from '@odh-dashboard/internal/api/index';
+import { accessReviewResource } from './steps/AdvancedOptionsStep';
 import { useModelFormatField } from './fields/ModelFormatField';
 import { useModelTypeField } from './fields/ModelTypeSelectField';
 import { useModelLocationData } from './fields/ModelLocationInputFields';
@@ -17,6 +22,7 @@ import { useCreateConnectionData } from './fields/CreateConnectionInputFields';
 import { useProjectSection } from './fields/ProjectSection';
 import { useDeploymentStrategyField } from './fields/DeploymentStrategyField';
 import { useDeploymentWizardReducer, type WizardFormAction } from './useDeploymentWizardReducer';
+import type { ExternalDataMap } from './ExternalDataLoader';
 
 export type UseModelDeploymentWizardState = WizardFormData & {
   loaded: {
@@ -24,6 +30,7 @@ export type UseModelDeploymentWizardState = WizardFormData & {
     modelDeploymentLoaded: boolean;
     advancedOptionsLoaded: boolean;
     summaryLoaded: boolean;
+    externalDataLoaded: boolean;
   };
   advancedOptions: {
     isExternalRouteVisible: boolean;
@@ -36,10 +43,17 @@ export type UseModelDeploymentWizardState = WizardFormData & {
 export const useModelDeploymentWizard = (
   initialData?: InitialWizardFormData,
   initialProjectName?: string | undefined,
+  externalDataMap: ExternalDataMap = {},
 ): UseModelDeploymentWizardState => {
   // Step 1: Model Source
   const modelType = useModelTypeField(initialData?.modelTypeField);
   const project = useProjectSection(initialProjectName);
+
+  const [canCreateRoleBindings] = useAccessReview({
+    ...accessReviewResource,
+    namespace: project.projectName ?? undefined,
+  });
+
   const modelLocationData = useModelLocationData(
     project.projectName,
     initialData?.modelLocationData,
@@ -59,6 +73,7 @@ export const useModelDeploymentWizard = (
   const k8sNameDesc = useK8sNameDescriptionFieldData({
     initialData: extractK8sNameDescriptionFieldData(initialData?.k8sNameDesc),
     editableK8sName: !initialData?.k8sNameDesc?.k8sName.state.immutable,
+    limitNameResourceType: LimitNameResourceType.MODEL_DEPLOYMENT,
   });
   const hardwareProfileConfig = useHardwareProfileConfig(...(initialData?.hardwareProfile ?? []));
   const modelFormatState = useModelFormatField(
@@ -98,6 +113,7 @@ export const useModelDeploymentWizard = (
     initialData?.tokenAuthentication ?? undefined,
     modelType,
     modelServer,
+    canCreateRoleBindings,
   );
 
   const runtimeArgs = useRuntimeArgsField(initialData?.runtimeArgs ?? undefined);
@@ -112,30 +128,53 @@ export const useModelDeploymentWizard = (
 
   // Step 4: Summary
 
-  const combinedFormHooksData: WizardFormData['state'] = {
-    project,
-    modelType,
-    k8sNameDesc,
-    hardwareProfileConfig,
-    modelFormatState,
-    modelLocationData: {
-      ...modelLocationData,
-      selectedConnection: modelLocationData.selectedConnection,
-    },
-    createConnectionData,
-    externalRoute,
-    tokenAuthentication,
-    numReplicas,
-    runtimeArgs,
-    environmentVariables,
-    modelAvailability,
-    modelServer,
-    deploymentStrategy,
-  };
+  const baseFormState: WizardFormData['state'] = React.useMemo(
+    () => ({
+      project,
+      modelType,
+      k8sNameDesc,
+      hardwareProfileConfig,
+      modelFormatState,
+      modelLocationData: {
+        ...modelLocationData,
+        selectedConnection: modelLocationData.selectedConnection,
+      },
+      createConnectionData,
+      externalRoute,
+      tokenAuthentication,
+      numReplicas,
+      runtimeArgs,
+      environmentVariables,
+      modelAvailability,
+      modelServer,
+      deploymentStrategy,
+      canCreateRoleBindings,
+    }),
+    [
+      project,
+      modelType,
+      k8sNameDesc,
+      hardwareProfileConfig,
+      modelFormatState,
+      modelLocationData,
+      createConnectionData,
+      externalRoute,
+      tokenAuthentication,
+      numReplicas,
+      runtimeArgs,
+      environmentVariables,
+      modelAvailability,
+      modelServer,
+      deploymentStrategy,
+      canCreateRoleBindings,
+    ],
+  );
 
-  const { state, dispatch, fields } = useDeploymentWizardReducer(
-    combinedFormHooksData,
+  // The reducer manages dynamic field state and computes active fields from merged state
+  const { state, dispatch, fields, externalDataLoaded } = useDeploymentWizardReducer(
+    baseFormState,
     initialData,
+    externalDataMap,
   );
 
   return {
@@ -146,8 +185,9 @@ export const useModelDeploymentWizard = (
     loaded: {
       modelSourceLoaded,
       modelDeploymentLoaded,
-      advancedOptionsLoaded: true, // TODO: Update if these get dependencies that we need to wait for
+      advancedOptionsLoaded: externalDataLoaded,
       summaryLoaded: true, // TODO: Update if these get dependencies that we need to wait for
+      externalDataLoaded,
     },
     advancedOptions: {
       isExternalRouteVisible: externalRoute.isVisible,

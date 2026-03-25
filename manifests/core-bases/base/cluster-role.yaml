@@ -224,6 +224,14 @@ rules:
     resources:
       - llamastackdistributions
   - apiGroups:
+      - trustyai.opendatahub.io
+    verbs:
+      - get
+      - list
+      - watch
+    resources:
+      - guardrailsorchestrators
+  - apiGroups:
       - feast.dev
     verbs:
       - get
@@ -231,6 +239,14 @@ rules:
       - watch
     resources:
       - featurestores
+  - apiGroups:
+      - mlflow.opendatahub.io
+    verbs:
+      - get
+      - list
+      - watch
+    resources:
+      - mlflows
   - verbs:
       - create
     apiGroups:

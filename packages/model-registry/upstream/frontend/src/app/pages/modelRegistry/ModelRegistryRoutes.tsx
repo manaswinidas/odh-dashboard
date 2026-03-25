@@ -14,6 +14,7 @@ import ArchiveModelVersionDetails from './screens/ModelVersionsArchive/ArchiveMo
 import RegisteredModelsArchiveDetails from './screens/RegisteredModelsArchive/RegisteredModelArchiveDetails';
 import RegisterModel from './screens/RegisterModel/RegisterModel';
 import RegisterVersion from './screens/RegisterModel/RegisterVersion';
+import ModelTransferJobs from './screens/ModelTransferJobs/ModelTransferJobs';
 import { generateVersionDetailsTabExtensionRoutes } from '~/odh/VersionDetailsTabExtensionRoutes';
 import { generateDetailsTabExtensionRoutes } from '~/odh/DetailsTabExtensionRoutes';
 import { useExtensions } from '@odh-dashboard/plugin-core';
@@ -36,6 +37,7 @@ const ModelRegistryRoutes: React.FC = () => {
         }
       >
         <Route index element={<ModelRegistry empty={false} />} />
+        <Route path="model-transfer-jobs" element={<ModelTransferJobs empty={false} />} />
         <Route path="registered-models/:registeredModelId">
           <Route index element={<Navigate to={ModelVersionsTab.OVERVIEW} replace />} />
 

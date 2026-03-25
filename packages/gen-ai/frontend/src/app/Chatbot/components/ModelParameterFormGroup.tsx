@@ -19,6 +19,7 @@ interface ModelParameterFormGroupProps {
   min?: number;
   max?: number;
   step?: number;
+  showPopoverCloseButton?: boolean;
 }
 
 const ModelParameterFormGroup: React.FunctionComponent<ModelParameterFormGroupProps> = ({
@@ -30,17 +31,19 @@ const ModelParameterFormGroup: React.FunctionComponent<ModelParameterFormGroupPr
   min = 0,
   max = 1,
   step = 0.1,
+  showPopoverCloseButton = true,
 }) => (
   <FormGroup
     fieldId={fieldId}
     label={
       <span>
         {label}
-        <Popover bodyContent={<div>{helpText}</div>}>
+        <Popover bodyContent={<div>{helpText}</div>} showClose={showPopoverCloseButton}>
           <Button
             variant="plain"
             aria-label={`More info for ${label.toLowerCase()} field`}
             onClick={(e) => e.preventDefault()}
+            style={{ marginLeft: 'var(--pf-t--global--spacer--xs)' }}
           >
             <HelpIcon />
           </Button>

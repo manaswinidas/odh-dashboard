@@ -34,13 +34,14 @@ export function filterDashboards(
 }
 
 /**
- * Build URL for the dashboard page
- * @param projectName - Selected project name (empty string for "All projects")
+ * Build URL for the dashboard page, preserving existing query params (like time range)
  * @param dashboardName - Selected dashboard name
+ * @param currentSearch - Optional current URL search string to preserve other params
  */
-export const buildDashboardUrl = (projectName: string, dashboardName: string): string => {
-  const path = projectName ? `${BASE_PATH}/${encodeURIComponent(projectName)}` : BASE_PATH;
-  return `${path}?${DASHBOARD_QUERY_PARAM}=${encodeURIComponent(dashboardName)}`;
+export const buildDashboardUrl = (dashboardName: string, currentSearch?: string): string => {
+  const params = new URLSearchParams(currentSearch);
+  params.set(DASHBOARD_QUERY_PARAM, dashboardName);
+  return `${BASE_PATH}?${params.toString()}`;
 };
 
 /**

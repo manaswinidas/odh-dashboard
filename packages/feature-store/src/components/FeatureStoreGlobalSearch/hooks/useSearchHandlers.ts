@@ -11,6 +11,7 @@ export interface ISearchItem {
   type: string;
   project: string;
   featureView?: string;
+  matched_tags?: Record<string, string>;
 }
 
 export interface UseSearchHandlersOptions {
@@ -33,14 +34,9 @@ export const useSearchHandlers = (
   const { onSearchChange, onClear, onSelect, project } = options;
   const navigate = useNavigate();
 
-  const {
-    setSearchValue,
-    setIsSearchOpen,
-    setIsSearching,
-    timeoutRef,
-    searchInputRef,
-    searchMenuRef,
-  } = state;
+  const { setSearchValue, setIsSearchOpen, setIsSearching, searchInputRef, searchMenuRef } = state;
+
+  const timeoutRef = React.useRef<NodeJS.Timeout>();
 
   const debouncedSearch = React.useCallback(
     (value: string) => {
@@ -57,7 +53,7 @@ export const useSearchHandlers = (
         }
       }, 300);
     },
-    [onSearchChange, setIsSearchOpen, setIsSearching, timeoutRef],
+    [onSearchChange, setIsSearchOpen, setIsSearching],
   );
 
   const handleSearchChange = React.useCallback(
@@ -161,7 +157,7 @@ export const useSearchHandlers = (
         clearTimeout(timeoutRef.current);
       }
     };
-  }, [timeoutRef]);
+  }, []);
 
   return {
     handleSearchChange,

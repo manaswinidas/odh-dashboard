@@ -42,16 +42,26 @@ const (
 	// AI Assets (AAA) endpoints
 	MCPServersListPath = ApiPathPrefix + "/aaa/mcps"
 	ModelsAAPath       = ApiPathPrefix + "/aaa/models"
+	VectorStoresAAPath = ApiPathPrefix + "/aaa/vectorstores"
+
+	// External endpoints
+	ExternalModelsPath       = ApiPathPrefix + "/models/external"
+	VerifyExternalModelPath  = ApiPathPrefix + "/models/external/verify"
+	ExternalVectorStoresPath = ApiPathPrefix + "/vectorstores/external"
 
 	// Model as a Service (MaaS) endpoints
 	MaaSModelsPath = ApiPathPrefix + "/maas/models"
 	MaaSTokensPath = ApiPathPrefix + "/maas/tokens"
 
-	// Guardrails endpoint (fetched from dashboard namespace like MCP servers)
-	// Returns status of the "custom-guardrails" CR
+	// MLflow endpoints
+	MLflowPromptsPath        = ApiPathPrefix + "/mlflow/prompts"
+	MLflowPromptPath         = ApiPathPrefix + "/mlflow/prompts/:name"
+	MLflowPromptVersionsPath = ApiPathPrefix + "/mlflow/prompts/:name/versions"
+	MLflowPromptVersionPath  = ApiPathPrefix + "/mlflow/prompts/:name/versions/:version"
+
 	GuardrailsStatusPath = ApiPathPrefix + "/guardrails/status"
 
-	// LSD Safety Config endpoint - returns configured guardrail models and shields
+	// LSD Safety endpoint - returns configured guardrail models and shields
 	// Parsed from llama-stack-config ConfigMap
-	LSDSafetyConfigPath = ApiPathPrefix + "/lsd/safety/config"
+	LSDSafetyPath = ApiPathPrefix + "/lsd/safety"
 )

@@ -191,8 +191,8 @@ export const navigateToPlayground = (namespace: string): void => {
   appChrome.visit();
   playgroundPage.visit(namespace);
   playgroundPage.verifyOnPlaygroundPage(namespace);
-  playgroundPage.mcpPanel.expandMCPPanelIfNeeded();
-  playgroundPage.mcpPanel.verifyMCPPanelVisible();
+  playgroundPage.mcpTab.openMCPTab();
+  playgroundPage.mcpTab.verifyMCPTabVisible();
 };
 
 /**
@@ -222,6 +222,9 @@ export const initAutoConnectIntercepts = ({
   ];
 
   cy.interceptGenAi('GET /api/v1/aaa/mcps', { query: { namespace } }, mockMCPServers(mcpServers));
+
+  // Mock user endpoint to prevent k8s client errors in test environment
+  cy.interceptGenAi('GET /api/v1/user', { data: { username: 'test-user' } });
 
   // Mock auto-connect status and tools
   mockMCPStatusAutoConnect(serverUrl);
@@ -275,6 +278,9 @@ export const initHighToolsCountIntercepts = ({
   ];
 
   cy.interceptGenAi('GET /api/v1/aaa/mcps', { query: { namespace } }, mockMCPServers(mcpServers));
+
+  // Mock user endpoint to prevent k8s client errors in test environment
+  cy.interceptGenAi('GET /api/v1/user', { data: { username: 'test-user' } });
 
   // Mock auto-connect status and tools with high count
   mockMCPStatusAutoConnect(serverUrl);

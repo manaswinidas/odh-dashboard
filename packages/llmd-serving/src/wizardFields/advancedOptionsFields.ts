@@ -4,7 +4,7 @@ import type {
   TokenAuthField,
   DeploymentStrategyField,
 } from '@odh-dashboard/model-serving/types/form-data';
-import { LLMD_SERVING_ID } from '../../extensions/extensions';
+import { LLMD_OPTION } from '../deployments/server';
 
 export const externalRouteField: ExternalRouteField = {
   id: 'externalRoute',
@@ -12,8 +12,9 @@ export const externalRouteField: ExternalRouteField = {
   isVisible: false, // Hide external route for LLMD deployments
   isActive: (wizardFormData) => {
     return (
-      wizardFormData.modelType?.data === ServingRuntimeModelType.GENERATIVE &&
-      wizardFormData.modelServer?.data?.name === LLMD_SERVING_ID
+      wizardFormData.modelType?.data?.type === ServingRuntimeModelType.GENERATIVE &&
+      !wizardFormData.modelType.data.legacyVLLM &&
+      wizardFormData.modelServer?.data?.selection?.name === LLMD_OPTION.name
     );
   },
 };
@@ -24,8 +25,9 @@ export const tokenAuthField: TokenAuthField = {
   initialValue: true, // Default to checked for LLMD deployments
   isActive: (wizardFormData) => {
     return (
-      wizardFormData.modelType?.data === ServingRuntimeModelType.GENERATIVE &&
-      wizardFormData.modelServer?.data?.name === LLMD_SERVING_ID
+      wizardFormData.modelType?.data?.type === ServingRuntimeModelType.GENERATIVE &&
+      !wizardFormData.modelType.data.legacyVLLM &&
+      wizardFormData.modelServer?.data?.selection?.name === LLMD_OPTION.name
     );
   },
 };
@@ -36,8 +38,9 @@ export const deploymentStrategyField: DeploymentStrategyField = {
   isVisible: false,
   isActive: (wizardFormData): boolean => {
     return (
-      wizardFormData.modelType?.data === ServingRuntimeModelType.GENERATIVE &&
-      wizardFormData.modelServer?.data?.name === LLMD_SERVING_ID
+      wizardFormData.modelType?.data?.type === ServingRuntimeModelType.GENERATIVE &&
+      !wizardFormData.modelType.data.legacyVLLM &&
+      wizardFormData.modelServer?.data?.selection?.name === LLMD_OPTION.name
     );
   },
 };

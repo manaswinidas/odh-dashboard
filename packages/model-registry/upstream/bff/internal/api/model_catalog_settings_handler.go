@@ -88,7 +88,7 @@ func (app *App) GetCatalogSourceConfigHandler(w http.ResponseWriter, r *http.Req
 
 }
 
-func (app *App) CreateCatalogSourceConfigHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+func (app *App) CreateCatalogSourceConfigHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	ctx := r.Context()
 
 	namespace, ok := ctx.Value(constants.NamespaceHeaderParameterKey).(string)
@@ -105,7 +105,7 @@ func (app *App) CreateCatalogSourceConfigHandler(w http.ResponseWriter, r *http.
 
 	var envelope ModelCatalogSourcePayloadEnvelope
 	if err := json.NewDecoder(r.Body).Decode(&envelope); err != nil {
-		app.serverErrorResponse(w, r, fmt.Errorf("error decoding JSON:: %v", err.Error()))
+		app.serverErrorResponse(w, r, fmt.Errorf("error decoding JSON: %v", err.Error()))
 		return
 	}
 
@@ -117,6 +117,8 @@ func (app *App) CreateCatalogSourceConfigHandler(w http.ResponseWriter, r *http.
 			errors.Is(err, repositories.ErrUnsupportedCatalogType) ||
 			errors.Is(err, repositories.ErrValidationFailed) {
 			app.badRequestResponse(w, r, err)
+		} else if errors.Is(err, repositories.ErrCatalogSourceConflict) {
+			app.conflictResponse(w, r, err.Error())
 		} else {
 			app.serverErrorResponse(w, r, err)
 		}
@@ -153,7 +155,7 @@ func (app *App) UpdateCatalogSourceConfigHandler(w http.ResponseWriter, r *http.
 
 	var envelope ModelCatalogSourcePayloadEnvelope
 	if err := json.NewDecoder(r.Body).Decode(&envelope); err != nil {
-		app.serverErrorResponse(w, r, fmt.Errorf("error decoding JSON:: %v", err.Error()))
+		app.serverErrorResponse(w, r, fmt.Errorf("error decoding JSON: %v", err.Error()))
 		return
 	}
 
@@ -169,6 +171,8 @@ func (app *App) UpdateCatalogSourceConfigHandler(w http.ResponseWriter, r *http.
 		} else if errors.Is(err, repositories.ErrCannotChangeDefaultSource) ||
 			errors.Is(err, repositories.ErrCannotChangeType) {
 			app.forbiddenResponse(w, r, err.Error())
+		} else if errors.Is(err, repositories.ErrCatalogSourceConflict) {
+			app.conflictResponse(w, r, err.Error())
 		} else {
 			app.serverErrorResponse(w, r, err)
 		}
@@ -210,6 +214,8 @@ func (app *App) DeleteCatalogSourceConfigHandler(w http.ResponseWriter, r *http.
 			app.forbiddenResponse(w, r, err.Error())
 		} else if errors.Is(err, repositories.ErrCatalogSourceNotFound) {
 			app.notFoundResponse(w, r)
+		} else if errors.Is(err, repositories.ErrCatalogSourceConflict) {
+			app.conflictResponse(w, r, err.Error())
 		} else {
 			app.serverErrorResponse(w, r, err)
 		}

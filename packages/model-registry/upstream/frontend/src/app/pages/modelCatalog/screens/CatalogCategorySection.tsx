@@ -1,6 +1,7 @@
 import {
   Alert,
   Button,
+  Content,
   Flex,
   FlexItem,
   Grid,
@@ -14,8 +15,13 @@ import { ArrowRightIcon, SearchIcon } from '@patternfly/react-icons';
 import { CatalogSourceList } from '~/app/modelCatalogTypes';
 import { useCatalogModelsBySources } from '~/app/hooks/modelCatalog/useCatalogModelsBySource';
 import EmptyModelCatalogState from '~/app/pages/modelCatalog/EmptyModelCatalogState';
-import { getSourceFromSourceId } from '~/app/pages/modelCatalog/utils/modelCatalogUtils';
+import {
+  getLabelDescription,
+  getLabelDisplayName,
+  getSourceFromSourceId,
+} from '~/app/pages/modelCatalog/utils/modelCatalogUtils';
 import ModelCatalogCard from '~/app/pages/modelCatalog/components/ModelCatalogCard';
+import { ModelCatalogContext } from '~/app/context/modelCatalog/ModelCatalogContext';
 
 type CategorySectionProps = {
   label: string;
@@ -23,7 +29,6 @@ type CategorySectionProps = {
   pageSize: number;
   catalogSources: CatalogSourceList | null;
   onShowMore: (label: string) => void;
-  displayName?: string;
 };
 
 const CatalogCategorySection: React.FC<CategorySectionProps> = ({
@@ -32,8 +37,8 @@ const CatalogCategorySection: React.FC<CategorySectionProps> = ({
   pageSize,
   catalogSources,
   onShowMore,
-  displayName,
 }) => {
+  const { catalogLabels } = React.useContext(ModelCatalogContext);
   const { catalogModels, catalogModelsLoaded, catalogModelsLoadError } = useCatalogModelsBySources(
     undefined,
     label,
@@ -42,6 +47,10 @@ const CatalogCategorySection: React.FC<CategorySectionProps> = ({
   );
 
   const itemsToDisplay = catalogModels.items.slice(0, pageSize);
+
+  // Get display name and description from labels API
+  const categoryTitle = getLabelDisplayName(label, catalogLabels);
+  const description = getLabelDescription(label, catalogLabels);
 
   return (
     <>
@@ -53,8 +62,13 @@ const CatalogCategorySection: React.FC<CategorySectionProps> = ({
         >
           <FlexItem>
             <Title headingLevel="h3" size="lg" data-testid={`title ${label}`}>
-              {`${displayName ?? label} models`}
+              {categoryTitle}
             </Title>
+            {description && (
+              <Content component="p" className="pf-v6-u-color-200 pf-v6-u-mt-sm">
+                {description}
+              </Content>
+            )}
           </FlexItem>
 
           {catalogModels.items.length >= 4 && (
@@ -68,7 +82,7 @@ const CatalogCategorySection: React.FC<CategorySectionProps> = ({
                 data-testid={`show-more-button ${label.toLowerCase().replace(/\s+/g, '-')}`}
                 onClick={() => onShowMore(label)}
               >
-                Show all {displayName ?? label} models
+                Show all {categoryTitle}
               </Button>
             </FlexItem>
           )}
@@ -77,7 +91,7 @@ const CatalogCategorySection: React.FC<CategorySectionProps> = ({
         {catalogModelsLoadError ? (
           <Alert
             variant="danger"
-            title={`Failed to load ${displayName ?? label} models`}
+            title={`Failed to load ${categoryTitle}`}
             data-testid={`error-state ${label}`}
           >
             {catalogModelsLoadError.message}

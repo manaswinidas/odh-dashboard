@@ -78,6 +78,7 @@
     "ws": "^8.18.1"
   },
   "devDependencies": {
+    "cross-env": "^10.1.0",
     "dotenv": "^16.4.7",
     "dotenv-expand": "^5.1.0",
     "husky": "^9.1.7",
@@ -97,10 +98,10 @@
       "react-router-dom": "^7.6.2",
       "react": "^18.2.0",
       "react-dom": "^18.2.0",
-      "@patternfly/react-core": "^6.4.0",
+      "@patternfly/react-core": "^6.4.1",
       "@patternfly/react-icons": "^6.4.0",
       "@patternfly/react-styles": "^6.4.0",
-      "@patternfly/react-table": "^6.4.0",
+      "@patternfly/react-table": "^6.4.1",
       "@patternfly/react-virtualized-extension": "^6.2.0"
     },
     "@patternfly/react-topology": {

@@ -4,15 +4,19 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import { GenAiContext } from '~/app/context/GenAiContext';
-import type { AIModel, LlamaModel, MaaSModel } from '~/app/types';
+import type { AIModel, LlamaModel } from '~/app/types';
 import AIModelTableRow from '~/app/AIAssets/components/AIModelTableRow';
 import { mockGenAiContextValue } from '~/__mocks__/mockGenAiContext';
 
 // Mock the components and utilities
-jest.mock('../AIModelsTableRowEndpoint', () => ({
+jest.mock('../EndpointDetailModal', () => ({
   __esModule: true,
-  default: ({ isExternal }: { isExternal?: boolean }) => (
-    <div data-testid={isExternal ? 'external-endpoint' : 'internal-endpoint'}>endpoint</div>
+  default: ({ onClose }: { onClose: () => void }) => (
+    <div data-testid="endpoint-detail-modal">
+      <button onClick={onClose} data-testid="close-endpoint-modal">
+        Close
+      </button>
+    </div>
   ),
 }));
 
@@ -44,6 +48,11 @@ jest.mock('mod-arch-shared', () => ({
   ),
 }));
 
+const mockFireMiscTrackingEvent = jest.fn();
+jest.mock('@odh-dashboard/internal/concepts/analyticsTracking/segmentIOUtils', () => ({
+  fireMiscTrackingEvent: (...args: unknown[]) => mockFireMiscTrackingEvent(...args),
+}));
+
 const mockNavigate = jest.fn();
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
@@ -73,6 +82,7 @@ const createMockAIModel = (overrides?: Partial<AIModel>): AIModel => ({
   display_name: 'Test Model',
   internalEndpoint: 'http://internal',
   externalEndpoint: 'http://external',
+  model_source_type: 'namespace',
   sa_token: {
     name: 'token-name',
     token_name: 'token',
@@ -92,8 +102,7 @@ const createMockPlaygroundModel = (modelId: string): LlamaModel => ({
 describe('AIModelTableRow', () => {
   const defaultProps = {
     lsdStatus: null,
-    aiModels: [] as AIModel[],
-    maasModels: [] as MaaSModel[],
+    allModels: [] as AIModel[],
     playgroundModels: [] as LlamaModel[],
   };
 
@@ -110,10 +119,10 @@ describe('AIModelTableRow', () => {
     );
 
     expect(screen.getByTestId('model-info')).toHaveTextContent('Test Model');
-    expect(screen.getByTestId('truncated-text')).toHaveTextContent('Test model description');
+    expect(screen.getByTestId('truncated-text')).toHaveTextContent('llm');
   });
 
-  it('should render internal and external endpoints', () => {
+  it('should render View button in endpoints cell', () => {
     const model = createMockAIModel();
     render(
       <TestWrapper>
@@ -121,8 +130,46 @@ describe('AIModelTableRow', () => {
       </TestWrapper>,
     );
 
-    expect(screen.getByTestId('internal-endpoint')).toBeInTheDocument();
-    expect(screen.getByTestId('external-endpoint')).toBeInTheDocument();
+    expect(screen.getByTestId('endpoint-view-button')).toBeInTheDocument();
+    expect(screen.getByTestId('endpoint-view-button')).toHaveTextContent('View');
+  });
+
+  it('should open endpoint detail modal when View button is clicked', () => {
+    const model = createMockAIModel();
+    render(
+      <TestWrapper>
+        <AIModelTableRow {...defaultProps} model={model} />
+      </TestWrapper>,
+    );
+
+    fireEvent.click(screen.getByTestId('endpoint-view-button'));
+    expect(screen.getByTestId('endpoint-detail-modal')).toBeInTheDocument();
+  });
+
+  it('should close endpoint detail modal when closed', () => {
+    const model = createMockAIModel();
+    render(
+      <TestWrapper>
+        <AIModelTableRow {...defaultProps} model={model} />
+      </TestWrapper>,
+    );
+
+    fireEvent.click(screen.getByTestId('endpoint-view-button'));
+    expect(screen.getByTestId('endpoint-detail-modal')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('close-endpoint-modal'));
+    expect(screen.queryByTestId('endpoint-detail-modal')).not.toBeInTheDocument();
+  });
+
+  it('should render View button for MaaS models', () => {
+    const model = createMockAIModel({ model_source_type: 'maas' });
+    render(
+      <TestWrapper>
+        <AIModelTableRow {...defaultProps} model={model} />
+      </TestWrapper>,
+    );
+
+    expect(screen.getByTestId('endpoint-view-button')).toBeInTheDocument();
   });
 
   it('should render use case', () => {
@@ -137,7 +184,7 @@ describe('AIModelTableRow', () => {
   });
 
   describe('Status', () => {
-    it('should show Active status when model is Running', () => {
+    it('should show Ready status when model is Running', () => {
       const model = createMockAIModel({ status: 'Running' });
       render(
         <TestWrapper>
@@ -145,7 +192,7 @@ describe('AIModelTableRow', () => {
         </TestWrapper>,
       );
 
-      expect(screen.getByText('Active')).toBeInTheDocument();
+      expect(screen.getByText('Ready')).toBeInTheDocument();
     });
 
     it('should show Inactive status when model is not Running', () => {
@@ -157,6 +204,17 @@ describe('AIModelTableRow', () => {
       );
 
       expect(screen.getByText('Inactive')).toBeInTheDocument();
+    });
+
+    it('should show Unknown status when model status is not Running or Stop', () => {
+      const model = createMockAIModel({ status: 'Unknown' });
+      render(
+        <TestWrapper>
+          <AIModelTableRow {...defaultProps} model={model} />
+        </TestWrapper>,
+      );
+
+      expect(screen.getByText('Unknown')).toBeInTheDocument();
     });
   });
 
@@ -199,6 +257,32 @@ describe('AIModelTableRow', () => {
 
     it('should disable "Try in playground" button when model is not Running', () => {
       const model = createMockAIModel({ model_id: 'test-model-id', status: 'Stop' });
+      const playgroundModel = createMockPlaygroundModel('test-model-id');
+
+      render(
+        <TestWrapper>
+          <AIModelTableRow {...defaultProps} model={model} playgroundModels={[playgroundModel]} />
+        </TestWrapper>,
+      );
+
+      const button = screen.getByText('Try in playground');
+      expect(button.closest('button')).toBeDisabled();
+    });
+
+    it('should not disable "Add to playground" button when model is embedding type', () => {
+      const model = createMockAIModel({ model_type: 'embedding' });
+      render(
+        <TestWrapper>
+          <AIModelTableRow {...defaultProps} model={model} />
+        </TestWrapper>,
+      );
+
+      const button = screen.getByText('Add to playground');
+      expect(button.closest('button')).not.toBeDisabled();
+    });
+
+    it('should disable "Try in playground" button when model is embedding type', () => {
+      const model = createMockAIModel({ model_id: 'test-model-id', model_type: 'embedding' });
       const playgroundModel = createMockPlaygroundModel('test-model-id');
 
       render(
@@ -278,6 +362,134 @@ describe('AIModelTableRow', () => {
 
       // The modal should be open with the model pre-selected
       expect(screen.getByTestId('configuration-modal')).toBeInTheDocument();
+    });
+  });
+
+  describe('Tracking', () => {
+    it('should track assetType as maas_model for MaaS models on playground launch', () => {
+      const model = createMockAIModel({ model_id: 'maas-model-id', model_source_type: 'maas' });
+      const playgroundModel = createMockPlaygroundModel('maas-model-id');
+
+      render(
+        <TestWrapper>
+          <AIModelTableRow {...defaultProps} model={model} playgroundModels={[playgroundModel]} />
+        </TestWrapper>,
+      );
+
+      fireEvent.click(screen.getByText('Try in playground'));
+
+      expect(mockFireMiscTrackingEvent).toHaveBeenCalledWith(
+        'Available Endpoints Playground Launched',
+        { assetType: 'maas_model', assetId: 'maas-model-id' },
+      );
+    });
+
+    it('should track assetType as model for non-MaaS models on playground launch', () => {
+      const model = createMockAIModel({ model_id: 'ns-model-id', model_source_type: 'namespace' });
+      const playgroundModel = createMockPlaygroundModel('ns-model-id');
+
+      render(
+        <TestWrapper>
+          <AIModelTableRow {...defaultProps} model={model} playgroundModels={[playgroundModel]} />
+        </TestWrapper>,
+      );
+
+      fireEvent.click(screen.getByText('Try in playground'));
+
+      expect(mockFireMiscTrackingEvent).toHaveBeenCalledWith(
+        'Available Endpoints Playground Launched',
+        { assetType: 'model', assetId: 'ns-model-id' },
+      );
+    });
+  });
+
+  describe('External models', () => {
+    it('should show "Add to playground" button for custom_endpoint models', () => {
+      const model = createMockAIModel({
+        model_source_type: 'custom_endpoint',
+        status: 'Running',
+      });
+      render(
+        <TestWrapper>
+          <AIModelTableRow {...defaultProps} model={model} />
+        </TestWrapper>,
+      );
+
+      expect(screen.getByText('Add to playground')).toBeInTheDocument();
+      expect(screen.getByText('Add to playground').closest('button')).not.toBeDisabled();
+    });
+
+    it('should open configuration modal when clicking "Add to playground" for external models', () => {
+      const model = createMockAIModel({
+        model_source_type: 'custom_endpoint',
+        status: 'Running',
+      });
+      render(
+        <TestWrapper>
+          <AIModelTableRow {...defaultProps} model={model} />
+        </TestWrapper>,
+      );
+
+      const addButton = screen.getByText('Add to playground');
+      fireEvent.click(addButton);
+
+      expect(screen.getByTestId('configuration-modal')).toBeInTheDocument();
+    });
+
+    it('should handle external models already in playground', () => {
+      const model = createMockAIModel({
+        model_id: 'external-model-id',
+        model_source_type: 'custom_endpoint',
+        status: 'Running',
+      });
+      const playgroundModel = createMockPlaygroundModel('external-model-id');
+
+      render(
+        <TestWrapper>
+          <AIModelTableRow {...defaultProps} model={model} playgroundModels={[playgroundModel]} />
+        </TestWrapper>,
+      );
+
+      expect(screen.getByText('Try in playground')).toBeInTheDocument();
+    });
+
+    it('should navigate to playground when clicking "Try in playground" for external models', () => {
+      const model = createMockAIModel({
+        model_id: 'external-model-id',
+        model_source_type: 'custom_endpoint',
+        status: 'Running',
+      });
+      const playgroundModel = createMockPlaygroundModel('external-model-id');
+
+      render(
+        <TestWrapper>
+          <AIModelTableRow {...defaultProps} model={model} playgroundModels={[playgroundModel]} />
+        </TestWrapper>,
+      );
+
+      const tryButton = screen.getByText('Try in playground');
+      fireEvent.click(tryButton);
+
+      expect(mockNavigate).toHaveBeenCalledWith('/gen-ai-studio/playground/test-namespace', {
+        state: {
+          model: 'provider/external-model-id',
+        },
+      });
+    });
+
+    it('should enable "Add to playground" button for custom_endpoint models regardless of status', () => {
+      const model = createMockAIModel({
+        model_source_type: 'custom_endpoint',
+        status: 'Stop',
+      });
+      render(
+        <TestWrapper>
+          <AIModelTableRow {...defaultProps} model={model} />
+        </TestWrapper>,
+      );
+
+      const button = screen.getByText('Add to playground');
+      expect(button.closest('button')).not.toBeDisabled();
     });
   });
 });

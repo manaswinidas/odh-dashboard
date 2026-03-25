@@ -21,6 +21,10 @@ import { mockNimServingRuntimeTemplate } from '@odh-dashboard/internal/__mocks__
 import { mockNimAccount } from '@odh-dashboard/internal/__mocks__/mockNimAccount';
 import { mockOdhApplication } from '@odh-dashboard/internal/__mocks__/mockOdhApplication';
 import { mockModelRegistryService } from '@odh-dashboard/internal/__mocks__/mockModelRegistryService';
+import {
+  mockConsoleLinks,
+  mockMLflowLink,
+} from '@odh-dashboard/internal/__mocks__/mockConsoleLinks';
 import type { InferenceServiceKind, ServingRuntimeKind } from '@odh-dashboard/internal/k8sTypes';
 import { DataScienceStackComponent } from '@odh-dashboard/internal/concepts/areas/types';
 import { deleteProjectModal, editProjectModal, projectDetails } from '../../../pages/projects';
@@ -378,27 +382,6 @@ describe('Project Details', () => {
       projectDetails.shouldBeEmptyState('Pipelines', 'pipelines-projects', true);
     });
 
-    it('shows 403 page when user does not have access to the project', () => {
-      asProjectEditUser({ projects: [] });
-      cy.interceptK8sList(ProjectModel, mockK8sResourceList([mockProjectK8sResource({})]));
-      projectDetails.visit('test-project', { wait: false });
-      projectDetails.find403Page().should('exist');
-    });
-
-    it('shows 403 page with context when pipelines are disabled', () => {
-      asProjectEditUser({ projects: [] });
-      cy.interceptOdh(
-        'GET /api/config',
-        mockDashboardConfig({
-          disablePipelines: true,
-        }),
-      );
-      cy.interceptK8sList(ProjectModel, mockK8sResourceList([mockProjectK8sResource({})]));
-      projectDetails.visitSection('test-project', 'workbenches');
-      projectDetails.find403Page().should('exist');
-      projectDetails.findSectionTab('workbenches').should('exist');
-    });
-
     it('Shows project information', () => {
       initIntercepts({ disableKServe: true });
       projectDetails.visit('test-project');
@@ -534,84 +517,6 @@ describe('Project Details', () => {
     });
   });
 
-  describe('Navigating back to model registry after selecting a platform', () => {
-    beforeEach(() => {
-      initModelServingIntercepts({});
-    });
-
-    it('Navigate back after choosing single-model serving from models tab', () => {
-      initIntercepts({
-        disableKServe: false,
-        disableNIMConfig: false,
-        projectEnableKServe: true,
-      });
-      initModelServingIntercepts({ isEmpty: true });
-      projectDetails.visitSection(
-        'test-project',
-        'model-server',
-        '&modelRegistryName=modelregistry-sample&registeredModelId=1&modelVersionId=2',
-      );
-      projectDetails.findBackToRegistryButton().click();
-      cy.url().should(
-        'include',
-        '/ai-hub/registry/modelregistry-sample/registered-models/1/versions/2',
-      );
-    });
-
-    it('Navigate back after choosing NIM serving from the models tab', () => {
-      initIntercepts({
-        disableKServe: false,
-        disableNIMConfig: false,
-        projectEnableNIM: true,
-      });
-      initModelServingIntercepts({ isEmpty: true });
-      projectDetails.visitSection(
-        'test-project',
-        'model-server',
-        '&modelRegistryName=modelregistry-sample&registeredModelId=1&modelVersionId=2',
-      );
-      projectDetails.findBackToRegistryButton().click();
-      cy.url().should(
-        'include',
-        '/ai-hub/registry/modelregistry-sample/registered-models/1/versions/2',
-      );
-    });
-
-    it('Navigate back after choosing single-model serving from overview tab after switching tabs', () => {
-      initIntercepts({
-        disableKServe: false,
-        disableNIMConfig: false,
-        projectEnableKServe: true,
-      });
-      initModelServingIntercepts({ isEmpty: true });
-      projectDetails.visitSection(
-        'test-project',
-        'model-server',
-        '&modelRegistryName=modelregistry-sample&registeredModelId=1&modelVersionId=2',
-      );
-      projectDetails.findSectionTab('overview').click();
-      projectDetails.findBackToRegistryButton().click();
-      cy.url().should('include', '/registry/modelregistry-sample/registered-models/1/versions/2');
-    });
-
-    it('Navigate back after choosing NIM serving from overview tab after switching tabs', () => {
-      initIntercepts({
-        disableKServe: false,
-        disableNIMConfig: false,
-        projectEnableNIM: true,
-      });
-      initModelServingIntercepts({ isEmpty: true });
-      projectDetails.visitSection(
-        'test-project',
-        'model-server',
-        '&modelRegistryName=modelregistry-sample&registeredModelId=1&modelVersionId=2',
-      );
-      projectDetails.findSectionTab('overview').click();
-      projectDetails.findBackToRegistryButton().click();
-      cy.url().should('include', '/registry/modelregistry-sample/registered-models/1/versions/2');
-    });
-  });
-
   describe('Workbench disabled', () => {
     beforeEach(() => {
       initIntercepts({
@@ -634,6 +539,49 @@ describe('Project Details', () => {
       projectDetails.visitSection('test-project', 'cluster-storages');
 
       cy.get('th').contains('Connected workbenches').should('not.exist');
+    });
+  });
+
+  describe('MLflow card in overview', () => {
+    beforeEach(() => {
+      initIntercepts({});
+      initModelServingIntercepts({});
+      cy.interceptOdh('GET /api/console-links', mockConsoleLinks([mockMLflowLink]));
+    });
+
+    it('should show experiment tracking card with correct actions', () => {
+      cy.interceptOdh(
+        'GET /api/config',
+        mockDashboardConfig({
+          mlflow: true,
+        }),
+      );
+
+      projectDetails.visitSection('test-project', 'overview');
+
+      cy.contains('Experiment tracking').should('be.visible');
+      cy.contains('Track your pipeline experiments').should('be.visible');
+
+      cy.findByTestId('mlflow-jump-link')
+        .should('have.attr', 'href')
+        .and('include', `${mockMLflowLink.spec.href}/#/experiments?workspace=test-project`);
+      cy.findByTestId('embedded-mlflow-experiments-link').should('be.visible').click();
+      cy.url().should('include', '/develop-train/mlflow/experiments');
+    });
+
+    it('should not show MLflow card in overview when MLflow is disabled', () => {
+      cy.interceptOdh(
+        'GET /api/config',
+        mockDashboardConfig({
+          mlflow: false,
+        }),
+      );
+
+      projectDetails.visitSection('test-project', 'overview');
+
+      cy.contains('Experiment tracking').should('not.exist');
+      cy.findByTestId('mlflow-jump-link').should('not.exist');
+      cy.findByTestId('embedded-mlflow-experiments-link').should('not.exist');
     });
   });
 

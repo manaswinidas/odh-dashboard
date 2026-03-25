@@ -65,7 +65,9 @@ class ModelRegistry {
   }
 
   navigate() {
-    appChrome.findNavItem({ name: 'Registry', rootSection: 'AI hub' }).click();
+    appChrome
+      .findNavItem({ name: 'Registry', rootSection: 'AI hub', subSection: 'Models' })
+      .click();
     this.wait();
   }
 
@@ -129,12 +131,16 @@ class ModelRegistry {
   }
 
   tabEnabled() {
-    appChrome.findNavItem({ name: 'Registry', rootSection: 'AI hub' }).should('exist');
+    appChrome
+      .findNavItem({ name: 'Registry', rootSection: 'AI hub', subSection: 'Models' })
+      .should('exist');
     return this;
   }
 
   tabDisabled() {
-    appChrome.findNavItem({ name: 'Registry', rootSection: 'AI hub' }).should('not.exist');
+    appChrome
+      .findNavItem({ name: 'Registry', rootSection: 'AI hub', subSection: 'Models' })
+      .should('not.exist');
     return this;
   }
 
@@ -253,12 +259,12 @@ class ModelRegistry {
     return cy.findByTestId('deployments-tab');
   }
 
-  findInferenceServiceTable() {
-    return cy.findByTestId('inference-service-table');
+  findDeploymentsTable() {
+    return cy.findByTestId('deployments-table');
   }
 
-  getInferenceServiceRow(name: string) {
-    return this.findInferenceServiceTable()
+  getDeploymentRow(name: string) {
+    return this.findDeploymentsTable()
       .find('tbody')
       .find('[data-label="Name"]')
       .contains(name)
@@ -299,6 +305,22 @@ class ModelRegistry {
 
   findEmptyStateNonAdminHelpButton() {
     return cy.findByRole('button', { name: "Who's my administrator?" });
+  }
+
+  findDeployAction() {
+    return cy.findByRole('menuitem', { name: /Deploy/ });
+  }
+
+  findArchiveModelVersionAction() {
+    return cy.findByTestId('archive-model-version-action');
+  }
+
+  findRestoreModelVersionAction() {
+    return cy.findByTestId('restore-model-version-action');
+  }
+
+  findViewArchivedVersionsAction() {
+    return cy.findByTestId('view-archived-versions-action');
   }
 }
 

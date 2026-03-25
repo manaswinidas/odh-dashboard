@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	helper "github.com/opendatahub-io/gen-ai/internal/helpers"
 	"github.com/opendatahub-io/gen-ai/internal/integrations/llamastack"
 	"github.com/opendatahub-io/gen-ai/internal/integrations/maas"
+	mlflowpkg "github.com/opendatahub-io/gen-ai/internal/integrations/mlflow"
 	"github.com/rs/cors"
 )
 
@@ -98,6 +100,50 @@ func (app *App) InjectRequestIdentity(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), constants.RequestIdentityKey, identity)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// RequireGuardrailAccess validates identity and checks CanListGuardrailsOrchestrator permissions.
+func (app *App) RequireGuardrailAccess(next func(http.ResponseWriter, *http.Request, httprouter.Params)) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+		if app.config.AuthMethod == config.AuthMethodDisabled {
+			next(w, r, ps)
+			return
+		}
+
+		ctx := r.Context()
+		identity, ok := ctx.Value(constants.RequestIdentityKey).(*integrations.RequestIdentity)
+
+		if !ok || identity == nil {
+			app.badRequestResponse(w, r, fmt.Errorf("missing RequestIdentity in context"))
+			return
+		}
+
+		if err := app.kubernetesClientFactory.ValidateRequestIdentity(identity); err != nil {
+			app.badRequestResponse(w, r, err)
+			return
+		}
+
+		if namespace, ok := ctx.Value(constants.NamespaceQueryParameterKey).(string); ok && namespace != "" {
+			k8sClient, err := app.kubernetesClientFactory.GetClient(ctx)
+			if err != nil {
+				app.serverErrorResponse(w, r, fmt.Errorf("failed to get Kubernetes client: %w", err))
+				return
+			}
+
+			allowed, err := k8sClient.CanListGuardrailsOrchestrator(ctx, identity, namespace)
+			if err != nil {
+				app.handleK8sClientError(w, r, err)
+				return
+			}
+
+			if !allowed {
+				app.forbiddenResponse(w, r, "user does not have permission to access guardrails in this namespace")
+				return
+			}
+		}
+
+		next(w, r, ps)
+	}
 }
 
 func (app *App) RequireAccessToService(next func(http.ResponseWriter, *http.Request, httprouter.Params)) httprouter.Handle {
@@ -195,7 +241,7 @@ func (app *App) AttachLlamaStackClient(next func(http.ResponseWriter, *http.Requ
 		if app.config.MockLSClient {
 			logger.Debug("MOCK MODE: creating mock LlamaStack client for namespace", "namespace", namespace)
 			// In mock mode, use empty URL since mock factory ignores it
-			llamaStackClient = app.llamaStackClientFactory.CreateClient("", "", app.config.InsecureSkipVerify, app.rootCAs)
+			llamaStackClient = app.llamaStackClientFactory.CreateClient("", "", app.config.InsecureSkipVerify, app.rootCAs, "/v1")
 		} else {
 			var serviceURL string
 			// Use environment variable if explicitly set (developer override)
@@ -259,7 +305,8 @@ func (app *App) AttachLlamaStackClient(next func(http.ResponseWriter, *http.Requ
 			}
 
 			// Create LlamaStack client with auth token from identity
-			llamaStackClient = app.llamaStackClientFactory.CreateClient(serviceURL, identity.Token, app.config.InsecureSkipVerify, app.rootCAs)
+			// llama-stack v0.4.0+ uses /v1 for all OpenAI-compatible endpoints
+			llamaStackClient = app.llamaStackClientFactory.CreateClient(serviceURL, identity.Token, app.config.InsecureSkipVerify, app.rootCAs, "/v1")
 		}
 
 		// Attach ready-to-use client to context
@@ -333,6 +380,52 @@ func (app *App) AttachMaaSClient(next func(http.ResponseWriter, *http.Request, h
 
 		// Attach ready-to-use client to context
 		ctx = context.WithValue(ctx, constants.MaaSClientKey, maasClient)
+		r = r.WithContext(ctx)
+
+		next(w, r, ps)
+	}
+}
+
+// AttachMLflowClient middleware creates a per-request MLflow client with auth and workspace headers.
+// Extracts the user's token from RequestIdentity and namespace from context.
+func (app *App) AttachMLflowClient(next func(http.ResponseWriter, *http.Request, httprouter.Params)) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+		ctx := r.Context()
+
+		// Extract auth token from RequestIdentity (set by InjectRequestIdentity middleware)
+		var token string
+		if app.config.AuthMethod != config.AuthMethodDisabled {
+			identity, ok := ctx.Value(constants.RequestIdentityKey).(*integrations.RequestIdentity)
+			if !ok || identity == nil {
+				app.serverErrorResponse(w, r, fmt.Errorf("missing RequestIdentity in context"))
+				return
+			}
+			token = identity.Token
+		}
+
+		// Extract namespace (set by AttachNamespace middleware)
+		namespace, _ := ctx.Value(constants.NamespaceQueryParameterKey).(string)
+
+		mlflowClient, err := app.mlflowClientFactory.GetClient(ctx, token, namespace)
+		if err != nil {
+			if errors.Is(err, mlflowpkg.ErrMLflowNotConfigured) {
+				logger := helper.GetContextLoggerFromReq(r)
+				logger.Warn("MLflow endpoint called but MLflow is not configured",
+					"method", r.Method, "uri", r.URL.RequestURI())
+				app.errorResponse(w, r, &integrations.HTTPError{
+					StatusCode: http.StatusServiceUnavailable,
+					ErrorResponse: integrations.ErrorResponse{
+						Code:    "service_unavailable",
+						Message: "MLflow is not configured on this deployment",
+					},
+				})
+				return
+			}
+			app.serverErrorResponse(w, r, fmt.Errorf("failed to get MLflow client: %w", err))
+			return
+		}
+
+		ctx = context.WithValue(ctx, constants.MLflowClientKey, mlflowClient)
 		r = r.WithContext(ctx)
 
 		next(w, r, ps)

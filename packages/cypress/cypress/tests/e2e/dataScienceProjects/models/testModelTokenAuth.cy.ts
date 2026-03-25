@@ -1,7 +1,11 @@
-import { ModelTypeLabel } from '@odh-dashboard/model-serving/components/deploymentWizard/types';
+import {
+  ModelLocationSelectOption,
+  ModelTypeLabel,
+} from '@odh-dashboard/model-serving/types/form-data';
 import { projectListPage, projectDetails } from '../../../../pages/projects';
 import {
   modelServingGlobal,
+  inferenceServiceActions,
   modelServingSection,
   modelServingWizard,
   modelServingWizardEdit,
@@ -23,10 +27,12 @@ let testData: DataScienceProjectData;
 let projectName: string;
 let modelName: string;
 let modelFilePath: string;
+let modelFormat: string;
+let servingRuntime: string;
 const awsBucket = 'BUCKET_1' as const;
 const uuid = generateTestUUID();
 
-describe('[Product Bug: RHOAIENG-41827] A model can be deployed with token auth', () => {
+describe('A model can be deployed with token auth', () => {
   retryableBefore(() => {
     cy.log('Loading test data');
     return loadDSPFixture('e2e/dataScienceProjects/testModelTokenAuth.yaml').then(
@@ -35,6 +41,8 @@ describe('[Product Bug: RHOAIENG-41827] A model can be deployed with token auth'
         projectName = `${testData.projectResourceName}-${uuid}`;
         modelName = testData.singleModelName;
         modelFilePath = testData.modelOpenVinoExamplePath;
+        modelFormat = testData.modelFormat;
+        servingRuntime = testData.servingRuntime;
 
         if (!projectName) {
           throw new Error('Project name is undefined or empty in the loaded fixture');
@@ -57,10 +65,10 @@ describe('[Product Bug: RHOAIENG-41827] A model can be deployed with token auth'
 
   it(
     'Verify that a model can be deployed with token auth',
-    { tags: ['@Smoke', '@SmokeSet3', '@Dashboard', '@ModelServing', '@Bug'] },
+    { tags: ['@Smoke', '@SmokeSet3', '@Dashboard', '@ModelServing'] },
     () => {
       cy.log('Model Name:', modelName);
-      cy.step(`Log into the application with ${HTPASSWD_CLUSTER_ADMIN_USER.USERNAME}`);
+      cy.step('Log into the application as admin');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
 
       // Project navigation
@@ -78,15 +86,21 @@ describe('[Product Bug: RHOAIENG-41827] A model can be deployed with token auth'
       modelServingGlobal.findDeployModelButton().click();
 
       cy.step('Step 1: Model details');
-      modelServingWizard.findModelLocationSelectOption('Existing connection').click();
+      modelServingWizard.findModelLocationSelectOption(ModelLocationSelectOption.EXISTING).click();
       modelServingWizard.findLocationPathInput().clear().type(modelFilePath);
       modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.PREDICTIVE).click();
       modelServingWizard.findNextButton().click();
 
       cy.step('Step 2: Model deployment');
       modelServingWizard.findModelDeploymentNameInput().clear().type(modelName);
-      modelServingWizard.findModelFormatSelectOption('openvino_ir - opset13').click();
-      modelServingWizard.selectServingRuntimeOption('OpenVINO Model Server');
+      modelServingWizard.findResourceNameButton().click();
+      modelServingWizard
+        .findResourceNameInput()
+        .should('be.visible')
+        .invoke('val')
+        .as('resourceName');
+      modelServingWizard.findModelFormatSelectOption(modelFormat).click();
+      modelServingWizard.selectServingRuntimeOption(servingRuntime);
       modelServingWizard.findNextButton().click();
 
       cy.step('Step 3: Advanced settings');
@@ -94,9 +108,9 @@ describe('[Product Bug: RHOAIENG-41827] A model can be deployed with token auth'
       cy.step('Enable Model access through an external route');
       modelServingWizard.findExternalRouteCheckbox().click();
       modelServingWizard.findTokenAuthenticationCheckbox().should('be.checked');
-      modelServingWizard.findServiceAccountByIndex(0).clear().type('secret');
+      modelServingWizard.findServiceAccountByIndex(0).clear().type(testData.serviceAccountName1);
       modelServingWizard.findAddServiceAccountButton().click();
-      modelServingWizard.findServiceAccountByIndex(1).clear().type('secret2');
+      modelServingWizard.findServiceAccountByIndex(1).clear().type(testData.serviceAccountName2);
       modelServingWizard.findNextButton().click();
 
       cy.step('Step 4: Review');
@@ -106,8 +120,9 @@ describe('[Product Bug: RHOAIENG-41827] A model can be deployed with token auth'
       // Verify the model created
       cy.step('Verify that the Model is running');
       // Verify model deployment is ready
-      checkInferenceServiceState(testData.singleModelName, projectName, { checkReady: true });
-      cy.reload();
+      cy.get<string>('@resourceName').then((resourceName) => {
+        checkInferenceServiceState(resourceName, projectName, { checkReady: true });
+      });
 
       // Verify the model is not accessible without a token
       cy.step('Verify the model is not accessible without a token');
@@ -149,19 +164,20 @@ describe('[Product Bug: RHOAIENG-41827] A model can be deployed with token auth'
 
       // Remove the token
       cy.step('Remove the token');
-      modelServingSection
-        .getKServeRow(testData.singleModelName)
-        .find()
-        .findKebabAction('Edit')
-        .click();
+      modelServingSection.getKServeRow(testData.singleModelName).findKebab().click();
+      inferenceServiceActions.findEditInferenceServiceAction().click();
       // Check the service accounts are showing up in the UI
       // Go to the next step
       modelServingWizardEdit.findNextButton().click();
       // Go to the next step
       modelServingWizardEdit.findNextButton().click();
       //Step 3: Advanced Options
-      modelServingWizardEdit.findServiceAccountByIndex(0).should('have.value', 'secret');
-      modelServingWizardEdit.findServiceAccountByIndex(1).should('have.value', 'secret2');
+      modelServingWizardEdit
+        .findServiceAccountByIndex(0)
+        .should('have.value', testData.serviceAccountName1);
+      modelServingWizardEdit
+        .findServiceAccountByIndex(1)
+        .should('have.value', testData.serviceAccountName2);
       modelServingWizardEdit.findTokenAuthenticationCheckbox().click();
       modelServingWizardEdit.findTokenAuthenticationCheckbox().should('not.be.checked');
       modelServingWizardEdit.findNextButton().click();

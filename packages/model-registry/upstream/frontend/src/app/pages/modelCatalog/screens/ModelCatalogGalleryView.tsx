@@ -3,23 +3,37 @@ import {
   Bullseye,
   Button,
   EmptyState,
+  EmptyStateVariant,
   Flex,
-  Gallery,
+  Grid,
+  GridItem,
   Spinner,
   Title,
 } from '@patternfly/react-core';
-import { SearchIcon } from '@patternfly/react-icons';
+import { ChartBarIcon, SearchIcon } from '@patternfly/react-icons';
 import React from 'react';
 import { ModelCatalogContext } from '~/app/context/modelCatalog/ModelCatalogContext';
 import { useCatalogModelsBySources } from '~/app/hooks/modelCatalog/useCatalogModelsBySource';
-import { CatalogModel } from '~/app/modelCatalogTypes';
+import { CatalogModel, CategoryName, SourceLabel } from '~/app/modelCatalogTypes';
 import ModelCatalogCard from '~/app/pages/modelCatalog/components/ModelCatalogCard';
 import {
   getSourceFromSourceId,
+  getBasicFiltersOnly,
+  getActiveLatencyFieldName,
+  getSortParams,
+  generateCategoryName,
   hasFiltersApplied,
+  isValueDifferentFromDefault,
 } from '~/app/pages/modelCatalog/utils/modelCatalogUtils';
 import EmptyModelCatalogState from '~/app/pages/modelCatalog/EmptyModelCatalogState';
 import ScrollViewOnMount from '~/app/shared/components/ScrollViewOnMount';
+import {
+  ModelCatalogNumberFilterKey,
+  ModelCatalogStringFilterKey,
+  parseLatencyFilterKey,
+  BASIC_FILTER_KEYS,
+  PERFORMANCE_FILTER_KEYS,
+} from '~/concepts/modelCatalog/const';
 
 type ModelCatalogPageProps = {
   searchTerm: string;
@@ -37,20 +51,143 @@ const ModelCatalogGalleryView: React.FC<ModelCatalogPageProps> = ({
     filterOptionsLoaded,
     filterOptionsLoadError,
     catalogSources,
+    catalogLabelsLoaded,
+    catalogLabelsLoadError,
+    setPerformanceViewEnabled,
+    updateSelectedSourceLabel,
+    performanceViewEnabled,
+    sortBy,
+    getPerformanceFilterDefaultValue,
   } = React.useContext(ModelCatalogContext);
-  const filtersApplied = hasFiltersApplied(filterData);
+
+  // When performance view is disabled, exclude performance filters from API queries
+  // Memoize to prevent infinite re-fetching
+  const effectiveFilterData = React.useMemo(
+    () => (performanceViewEnabled ? filterData : getBasicFiltersOnly(filterData)),
+    [performanceViewEnabled, filterData],
+  );
+
+  // Optimize: Only track the active latency field instead of entire filterData
+  // This prevents unnecessary recalculations when non-latency filters change
+  const activeLatencyField = React.useMemo(
+    () => getActiveLatencyFieldName(filterData),
+    [filterData],
+  );
+
+  const sortParams = React.useMemo(
+    () => getSortParams(sortBy, performanceViewEnabled, activeLatencyField),
+    [sortBy, performanceViewEnabled, activeLatencyField],
+  );
+
+  // Derive performance params to pass to the models API when performance view is enabled
+  const performanceParams = React.useMemo(() => {
+    if (!performanceViewEnabled) {
+      return undefined;
+    }
+
+    const targetRPS = filterData[ModelCatalogNumberFilterKey.MAX_RPS];
+    const latencyProperty = activeLatencyField
+      ? parseLatencyFilterKey(activeLatencyField).propertyKey
+      : undefined;
+
+    return {
+      targetRPS,
+      latencyProperty,
+      recommendations: true,
+    };
+  }, [performanceViewEnabled, filterData, activeLatencyField]);
 
   const { catalogModels, catalogModelsLoaded, catalogModelsLoadError } = useCatalogModelsBySources(
     '',
-    selectedSourceLabel === 'All models' ? undefined : selectedSourceLabel,
+    selectedSourceLabel === CategoryName.allModels ? undefined : selectedSourceLabel,
     10,
     searchTerm,
-    filterData,
+    effectiveFilterData,
     filterOptions,
+    undefined, // filterQuery - will be computed from filterData and filterOptions
+    sortParams.orderBy,
+    sortParams.sortOrder,
+    performanceParams,
   );
 
-  const loaded = catalogModelsLoaded && filterOptionsLoaded;
-  const loadError = catalogModelsLoadError || filterOptionsLoadError;
+  const loaded = catalogModelsLoaded && filterOptionsLoaded && catalogLabelsLoaded;
+  const loadError = catalogModelsLoadError || filterOptionsLoadError || catalogLabelsLoadError;
+
+  const isNoLabelsSection = selectedSourceLabel === SourceLabel.other;
+
+  // Check if basic filters are applied
+  const hasBasicFiltersApplied = React.useMemo(
+    () => hasFiltersApplied(filterData, BASIC_FILTER_KEYS),
+    [filterData],
+  );
+
+  // Check if Hardware Configuration filter is applied
+  const hasHardwareConfigurationApplied = React.useMemo(() => {
+    const hardwareConfig = filterData[ModelCatalogStringFilterKey.HARDWARE_CONFIGURATION];
+    return Array.isArray(hardwareConfig) && hardwareConfig.length > 0;
+  }, [filterData]);
+
+  // When performance view is enabled, performance filters have default values.
+  const hasPerformanceFiltersChanged = React.useMemo(() => {
+    if (!performanceViewEnabled) {
+      return false;
+    }
+    return PERFORMANCE_FILTER_KEYS.some((filterKey) => {
+      const filterValue = filterData[filterKey];
+      const defaultValue = getPerformanceFilterDefaultValue(filterKey);
+
+      if (filterValue === undefined) {
+        return false;
+      }
+
+      if (Array.isArray(filterValue) && filterValue.length === 0) {
+        return false;
+      }
+
+      return isValueDifferentFromDefault(filterValue, defaultValue);
+    });
+  }, [performanceViewEnabled, filterData, getPerformanceFilterDefaultValue]);
+
+  const noUserFiltersOrSearch = React.useMemo(
+    () =>
+      !hasBasicFiltersApplied &&
+      !hasHardwareConfigurationApplied &&
+      !hasPerformanceFiltersChanged &&
+      !searchTerm,
+    [
+      hasBasicFiltersApplied,
+      hasHardwareConfigurationApplied,
+      hasPerformanceFiltersChanged,
+      searchTerm,
+    ],
+  );
+
+  const shouldShowPerformanceEmptyState = React.useMemo(() => {
+    const isEmptyResult = catalogModels.items.length === 0;
+    const isNotAllModelsCategory = selectedSourceLabel !== CategoryName.allModels;
+    const isPerformanceExcludedSection = isNoLabelsSection || noUserFiltersOrSearch;
+
+    return (
+      performanceViewEnabled &&
+      isEmptyResult &&
+      isNotAllModelsCategory &&
+      isPerformanceExcludedSection
+    );
+  }, [
+    performanceViewEnabled,
+    catalogModels.items.length,
+    selectedSourceLabel,
+    isNoLabelsSection,
+    noUserFiltersOrSearch,
+  ]);
+
+  const handleDisablePerformanceView = () => {
+    setPerformanceViewEnabled(false);
+  };
+
+  const handleSelectAllModels = () => {
+    updateSelectedSourceLabel(CategoryName.allModels);
+  };
 
   if (loadError) {
     return (
@@ -71,25 +208,64 @@ const ModelCatalogGalleryView: React.FC<ModelCatalogPageProps> = ({
     );
   }
 
-  if (catalogModels.items.length === 0 && !searchTerm && !filtersApplied) {
+  if (shouldShowPerformanceEmptyState) {
     return (
       <EmptyModelCatalogState
-        testid="empty-model-catalog-state"
-        title="No result found"
-        headerIcon={SearchIcon}
-        description="Adjust your filters and try again."
+        testid="performance-empty-state"
+        title="No performance data available in selected category"
+        headerIcon={ChartBarIcon}
+        variant={EmptyStateVariant.lg}
+        description={
+          <>
+            No models in the{' '}
+            <strong>
+              {selectedSourceLabel === 'null'
+                ? CategoryName.otherModels
+                : generateCategoryName(selectedSourceLabel || '')}
+            </strong>{' '}
+            category have performance data. Select another model category, or turn off model
+            performance view to see models in the selected category.
+          </>
+        }
+        primaryAction={
+          <Button variant="primary" onClick={handleSelectAllModels}>
+            View all models with performance data
+          </Button>
+        }
+        secondaryAction={
+          <Button variant="link" onClick={handleDisablePerformanceView}>
+            Turn off model performance view
+          </Button>
+        }
       />
     );
   }
 
-  if (catalogModels.items.length === 0 && (searchTerm || filtersApplied)) {
+  if (catalogModels.items.length === 0 && noUserFiltersOrSearch) {
     return (
       <EmptyModelCatalogState
         testid="empty-model-catalog-state"
-        title="No result found"
+        title="No models available"
+        headerIcon={SearchIcon}
+        description="No models are available in this category."
+      />
+    );
+  }
+
+  if (catalogModels.items.length === 0 && !noUserFiltersOrSearch) {
+    return (
+      <EmptyModelCatalogState
+        testid="empty-model-catalog-state"
+        title="No results found"
         headerIcon={SearchIcon}
         description="Adjust your filters and try again."
-        customAction={<Button onClick={handleFilterReset}>Reset filters</Button>}
+        primaryAction={
+          <Button variant="link" onClick={handleFilterReset}>
+            {performanceViewEnabled && hasPerformanceFiltersChanged
+              ? 'Reset all defaults'
+              : 'Reset all filters'}
+          </Button>
+        }
       />
     );
   }
@@ -97,16 +273,16 @@ const ModelCatalogGalleryView: React.FC<ModelCatalogPageProps> = ({
   return (
     <>
       <ScrollViewOnMount shouldScroll scrollToTop />
-      <Gallery hasGutter minWidths={{ default: '300px' }}>
+      <Grid hasGutter>
         {catalogModels.items.map((model: CatalogModel) => (
-          <ModelCatalogCard
-            key={`${model.name}/${model.source_id}`}
-            model={model}
-            source={getSourceFromSourceId(model.source_id || '', catalogSources)}
-            truncate
-          />
+          <GridItem key={`${model.name}/${model.source_id}`} sm={6} md={6} lg={6} xl={6} xl2={3}>
+            <ModelCatalogCard
+              model={model}
+              source={getSourceFromSourceId(model.source_id || '', catalogSources)}
+            />
+          </GridItem>
         ))}
-      </Gallery>
+      </Grid>
       {catalogModels.hasMore && (
         <Bullseye className="pf-v6-u-mt-lg">
           {catalogModels.isLoadingMore ? (

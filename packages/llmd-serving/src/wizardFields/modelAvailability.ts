@@ -4,7 +4,7 @@ import type {
   WizardFormData,
 } from '@odh-dashboard/model-serving/types/form-data';
 import type { LLMdDeployment, LLMInferenceServiceKind } from '../types';
-import { LLMD_SERVING_ID } from '../../extensions/extensions';
+import { LLMD_OPTION } from '../deployments/server';
 
 /**
  * Annotation key for MaaS tiers configuration.
@@ -19,8 +19,9 @@ export const modelAvailabilityField: ModelAvailabilityField = {
   type: 'modifier',
   isActive: (wizardFormData) => {
     return (
-      wizardFormData.modelType?.data === ServingRuntimeModelType.GENERATIVE &&
-      wizardFormData.modelServer?.data?.name === LLMD_SERVING_ID
+      wizardFormData.modelType?.data?.type === ServingRuntimeModelType.GENERATIVE &&
+      !wizardFormData.modelType.data.legacyVLLM &&
+      wizardFormData.modelServer?.data?.selection?.name === LLMD_OPTION.name
     );
   },
   // MaaS checkbox is now provided by the maas package via WizardField2Extension

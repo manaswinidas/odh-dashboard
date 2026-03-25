@@ -1,6 +1,7 @@
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { type LLMInferenceServiceKind } from '@odh-dashboard/llmd-serving/types';
 import { mockLLMInferenceServiceK8sResource } from '@odh-dashboard/internal/__mocks__/mockLLMInferenceServiceK8sResource';
+import { mockLLMInferenceServiceConfigK8sResource } from '@odh-dashboard/internal/__mocks__/mockLLMInferenceServiceConfigK8sResource';
 import { mockDashboardConfig } from '@odh-dashboard/internal/__mocks__/mockDashboardConfig';
 import { mockDscStatus } from '@odh-dashboard/internal/__mocks__/mockDscStatus';
 import { mockInferenceServiceK8sResource } from '@odh-dashboard/internal/__mocks__/mockInferenceServiceK8sResource';
@@ -23,11 +24,15 @@ import {
   mockSecretK8sResource,
 } from '@odh-dashboard/internal/__mocks__/mockSecretK8sResource';
 import { DataScienceStackComponent } from '@odh-dashboard/internal/concepts/areas/types';
-import { ModelTypeLabel } from '@odh-dashboard/model-serving/components/deploymentWizard/types';
+import {
+  ModelLocationSelectOption,
+  ModelTypeLabel,
+} from '@odh-dashboard/model-serving/components/deploymentWizard/types';
 import { hardwareProfileSection } from '../../../pages/components/HardwareProfileSection';
 import {
   HardwareProfileModel,
   InferenceServiceModel,
+  LLMInferenceServiceConfigModel,
   ProjectModel,
   ServingRuntimeModel,
   TemplateModel,
@@ -40,7 +45,6 @@ import {
   modelServingWizard,
   modelServingWizardEdit,
 } from '../../../pages/modelServing';
-import { maasWizardField } from '../../../pages/modelsAsAService';
 
 const initIntercepts = ({
   llmInferenceServices = [],
@@ -67,6 +71,7 @@ const initIntercepts = ({
       disableKServe: false,
       genAiStudio: true,
       modelAsService: true, // Enable MaaS for testing
+      disableLLMd: false,
     }),
   );
   cy.interceptOdh('GET /api/components', null, []);
@@ -114,6 +119,10 @@ const initIntercepts = ({
     mockK8sResourceList([mockProjectK8sResource({ enableKServe: true })]),
   );
   cy.interceptK8sList(LLMInferenceServiceModel, mockK8sResourceList(llmInferenceServices));
+  cy.interceptK8sList(
+    { model: LLMInferenceServiceConfigModel, ns: 'test-project' },
+    mockK8sResourceList([]),
+  );
   cy.interceptK8sList(InferenceServiceModel, mockK8sResourceList(inferenceServices));
   cy.interceptK8sList(ServingRuntimeModel, mockK8sResourceList(servingRuntimes));
 
@@ -241,6 +250,72 @@ describe('Model Serving LLMD', () => {
         .should('contain', 'KServe Test Model');
     });
 
+    it('should show LLMD deployments and runtime options when LLMD is enabled but not when disabled', () => {
+      initIntercepts({
+        llmInferenceServices: [
+          mockLLMInferenceServiceK8sResource({
+            name: 'test-llmd-model',
+            displayName: 'Test LLM Inference Service',
+            replicas: 2,
+            modelType: ServingRuntimeModelType.GENERATIVE,
+          }),
+        ],
+      });
+      cy.interceptOdh(
+        'GET /api/config',
+        mockDashboardConfig({
+          disableLLMd: true,
+        }),
+      );
+      modelServingSection.visit('test-project');
+
+      cy.step('Verify LLMD deployment is not displayed');
+      modelServingSection.findKServeTable().should('have.length', 0);
+      modelServingSection.findDeployModelButton().should('exist');
+      modelServingSection.findDeployModelButton().click();
+
+      modelServingWizard.findModelLocationSelectOption('URI').click();
+      modelServingWizard.findUrilocationInput().type('hf://coolmodel/coolmodel');
+      modelServingWizard.findSaveConnectionCheckbox().click(); // Uncheck to simplify
+      modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.GENERATIVE).click();
+      modelServingWizard.findNextButton().click();
+
+      cy.step('Verify LLMD runtime option is not displayed');
+      modelServingWizard.findServingRuntimeTemplateSearchSelector().click();
+      modelServingWizard
+        .findGlobalScopedTemplateOption('Distributed inference with llm-d')
+        .should('not.exist');
+
+      //Just to close the runtime template search selector
+      modelServingWizard.findModelDeploymentNameInput().click();
+      modelServingWizard.findCancelButton().click();
+      modelServingWizard.findDiscardButton().click();
+
+      cy.interceptOdh(
+        'GET /api/config',
+        mockDashboardConfig({
+          disableLLMd: false,
+        }),
+      );
+      cy.reload();
+      cy.step('Verify LLMD deployment is displayed when LLMD is enabled');
+      modelServingSection.findKServeTable().should('have.length', 1);
+      modelServingSection.findDeployModelButton().should('exist');
+      modelServingSection.findDeployModelButton().click();
+
+      modelServingWizard.findModelLocationSelectOption('URI').click();
+      modelServingWizard.findUrilocationInput().type('hf://coolmodel/coolmodel');
+      modelServingWizard.findSaveConnectionCheckbox().click(); // Uncheck to simplify
+      modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.GENERATIVE).click();
+      modelServingWizard.findNextButton().click();
+
+      cy.step('Verify LLMD runtime option is displayed when LLMD is enabled');
+      modelServingWizard.findServingRuntimeTemplateSearchSelector().click();
+      modelServingWizard
+        .findGlobalScopedTemplateOption('Distributed inference with llm-d')
+        .should('exist');
+    });
+
     it('should handle LLMD deployment with error status', () => {
       initIntercepts({
         llmInferenceServices: [
@@ -274,7 +349,7 @@ describe('Model Serving LLMD', () => {
 
       // Step 1: Model source
       modelServingWizard
-        .findModelLocationSelectOption('Existing connection')
+        .findModelLocationSelectOption(ModelLocationSelectOption.EXISTING)
         .should('exist')
         .click();
       modelServingWizard.findExistingConnectionValue().should('have.value', 'test-s3-secret');
@@ -426,7 +501,7 @@ describe('Model Serving LLMD', () => {
       modelServingGlobal.getModelRow('Test LLM Inference Service').findKebabAction('Edit').click();
 
       // Step 1: Model source
-      modelServingWizardEdit.findModelLocationSelectOption('URI').click();
+      modelServingWizardEdit.findModelLocationSelectOption(ModelLocationSelectOption.URI).click();
       modelServingWizardEdit.findUrilocationInput().clear().type('hf://updated-uri');
 
       modelServingWizardEdit
@@ -559,76 +634,131 @@ describe('Model Serving LLMD', () => {
     });
   });
 
-  describe('Deploy LLMD with MaaS enabled', () => {
-    it('should create an LLMD deployment with MaaS enabled and specific tiers', () => {
-      initIntercepts({});
+  describe('vLLM using LLMInferenceServiceConfig', () => {
+    const initVLLMOnMaaSIntercepts = () => {
+      initIntercepts({
+        llmInferenceServices: [
+          mockLLMInferenceServiceK8sResource({
+            name: 'test-vllm-gpu',
+            displayName: 'GPU vLLM Deployment',
+            baseRefs: [{ name: 'test-vllm-gpu' }],
+            modelType: ServingRuntimeModelType.GENERATIVE,
+          }),
+        ],
+      });
 
-      // Navigate to wizard and set up basic deployment
+      // Override config to enable vLLMDeploymentOnMaaS
+      cy.interceptOdh(
+        'GET /api/config',
+        mockDashboardConfig({
+          disableNIMModelServing: true,
+          disableKServe: false,
+          genAiStudio: true,
+          modelAsService: true,
+          disableLLMd: false,
+          vLLMDeploymentOnMaaS: true,
+        }),
+      );
+
+      cy.interceptK8sList(
+        { model: LLMInferenceServiceConfigModel, ns: 'opendatahub' },
+        mockK8sResourceList([
+          mockLLMInferenceServiceConfigK8sResource({
+            name: 'vllm-gaudi-config',
+            displayName: 'vLLM on Gaudi LLMInferenceServiceConfig',
+            runtimeVersion: 'v0.9.1',
+          }),
+          mockLLMInferenceServiceConfigK8sResource({
+            name: 'vllm-gpu-config',
+            displayName: 'vLLM on GPU LLMInferenceServiceConfig',
+            runtimeVersion: 'v0.8.2',
+          }),
+        ]),
+      );
+
+      // Child config in project namespace — linked to the IS via matching name
+      cy.interceptK8sList(
+        { model: LLMInferenceServiceConfigModel, ns: 'test-project' },
+        mockK8sResourceList([
+          mockLLMInferenceServiceConfigK8sResource({
+            name: 'test-vllm-gpu',
+            namespace: 'test-project',
+            displayName: 'vLLM on GPU LLMInferenceServiceConfig',
+            runtimeVersion: 'v0.8.2',
+            templateName: 'vllm-gpu-config',
+          }),
+        ]),
+      );
+
+      cy.intercept('PUT', '**/llminferenceservices/test-vllm-gpu*', (req) => {
+        req.reply({ statusCode: 200, body: req.body });
+      }).as('updateLLMInferenceService');
+    };
+
+    it('should display serving runtime name and version, then pre-fill when editing', () => {
+      initVLLMOnMaaSIntercepts();
+
+      modelServingGlobal.visit('test-project');
+
+      // Verify the table shows the serving runtime name and version label
+      const row = modelServingGlobal.getDeploymentRow('GPU vLLM Deployment');
+      row.findServingRuntime().should('contain.text', 'vLLM on GPU LLMInferenceServiceConfig');
+      row.findServingRuntimeVersionLabel().should('contain.text', 'v0.8.2');
+
+      // Open the edit wizard and verify the Serving runtime field is pre-filled on step 2
+      modelServingGlobal.getModelRow('GPU vLLM Deployment').findKebabAction('Edit').click();
+
+      // Step 1: Model source — select URI, enter the model location, and proceed
+      modelServingWizardEdit.findModelLocationSelectOption(ModelLocationSelectOption.URI).click();
+      modelServingWizardEdit.findUrilocationInput().type('hf://facebook/opt-125m');
+      modelServingWizardEdit.findSaveConnectionCheckbox().click();
+      modelServingWizardEdit.findNextButton().should('be.enabled').click();
+
+      // Step 2: Verify the Serving runtime selector is pre-filled with the vLLM config name
+      modelServingWizardEdit
+        .findServingRuntimeTemplateSearchSelector()
+        .should('be.disabled')
+        .should('contain.text', 'vLLM on GPU LLMInferenceServiceConfig');
+    });
+
+    it('Deploy vLLM using LLMInferenceServiceConfig', () => {
+      initVLLMOnMaaSIntercepts();
+
       modelServingGlobal.visit('test-project');
       modelServingGlobal.findDeployModelButton().click();
 
-      // Quick setup: Model source and deployment
+      // Step 1: Model source - select URI and generative model type
       modelServingWizard.findModelLocationSelectOption('URI').click();
-      modelServingWizard.findUrilocationInput().type('hf://coolmodel/coolmodel');
-      modelServingWizard.findSaveConnectionCheckbox().click(); // Uncheck to simplify
+      modelServingWizard.findUrilocationInput().type('hf://test/model');
+      modelServingWizard.findSaveConnectionCheckbox().click();
       modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.GENERATIVE).click();
-      modelServingWizard.findNextButton().click();
-
-      modelServingWizard.findModelDeploymentNameInput().type('test-maas-llmd-model');
-      modelServingWizard.findServingRuntimeTemplateSearchSelector().click();
-      modelServingWizard.findGlobalScopedTemplateOption('Distributed inference with llm-d').click();
-      modelServingWizard.findNextButton().click();
-
-      // Focus on MaaS feature testing
-      // uncheck token auth to simplify test
-      modelServingWizard.findTokenAuthenticationCheckbox().click();
-
-      // Verify MaaS checkbox is unchecked by default
-      maasWizardField.findSaveAsMaaSCheckbox().should('exist').should('not.be.checked');
-
-      // Check the MaaS checkbox
-      maasWizardField.findSaveAsMaaSCheckbox().click();
-      maasWizardField.findSaveAsMaaSCheckbox().should('be.checked');
-
-      // Verify default selection is "All resource tiers"
-      maasWizardField.findMaaSTierDropdown().should('contain.text', 'All resource tiers');
-
-      // Switch to "No resource tiers"
-      maasWizardField.selectMaaSTierOption('No resource tiers');
-      maasWizardField.findMaaSTierDropdown().should('contain.text', 'No resource tiers');
-
-      // Switch to "Specific resource tiers" - Next button should be disabled until input is provided
-      maasWizardField.selectMaaSTierOption('Specific resource tiers');
-      maasWizardField.findMaaSTierDropdown().should('contain.text', 'Specific resource tiers');
-      maasWizardField.findMaaSTierNamesInput().should('be.visible');
-      modelServingWizard.findNextButton().should('be.disabled');
-
-      // Enter tier names to enable Next button
-      maasWizardField.findMaaSTierNamesInput().type('tier-1, tier-2');
       modelServingWizard.findNextButton().should('be.enabled').click();
 
-      // Submit and verify MaaS-specific annotations and gateway refs
-      modelServingWizard.findSubmitButton().click();
+      // Step 2: Model deployment - verify LLM config options are shown
+      modelServingWizard.findModelDeploymentNameInput().type('test-vllm-maas');
+      modelServingWizard.findServingRuntimeSelectRadio().click();
+      modelServingWizard.findServingRuntimeTemplateSearchSelector().click();
 
-      cy.wait('@createLLMInferenceService').then((interception) => {
-        expect(interception.request.url).to.include('?dryRun=All');
+      // Verify LLMD default option and the mocked configs are available
+      modelServingWizard
+        .findGlobalScopedTemplateOption('Distributed inference with llm-d')
+        .should('exist');
+      modelServingWizard
+        .findGlobalScopedTemplateOption('vLLM on Gaudi LLMInferenceServiceConfig')
+        .should('exist');
+      modelServingWizard
+        .findGlobalScopedTemplateOption('vLLM on GPU LLMInferenceServiceConfig')
+        .should('exist');
 
-        // Verify MaaS-specific configuration with specific tiers
-        // The tiers annotation is a JSON stringified array
-        expect(interception.request.body.metadata.annotations).to.containSubset({
-          'alpha.maas.opendatahub.io/tiers': JSON.stringify(['tier-1', 'tier-2']),
-        });
+      // Select a vLLM config option
+      modelServingWizard
+        .findGlobalScopedTemplateOption('vLLM on Gaudi LLMInferenceServiceConfig')
+        .click();
 
-        expect(interception.request.body.spec.router.gateway.refs).to.deep.equal([
-          {
-            name: 'maas-default-gateway',
-            namespace: 'openshift-ingress',
-          },
-        ]);
-      });
-
-      cy.wait('@createLLMInferenceService'); // Actual request
-      cy.get('@createLLMInferenceService.all').should('have.length', 2);
+      // Verify the selected option is displayed
+      modelServingWizard
+        .findServingRuntimeTemplateSearchSelector()
+        .should('contain.text', 'vLLM on Gaudi LLMInferenceServiceConfig');
     });
   });
 });

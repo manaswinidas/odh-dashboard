@@ -18,7 +18,7 @@ import { ModelLocationData } from '../../types';
 type Props = {
   setModelLocationData: (data: ModelLocationData | undefined) => void;
   modelLocationData?: ModelLocationData;
-  connectionType: ConnectionTypeConfigMapObj;
+  connectionType?: ConnectionTypeConfigMapObj;
 };
 
 const NewConnectionField: React.FC<Props> = ({
@@ -42,6 +42,9 @@ const NewConnectionField: React.FC<Props> = ({
     });
   };
   const renderAdditionalFields = () => {
+    if (!connectionType) {
+      return null;
+    }
     if (isModelServingCompatible(connectionType, ModelServingCompatibleTypes.S3ObjectStorage)) {
       return (
         <ConnectionS3FolderPathField
@@ -83,6 +86,9 @@ const NewConnectionField: React.FC<Props> = ({
     return null;
   };
   const fields = React.useMemo(() => {
+    if (!connectionType) {
+      return [];
+    }
     if (isModelServingCompatible(connectionType, ModelServingCompatibleTypes.S3ObjectStorage)) {
       return connectionType.data?.fields?.map((field) => {
         // Force bucket field to be required

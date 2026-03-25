@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 
 	"github.com/opendatahub-io/maas-library/bff/internal/config"
 	"github.com/opendatahub-io/maas-library/bff/internal/constants"
 	"github.com/opendatahub-io/maas-library/bff/internal/integrations/kubernetes"
+	"github.com/opendatahub-io/maas-library/bff/internal/integrations/maas"
 	"github.com/opendatahub-io/maas-library/bff/internal/repositories"
 )
 
@@ -38,15 +40,36 @@ func setupApiTest[T any](method, url string, body interface{}, k8Factory kuberne
 		req.Header.Set(constants.KubeflowUserIDHeader, identity.UserID)
 	}
 
+	maasFakeServer := maas.CreateMaasFakeServer()
+	defer maasFakeServer.Close()
+
 	envConfig := config.EnvConfig{
-		AllowedOrigins: []string{"*"},
-		AuthMethod:     config.AuthMethodInternal,
+		AllowedOrigins:            []string{"*"},
+		AuthMethod:                config.AuthMethodInternal,
+		TiersConfigMapNamespace:   "maas-api",
+		TiersConfigMapName:        "tier-to-group-mapping",
+		GatewayNamespace:          "openshift-ingress",
+		GatewayName:               "maas-default-gateway",
+		MockHTTPClient:            true,
+		MaasApiUrl:                maasFakeServer.URL,
+		MaaSSubscriptionNamespace: "maas-system",
 	}
 
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	// Tests use real K8s repos backed by envtest (not mocks)
+	subscriptionsRepo := repositories.NewSubscriptionsRepository(logger, k8Factory, envConfig.MaaSSubscriptionNamespace)
+	modelRefsRepo := repositories.NewMaaSModelRefsRepository(logger, k8Factory)
+
+	repos, err := repositories.NewRepositories(logger, k8Factory, envConfig, subscriptionsRepo, modelRefsRepo)
+	if err != nil {
+		return empty, nil, err
+	}
 	app := &App{
 		config:                  envConfig,
 		kubernetesClientFactory: k8Factory,
-		repositories:            repositories.NewRepositories(nil, k8Factory, envConfig),
+		repositories:            repos,
+		logger:                  logger,
 	}
 
 	ctx := context.WithValue(req.Context(), constants.RequestIdentityKey, identity)
@@ -65,7 +88,7 @@ func setupApiTest[T any](method, url string, body interface{}, k8Factory kuberne
 	}
 	var out T
 	if err := json.Unmarshal(data, &out); err != nil && err != io.EOF {
-		return empty, nil, err
+		return empty, res, err
 	}
 	return out, res, nil
 }

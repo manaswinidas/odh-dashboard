@@ -182,41 +182,49 @@ describe('dashboardUtils', () => {
   });
 
   describe('buildDashboardUrl', () => {
-    describe('with project name', () => {
-      it('should build URL with project name and dashboard name', () => {
-        const result = buildDashboardUrl('my-project', 'dashboard-model');
+    it('should build URL with dashboard name', () => {
+      const result = buildDashboardUrl('dashboard-model');
 
-        expect(result).toBe(`${BASE_PATH}/my-project?${DASHBOARD_QUERY_PARAM}=dashboard-model`);
-      });
-
-      it('should encode special characters in project name', () => {
-        const result = buildDashboardUrl('my project/with&special', 'dashboard-model');
-
-        expect(result).toBe(
-          `${BASE_PATH}/my%20project%2Fwith%26special?${DASHBOARD_QUERY_PARAM}=dashboard-model`,
-        );
-      });
-
-      it('should encode special characters in dashboard name', () => {
-        const result = buildDashboardUrl('my-project', 'dashboard name&special');
-
-        expect(result).toBe(
-          `${BASE_PATH}/my-project?${DASHBOARD_QUERY_PARAM}=dashboard%20name%26special`,
-        );
-      });
-
-      it('should encode both project and dashboard names with special characters', () => {
-        const result = buildDashboardUrl('project/1', 'dashboard?2');
-
-        expect(result).toBe(`${BASE_PATH}/project%2F1?${DASHBOARD_QUERY_PARAM}=dashboard%3F2`);
-      });
+      expect(result).toBe(`${BASE_PATH}?${DASHBOARD_QUERY_PARAM}=dashboard-model`);
     });
 
-    describe('without project name (All projects)', () => {
-      it('should build URL with base path and dashboard query param for empty project name', () => {
-        const result = buildDashboardUrl('', 'dashboard-cluster');
+    it('should encode special characters in dashboard name', () => {
+      const result = buildDashboardUrl('dashboard name&special');
 
-        expect(result).toBe(`${BASE_PATH}?${DASHBOARD_QUERY_PARAM}=dashboard-cluster`);
+      // URLSearchParams.set() encodes spaces as '+' which is valid in query strings
+      expect(result).toBe(`${BASE_PATH}?${DASHBOARD_QUERY_PARAM}=dashboard+name%26special`);
+    });
+
+    describe('preserving existing query params', () => {
+      it('should preserve time range params when switching dashboards', () => {
+        const result = buildDashboardUrl('dashboard-model', 'start=30m&end=now');
+
+        expect(result).toContain('start=30m');
+        expect(result).toContain('end=now');
+        expect(result).toContain(`${DASHBOARD_QUERY_PARAM}=dashboard-model`);
+      });
+
+      it('should update dashboard param while preserving other params', () => {
+        const result = buildDashboardUrl(
+          'new-dashboard',
+          `${DASHBOARD_QUERY_PARAM}=old-dashboard&start=1h`,
+        );
+
+        expect(result).toContain(`${DASHBOARD_QUERY_PARAM}=new-dashboard`);
+        expect(result).toContain('start=1h');
+        expect(result).not.toContain('old-dashboard');
+      });
+
+      it('should handle empty currentSearch', () => {
+        const result = buildDashboardUrl('dashboard-model', '');
+
+        expect(result).toBe(`${BASE_PATH}?${DASHBOARD_QUERY_PARAM}=dashboard-model`);
+      });
+
+      it('should handle undefined currentSearch', () => {
+        const result = buildDashboardUrl('dashboard-model', undefined);
+
+        expect(result).toBe(`${BASE_PATH}?${DASHBOARD_QUERY_PARAM}=dashboard-model`);
       });
     });
   });

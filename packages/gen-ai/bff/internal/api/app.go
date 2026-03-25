@@ -20,9 +20,10 @@ import (
 
 	"github.com/opendatahub-io/gen-ai/internal/integrations/mcp"
 	"github.com/opendatahub-io/gen-ai/internal/integrations/mcp/mcpmocks"
+	mlflowpkg "github.com/opendatahub-io/gen-ai/internal/integrations/mlflow"
+	"github.com/opendatahub-io/gen-ai/internal/integrations/mlflow/mlflowmocks"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/opendatahub-io/gen-ai/internal/cache"
@@ -41,11 +42,16 @@ type App struct {
 	llamaStackClientFactory llamastack.LlamaStackClientFactory
 	maasClientFactory       maas.MaaSClientFactory
 	mcpClientFactory        mcp.MCPClientFactory
+	mlflowClientFactory     mlflowpkg.MLflowClientFactory
 	dashboardNamespace      string
 	memoryStore             cache.MemoryStore
 	rootCAs                 *x509.CertPool
 	clusterDomain           string
 	fileUploadJobTracker    *services.FileUploadJobTracker
+	// Used only when MockK8sClient is enabled
+	testEnvState *k8smocks.TestEnvState
+	// Used only when MockMLflowClient is enabled and MLflow is started as a child process
+	mlflowState *mlflowmocks.MLflowState
 }
 
 func NewApp(cfg config.EnvConfig, logger *slog.Logger) (*App, error) {
@@ -121,23 +127,33 @@ func NewApp(cfg config.EnvConfig, logger *slog.Logger) (*App, error) {
 	}
 
 	var k8sFactory k8s.KubernetesClientFactory
-	// used only on mocked k8s client
-	var testEnv *envtest.Environment
-
+	var testEnvState *k8smocks.TestEnvState
 	if cfg.MockK8sClient {
 		logger.Info("Using mocked Kubernetes client")
 		var ctrlClient client.Client
 		ctx, cancel := context.WithCancel(context.Background())
-		testEnv, ctrlClient, err = k8smocks.SetupEnvTest(k8smocks.TestEnvInput{
+		testEnvState, ctrlClient, err = k8smocks.SetupEnvTest(k8smocks.TestEnvInput{
 			Users:  k8smocks.DefaultTestUsers,
 			Logger: logger,
 			Ctx:    ctx,
 			Cancel: cancel,
 		})
 		if err != nil {
+			// No cleanup needed: SetupEnvTest calls os.Exit(1) on internal failures,
+			// making the error return unreachable. The cancel() call is defensive
+			// for potential future signature changes.
+			cancel()
 			return nil, fmt.Errorf("failed to setup envtest: %w", err)
 		}
-		k8sFactory, err = k8smocks.NewMockedKubernetesClientFactory(ctrlClient, testEnv, cfg, logger)
+		k8sFactory, err = k8smocks.NewMockedKubernetesClientFactory(ctrlClient, testEnvState, cfg, logger)
+		if err != nil {
+			// Clean up partially initialized test environment
+			k8smocks.CleanupTestEnvState(testEnvState,
+				func(format string, args ...any) { logger.Error(fmt.Sprintf(format, args...)) },
+				func(format string, args ...any) { logger.Info(fmt.Sprintf(format, args...)) },
+			)
+			return nil, fmt.Errorf("failed to create Kubernetes client factory: %w", err)
+		}
 	} else {
 		k8sFactory, err = k8s.NewKubernetesClientFactory(cfg, logger)
 	}
@@ -156,6 +172,30 @@ func NewApp(cfg config.EnvConfig, logger *slog.Logger) (*App, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create MCP client factory: %w", err)
 		}
+	}
+
+	// Initialize MLflow client factory
+	//
+	// TODO(mlflow-url-discovery): Refactor this three-way logic once MLflow URL discovery is resolved.
+	// Currently MLFLOW_URL must be set via env var. The UnavailableClientFactory fallback exists
+	// because production deployments don't have MLFLOW_URL configured yet (would break nightlies).
+	// Once we have a real URL strategy (operator ServiceURL, convention, or deployment config),
+	// this should be simplified — likely removing the UnavailableClientFactory path entirely.
+	// See ADR-0014 for full analysis of the discovery problem.
+	var mlflowFactory mlflowpkg.MLflowClientFactory
+	var mlflowState *mlflowmocks.MLflowState
+	if cfg.MockMLflowClient {
+		mlflowState, err = mlflowmocks.SetupMLflow(logger)
+		if err != nil {
+			logger.Warn("MLflow mock server not available, MLflow endpoints will fail on request", "error", err)
+		}
+		mlflowFactory = mlflowmocks.NewMockClientFactory()
+	} else if cfg.MLflowURL != "" {
+		logger.Info("Using real MLflow client factory", "url", cfg.MLflowURL)
+		mlflowFactory = mlflowpkg.NewRealClientFactory(cfg.MLflowURL, rootCAs, cfg.InsecureSkipVerify)
+	} else {
+		logger.Warn("MLflow URL not configured, MLflow endpoints will return 503")
+		mlflowFactory = mlflowpkg.NewUnavailableClientFactory()
 	}
 
 	// Initialize shared memory store for caching (10 minute cleanup interval)
@@ -186,18 +226,47 @@ func NewApp(cfg config.EnvConfig, logger *slog.Logger) (*App, error) {
 		llamaStackClientFactory: llamaStackClientFactory,
 		maasClientFactory:       maasClientFactory,
 		mcpClientFactory:        mcpFactory,
+		mlflowClientFactory:     mlflowFactory,
 		dashboardNamespace:      dashboardNamespace,
 		memoryStore:             memStore,
 		rootCAs:                 rootCAs,
 		clusterDomain:           clusterDomain,
 		fileUploadJobTracker:    fileUploadJobTracker,
+		testEnvState:            testEnvState,
+		mlflowState:             mlflowState,
 	}
 	return app, nil
 }
 
 func (app *App) Shutdown() error {
 	app.logger.Info("shutting down app...")
-	// Add any cleanup logic here if needed
+
+	if app.testEnvState != nil {
+		app.logger.Info("stopping test environment...")
+		k8smocks.CleanupTestEnvState(
+			app.testEnvState,
+			func(format string, args ...interface{}) {
+				app.logger.Error(fmt.Sprintf(format, args...))
+			},
+			func(format string, args ...interface{}) {
+				app.logger.Info(fmt.Sprintf(format, args...))
+			},
+		)
+	}
+
+	if app.mlflowState != nil {
+		app.logger.Info("stopping MLflow server...")
+		mlflowmocks.CleanupMLflowState(
+			app.mlflowState,
+			func(format string, args ...any) {
+				app.logger.Error(fmt.Sprintf(format, args...))
+			},
+			func(format string, args ...any) {
+				app.logger.Info(fmt.Sprintf(format, args...))
+			},
+		)
+	}
+
 	return nil
 }
 
@@ -254,6 +323,11 @@ func (app *App) Routes() http.Handler {
 
 	// AI Assets Models (Kubernetes)
 	apiRouter.GET(constants.ModelsAAPath, app.AttachNamespace(app.RequireAccessToService(app.ModelsAAHandler)))
+	apiRouter.POST(constants.ExternalModelsPath, app.AttachNamespace(app.RequireAccessToService(app.CreateExternalModelHandler)))
+	apiRouter.DELETE(constants.ExternalModelsPath, app.AttachNamespace(app.RequireAccessToService(app.DeleteExternalModelHandler)))
+
+	// External model verification (requires namespace for authorization)
+	apiRouter.POST(constants.VerifyExternalModelPath, app.AttachNamespace(app.RequireAccessToService(app.VerifyExternalModelHandler)))
 
 	// Settings path namespace endpoints. This endpoint will get all the namespaces
 	apiRouter.GET(constants.NamespacesPath, app.RequireAccessToService(app.GetNamespaceHandler))
@@ -274,12 +348,16 @@ func (app *App) Routes() http.Handler {
 	apiRouter.DELETE(constants.LlamaStackDistributionDeletePath, app.AttachNamespace(app.RequireAccessToService(app.LlamaStackDistributionDeleteHandler)))
 
 	// LSD Safety Config endpoint - returns configured guardrail models and shields
-	apiRouter.GET(constants.LSDSafetyConfigPath, app.AttachNamespace(app.RequireAccessToService(app.LSDSafetyConfigHandler)))
+	apiRouter.GET(constants.LSDSafetyPath, app.AttachNamespace(app.RequireAccessToService(app.LSDSafetyConfigHandler)))
 
 	// MCP Client endpoints
 	apiRouter.GET(constants.MCPToolsPath, app.AttachNamespace(app.RequireAccessToService(app.MCPToolsHandler)))
 	apiRouter.GET(constants.MCPStatusPath, app.AttachNamespace(app.RequireAccessToService(app.MCPStatusHandler)))
 	apiRouter.GET(constants.MCPServersListPath, app.AttachNamespace(app.RequireAccessToService(app.MCPListHandler)))
+
+	// External Vector Stores
+	apiRouter.GET(constants.VectorStoresAAPath, app.AttachNamespace(app.RequireAccessToService(app.VectorStoresAAHandler)))
+	apiRouter.GET(constants.ExternalVectorStoresPath, app.AttachNamespace(app.RequireAccessToService(app.ExternalVectorStoresListHandler)))
 
 	// MaaS API routes
 
@@ -290,9 +368,16 @@ func (app *App) Routes() http.Handler {
 	apiRouter.POST(constants.MaaSTokensPath, app.AttachNamespace(app.RequireAccessToService(app.AttachMaaSClient(app.MaaSIssueTokenHandler))))
 	apiRouter.DELETE(constants.MaaSTokensPath, app.AttachNamespace(app.RequireAccessToService(app.AttachMaaSClient(app.MaaSRevokeAllTokensHandler))))
 
-	// Guardrails API route - namespace-specific
-	// Returns status of the "custom-guardrails" CR from the specified namespace
-	apiRouter.GET(constants.GuardrailsStatusPath, app.AttachNamespace(app.RequireAccessToService(app.GuardrailsStatusHandler)))
+	// MLflow API routes
+	apiRouter.GET(constants.MLflowPromptsPath, app.AttachNamespace(app.RequireAccessToService(app.AttachMLflowClient(app.MLflowListPromptsHandler))))
+	apiRouter.POST(constants.MLflowPromptsPath, app.AttachNamespace(app.RequireAccessToService(app.AttachMLflowClient(app.MLflowRegisterPromptHandler))))
+	apiRouter.GET(constants.MLflowPromptPath, app.AttachNamespace(app.RequireAccessToService(app.AttachMLflowClient(app.MLflowLoadPromptHandler))))
+	apiRouter.GET(constants.MLflowPromptVersionsPath, app.AttachNamespace(app.RequireAccessToService(app.AttachMLflowClient(app.MLflowListPromptVersionsHandler))))
+	apiRouter.DELETE(constants.MLflowPromptPath, app.AttachNamespace(app.RequireAccessToService(app.AttachMLflowClient(app.MLflowDeletePromptHandler))))
+	apiRouter.DELETE(constants.MLflowPromptVersionPath, app.AttachNamespace(app.RequireAccessToService(app.AttachMLflowClient(app.MLflowDeletePromptVersionHandler))))
+
+	// Guardrails API route
+	apiRouter.GET(constants.GuardrailsStatusPath, app.AttachNamespace(app.RequireGuardrailAccess(app.GuardrailsStatusHandler)))
 
 	// App Router
 	appMux := http.NewServeMux()

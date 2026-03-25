@@ -74,6 +74,10 @@ export class NIMCard extends Card {
     });
   }
 
+  findBadgeDescription(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return this.getNIMCard().findByTestId('badge-description');
+  }
+
   getEnableNIMButton(): Cypress.Chainable<JQuery<HTMLElement>> {
     return cy.findByTestId('enable-app');
   }
@@ -115,6 +119,14 @@ export class NIMCard extends Card {
 
   findEnableButton(): Cypress.Chainable<JQuery<HTMLElement>> {
     return cy.get('[data-testid="enable-app"]', { timeout: 10000 });
+  }
+
+  /**
+   * Returns the Enable modal element.
+   * The modal is identified by data-id="enable-modal".
+   */
+  findEnableModal(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return cy.get('[data-id="enable-modal"]');
   }
 }
 

@@ -17,10 +17,13 @@ import {
 } from '@odh-dashboard/internal/__mocks__/mockModelRegistryService';
 import { mockModelArtifactList } from '@odh-dashboard/internal/__mocks__/mockModelArtifactList';
 import { mockModelArtifact } from '@odh-dashboard/internal/__mocks__/mockModelArtifact';
-import { ModelTypeLabel } from '@odh-dashboard/model-serving/components/deploymentWizard/types';
+import {
+  ModelLocationSelectOption,
+  ModelTypeLabel,
+} from '@odh-dashboard/model-serving/components/deploymentWizard/types';
 import { modelRegistry } from '../../../../pages/modelRegistry';
 import { modelVersionDeployModal } from '../../../../pages/modelRegistry/modelVersionDeployModal';
-import { SecretModel, ServiceModel } from '../../../../utils/models';
+import { ServiceModel } from '../../../../utils/models';
 import { initDeployPrefilledModelIntercepts } from '../../../../utils/modelServingUtils';
 import { modelDetails } from '../../../../pages/modelRegistry/modelDetails';
 import { modelVersionDetails } from '../../../../pages/modelRegistry/modelVersionDetails';
@@ -35,6 +38,7 @@ type HandlersProps = {
   isEmpty?: boolean;
   disableKServe?: boolean;
   disableNIMModelServing?: boolean;
+  secrets?: ReturnType<typeof mockK8sResourceList>;
 };
 
 const registeredModelMocked = mockRegisteredModel({ name: 'test-1' });
@@ -63,6 +67,7 @@ const initIntercepts = ({
   disableKServe = false,
   disableNIMModelServing = true,
   isEmpty = false,
+  secrets,
 }: HandlersProps) => {
   initDeployPrefilledModelIntercepts({
     disableProjectScoped,
@@ -70,6 +75,13 @@ const initIntercepts = ({
     disableNIMModelServing,
     isEmpty,
   });
+
+  // Intercept secrets for kserve-project namespace if provided
+  if (secrets) {
+    cy.intercept('GET', '/api/k8s/api/v1/namespaces/kserve-project/secrets*', {
+      body: secrets,
+    });
+  }
 
   // Additional intercepts needed for wizard to load properly
   cy.interceptOdh('GET /api/components', null, []);
@@ -399,7 +411,10 @@ describe('Deploy model version', () => {
 
     // Step 1: Model source
     modelServingWizard.findModelSourceStep().should('be.enabled');
-    modelServingWizard.findModelLocationSelectOption('URI').should('exist').click();
+    modelServingWizard
+      .findModelLocationSelectOption(ModelLocationSelectOption.URI)
+      .should('exist')
+      .click();
     modelServingWizard.findUrilocationInput().type('https://registry.redhat.io/rhel/private:test');
     modelServingWizard.findSaveConnectionCheckbox().click();
     modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.GENERATIVE).click();
@@ -460,7 +475,10 @@ describe('Deploy model version', () => {
 
     // Step 1: Model source
     modelServingWizard.findModelSourceStep().should('be.enabled');
-    modelServingWizard.findModelLocationSelectOption('URI').should('exist').click();
+    modelServingWizard
+      .findModelLocationSelectOption(ModelLocationSelectOption.URI)
+      .should('exist')
+      .click();
     modelServingWizard.findUrilocationInput().type('https://registry.redhat.io/rhel/private:test');
     modelServingWizard.findSaveConnectionCheckbox().click();
     modelServingWizard.findModelTypeSelectOption(ModelTypeLabel.GENERATIVE).click();
@@ -484,10 +502,8 @@ describe('Deploy model version', () => {
   });
 
   it('Prefills new connection in case of no matching connections', () => {
-    initIntercepts({});
-    cy.interceptK8sList(
-      SecretModel,
-      mockK8sResourceList([
+    initIntercepts({
+      secrets: mockK8sResourceList([
         mockSecretK8sResource({
           name: 'test-secret-not-match',
           displayName: 'Test Secret Not Match',
@@ -497,7 +513,7 @@ describe('Deploy model version', () => {
           region: 'dGVzdC1yZWdpb24=',
         }),
       ]),
-    );
+    });
     modelVersionDetails.visit(undefined, undefined, '2');
     modelVersionDetails.findDeployModelButton().click();
     modelVersionDeployModal.selectProjectByName('KServe project');
@@ -517,10 +533,8 @@ describe('Deploy model version', () => {
   });
 
   it('Prefills when there is one s3 matching connection', () => {
-    initIntercepts({});
-    cy.interceptK8sList(
-      SecretModel,
-      mockK8sResourceList([
+    initIntercepts({
+      secrets: mockK8sResourceList([
         mockSecretK8sResource({
           namespace: 'kserve-project',
           s3Bucket: 'dGVzdC1idWNrZXQ=',
@@ -536,7 +550,7 @@ describe('Deploy model version', () => {
           region: 'dGVzdC1yZWdpb24=',
         }),
       ]),
-    );
+    });
 
     modelVersionDetails.visit(undefined, undefined, '1');
     modelVersionDetails.findDeployModelButton().click();
@@ -557,10 +571,8 @@ describe('Deploy model version', () => {
   });
 
   it('Prefills when there is one URI matching connection', () => {
-    initIntercepts({});
-    cy.interceptK8sList(
-      SecretModel,
-      mockK8sResourceList([
+    initIntercepts({
+      secrets: mockK8sResourceList([
         mockCustomSecretK8sResource({
           namespace: 'kserve-project',
           name: 'test-secret',
@@ -571,7 +583,7 @@ describe('Deploy model version', () => {
           data: { URI: 'aHR0cHM6Ly9kZW1vLW1vZGVscy9zb21lLXBhdGguemlw' },
         }),
       ]),
-    );
+    });
 
     modelVersionDetails.visit(undefined, undefined, '3');
     modelVersionDetails.findDeployModelButton().click();
@@ -590,10 +602,8 @@ describe('Deploy model version', () => {
   });
 
   it('Prefills when there is one OCI matching connection', () => {
-    initIntercepts({});
-    cy.interceptK8sList(
-      SecretModel,
-      mockK8sResourceList([
+    initIntercepts({
+      secrets: mockK8sResourceList([
         mockCustomSecretK8sResource({
           namespace: 'kserve-project',
           name: 'test-secret',
@@ -608,7 +618,7 @@ describe('Deploy model version', () => {
           },
         }),
       ]),
-    );
+    });
 
     modelVersionDetails.visit(undefined, undefined, '4');
     modelVersionDetails.findDeployModelButton().click();
@@ -621,16 +631,14 @@ describe('Deploy model version', () => {
     // Step 1: Model source
     modelServingWizard.findModelSourceStep().should('be.enabled');
 
-    // Validate connection section - should use existing connection
-    cy.findByText('test.io/test').should('exist');
-    modelServingWizard.findOCIModelURI().should('have.value', 'test.io/test/private:test');
+    // Validate connection section - should use existing connection (similar to URI test)
+    modelServingWizard.findExistingConnectionSelect().should('exist');
+    modelServingWizard.findExistingConnectionValue().should('have.value', 'Test Secret');
   });
 
   it('Selects existing connection when there are 2 matching connections', () => {
-    initIntercepts({});
-    cy.interceptK8sList(
-      SecretModel,
-      mockK8sResourceList([
+    initIntercepts({
+      secrets: mockK8sResourceList([
         mockCustomSecretK8sResource({
           namespace: 'kserve-project',
           name: 'test-secret',
@@ -650,7 +658,7 @@ describe('Deploy model version', () => {
           data: { URI: 'aHR0cHM6Ly9kZW1vLW1vZGVscy9zb21lLXBhdGguemlw' },
         }),
       ]),
-    );
+    });
 
     modelVersionDetails.visit(undefined, undefined, '3');
     modelVersionDetails.findDeployModelButton().click();

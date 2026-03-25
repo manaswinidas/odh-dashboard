@@ -2,6 +2,7 @@ import * as React from 'react';
 import {
   Alert,
   Bullseye,
+  Button,
   Divider,
   PageSection,
   SearchInput,
@@ -13,10 +14,13 @@ import {
   ToolbarItem,
 } from '@patternfly/react-core';
 import { FilterIcon } from '@patternfly/react-icons';
+import { useNavigate } from 'react-router-dom';
 import { ProjectSectionID } from '#~/pages/projects/screens/detail/types';
 import { usePermissionsContext } from '#~/concepts/permissions/PermissionsContext';
 import FilterToolbar from '#~/components/FilterToolbar';
 import SimpleSelect from '#~/components/SimpleSelect';
+import { ProjectDetailsContext } from '#~/pages/projects/ProjectDetailsContext';
+import { fireMiscTrackingEvent } from '#~/concepts/analyticsTracking/segmentIOUtils';
 import SubjectRolesTableSection from './SubjectRolesTableSection';
 import {
   FilterDataType,
@@ -29,12 +33,13 @@ import {
 } from './const';
 
 const ProjectPermissions: React.FC = () => {
+  const navigate = useNavigate();
   const { loaded, error } = usePermissionsContext();
+  const { currentProject } = React.useContext(ProjectDetailsContext);
   const [subjectScope, setSubjectScope] = React.useState<SubjectScopeFilter>(
     SubjectScopeFilter.all,
   );
   const [filterData, setFilterData] = React.useState<FilterDataType>(initialFilterData);
-
   const clearFilters = React.useCallback(() => {
     setFilterData(initialFilterData);
   }, []);
@@ -113,6 +118,22 @@ const ProjectPermissions: React.FC = () => {
                       }));
                     }}
                   />
+                  <ToolbarItem>
+                    <Button
+                      variant="primary"
+                      data-testid="permissions-assign-roles-button"
+                      onClick={() => {
+                        /* eslint-disable camelcase */
+                        fireMiscTrackingEvent('RBAC Role Management Opened', {
+                          manage_permissions_button: 'toolbar',
+                        });
+                        /* eslint-enable camelcase */
+                        navigate(`/projects/${currentProject.metadata.name}/permissions/assign`);
+                      }}
+                    >
+                      Manage permissions
+                    </Button>
+                  </ToolbarItem>
                 </ToolbarContent>
               </Toolbar>
             </StackItem>

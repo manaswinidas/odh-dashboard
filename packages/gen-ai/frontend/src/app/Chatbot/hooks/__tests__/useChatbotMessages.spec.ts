@@ -7,6 +7,7 @@ import {
   mockModelId,
   mockSourceSettings,
   mockSuccessResponse,
+  mockMetrics,
   mockNamespace,
   defaultMcpProps,
 } from './consts';
@@ -16,6 +17,11 @@ jest.mock('~/app/services/llamaStackService');
 jest.mock('~/app/hooks/useGenAiAPI');
 jest.mock('~/app/utilities/utils', () => ({
   getId: jest.fn(() => 'mock-id'),
+  getLlamaModelDisplayName: jest.fn((modelId: string) => modelId || 'Bot'),
+  splitLlamaModelId: jest.fn((modelId: string) => ({
+    providerId: 'provider-id',
+    id: modelId,
+  })),
 }));
 
 jest.mock('~/app/Chatbot/ChatbotMessagesToolResponse', () => ({
@@ -45,8 +51,8 @@ const setupMocks = (): void => {
   jest.clearAllMocks();
   // Ensure createResponse mock is properly reset
   mockCreateResponse.mockReset();
-  // Mock useContext to return the namespace
-  mockUseContext.mockReturnValue({ namespace: mockNamespace });
+  // Mock useContext for ChatbotContext (aiModels) and other contexts (namespace)
+  mockUseContext.mockReturnValue({ namespace: mockNamespace, aiModels: [] });
 
   // Mock useGenAiAPI to return the API object with mocked functions
   mockUseGenAiAPI.mockReturnValue({
@@ -94,8 +100,9 @@ describe('useChatbotMessages', () => {
       expect(result.current.messages).toHaveLength(1);
       expect(result.current.messages[0]).toMatchObject({
         role: 'bot',
-        content: 'Send a message to test your configuration',
-        name: 'Bot',
+        content:
+          'Before you begin chatting, you can change the model, edit the system prompt, adjust model parameters to fit your specific use case.',
+        name: mockModelId,
       });
       expect(result.current.isMessageSendButtonDisabled).toBe(false);
       expect(result.current.scrollToBottomRef).toBeDefined();
@@ -122,11 +129,11 @@ describe('useChatbotMessages', () => {
         name: 'User',
       });
 
-      // Test bot response - only check what matters
+      // Test bot response - only check what matters (name shows selected model)
       expect(result.current.messages[2]).toMatchObject({
         role: 'bot',
         content: 'This is a bot response',
-        name: 'Bot',
+        name: mockModelId,
       });
       expect(result.current.isMessageSendButtonDisabled).toBe(false);
     });
@@ -165,7 +172,8 @@ describe('useChatbotMessages', () => {
           chat_context: [
             {
               role: 'assistant',
-              content: 'Send a message to test your configuration',
+              content:
+                'Before you begin chatting, you can change the model, edit the system prompt, adjust model parameters to fit your specific use case.',
             },
           ],
           instructions: '',
@@ -219,7 +227,7 @@ describe('useChatbotMessages', () => {
       expect(result.current.messages[2]).toMatchObject({
         role: 'bot',
         content: 'This is a bot response',
-        name: 'Bot',
+        name: mockModelId,
       });
       expect(result.current.isMessageSendButtonDisabled).toBe(false);
       expect(mockCreateResponse).toHaveBeenCalledWith(
@@ -229,7 +237,8 @@ describe('useChatbotMessages', () => {
           chat_context: [
             {
               role: 'assistant',
-              content: 'Send a message to test your configuration',
+              content:
+                'Before you begin chatting, you can change the model, edit the system prompt, adjust model parameters to fit your specific use case.',
             },
           ],
           instructions: '',
@@ -255,7 +264,7 @@ describe('useChatbotMessages', () => {
       expect(result.current.messages[2]).toMatchObject({
         role: 'bot',
         content: 'API Error',
-        name: 'Bot',
+        name: mockModelId,
       });
       expect(result.current.isMessageSendButtonDisabled).toBe(false);
     });
@@ -291,7 +300,7 @@ describe('useChatbotMessages', () => {
       expect(result.current.messages[2]).toMatchObject({
         role: 'bot',
         content: 'API is not available',
-        name: 'Bot',
+        name: mockModelId,
       });
       expect(result.current.isMessageSendButtonDisabled).toBe(false);
       expect(mockCreateResponse).not.toHaveBeenCalled();
@@ -311,7 +320,7 @@ describe('useChatbotMessages', () => {
       expect(result.current.messages[2]).toMatchObject({
         role: 'bot',
         content: customErrorMessage,
-        name: 'Bot',
+        name: mockModelId,
       });
       expect(result.current.isMessageSendButtonDisabled).toBe(false);
     });
@@ -343,7 +352,7 @@ describe('useChatbotMessages', () => {
       expect(result.current.messages[2]).toMatchObject({
         role: 'bot',
         content: streamingErrorMessage,
-        name: 'Bot',
+        name: mockModelId,
       });
       expect(result.current.isMessageSendButtonDisabled).toBe(false);
       expect(result.current.isLoading).toBe(false);
@@ -375,7 +384,8 @@ describe('useChatbotMessages', () => {
           chat_context: [
             {
               role: 'assistant',
-              content: 'Send a message to test your configuration',
+              content:
+                'Before you begin chatting, you can change the model, edit the system prompt, adjust model parameters to fit your specific use case.',
             },
           ],
           instructions: '',
@@ -417,14 +427,16 @@ describe('useChatbotMessages', () => {
       expect(firstCall.chat_context).toHaveLength(1);
       expect(firstCall.chat_context![0]).toMatchObject({
         role: 'assistant',
-        content: 'Send a message to test your configuration',
+        content:
+          'Before you begin chatting, you can change the model, edit the system prompt, adjust model parameters to fit your specific use case.',
       });
 
       const secondCall = mockCreateResponse.mock.calls[1][0];
       expect(secondCall.chat_context).toHaveLength(3);
       expect(secondCall.chat_context![0]).toMatchObject({
         role: 'assistant',
-        content: 'Send a message to test your configuration',
+        content:
+          'Before you begin chatting, you can change the model, edit the system prompt, adjust model parameters to fit your specific use case.',
       });
       expect(secondCall.chat_context![1]).toMatchObject({
         role: 'user',
@@ -450,7 +462,8 @@ describe('useChatbotMessages', () => {
       expect(call.chat_context).toHaveLength(1);
       expect(call.chat_context![0]).toMatchObject({
         role: 'assistant',
-        content: 'Send a message to test your configuration',
+        content:
+          'Before you begin chatting, you can change the model, edit the system prompt, adjust model parameters to fit your specific use case.',
       });
     });
 
@@ -486,7 +499,8 @@ describe('useChatbotMessages', () => {
       expect(secondCall.chat_context).toHaveLength(3);
       expect(secondCall.chat_context![0]).toMatchObject({
         role: 'assistant',
-        content: 'Send a message to test your configuration',
+        content:
+          'Before you begin chatting, you can change the model, edit the system prompt, adjust model parameters to fit your specific use case.',
       });
       expect(secondCall.chat_context![1]).toMatchObject({
         role: 'user',
@@ -531,7 +545,8 @@ describe('useChatbotMessages', () => {
       expect(secondCall.chat_context).toHaveLength(3);
       expect(secondCall.chat_context![0]).toMatchObject({
         role: 'assistant',
-        content: 'Send a message to test your configuration',
+        content:
+          'Before you begin chatting, you can change the model, edit the system prompt, adjust model parameters to fit your specific use case.',
       });
       expect(secondCall.chat_context![1]).toMatchObject({
         role: 'user',
@@ -602,6 +617,62 @@ describe('useChatbotMessages', () => {
 
       // Verify isDefaultExpanded is false in streaming mode too
       expect(botMessage.toolResponse?.isDefaultExpanded).toBe(false);
+    });
+  });
+
+  describe('metrics handling', () => {
+    it('should include metrics in non-streaming response', async () => {
+      const mockResponseWithMetrics: SimplifiedResponseData = {
+        ...mockSuccessResponse,
+        metrics: mockMetrics,
+      };
+
+      mockCreateResponse.mockResolvedValueOnce(mockResponseWithMetrics);
+
+      const { result } = renderHook(() => useChatbotMessages(createDefaultHookProps()));
+
+      await act(async () => {
+        await result.current.handleMessageSend('Test message');
+      });
+
+      const botMessage = result.current.messages[2];
+
+      expect(botMessage.metrics).toBeDefined();
+      expect(botMessage.metrics?.latency_ms).toBe(1500);
+      expect(botMessage.metrics?.usage?.total_tokens).toBe(60);
+    });
+
+    it('should include metrics in streaming response', async () => {
+      const mockStreamingResponseWithMetrics: SimplifiedResponseData = {
+        ...mockSuccessResponse,
+        metrics: {
+          ...mockMetrics,
+          time_to_first_token_ms: 200,
+        },
+      };
+
+      mockCreateResponse.mockImplementation(
+        (request: CreateResponseRequest, opts?: { onStreamData?: (chunk: string) => void }) => {
+          if (opts?.onStreamData) {
+            opts.onStreamData('Streaming content');
+          }
+          return Promise.resolve(mockStreamingResponseWithMetrics);
+        },
+      );
+
+      const { result } = renderHook(() =>
+        useChatbotMessages(createDefaultHookProps({ isStreamingEnabled: true })),
+      );
+
+      await act(async () => {
+        await result.current.handleMessageSend('Test streaming');
+      });
+
+      const botMessage = result.current.messages[2];
+
+      expect(botMessage.metrics).toBeDefined();
+      expect(botMessage.metrics?.latency_ms).toBe(1500);
+      expect(botMessage.metrics?.time_to_first_token_ms).toBe(200);
     });
   });
 });

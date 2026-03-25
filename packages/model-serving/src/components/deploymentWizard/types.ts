@@ -1,3 +1,5 @@
+import React from 'react';
+import type { K8sResourceCommon } from '@openshift/dynamic-plugin-sdk-utils';
 import type { useHardwareProfileConfig } from '@odh-dashboard/internal/concepts/hardwareProfiles/useHardwareProfileConfig';
 import type { useK8sNameDescriptionFieldData } from '@odh-dashboard/internal/concepts/k8s/K8sNameDescriptionField/K8sNameDescriptionField';
 import {
@@ -44,10 +46,43 @@ export enum ModelLocationType {
   EXISTING = 'existing',
   PVC = 'pvc',
 }
+export enum ModelLocationSelectOption {
+  EXISTING = 'Existing connection',
+  PVC = 'Cluster storage',
+  S3 = 'S3 object storage',
+  OCI = 'OCI compliant registry',
+  URI = 'URI',
+}
 
 export enum ModelTypeLabel {
   PREDICTIVE = 'Predictive model',
   GENERATIVE = 'Generative AI model (Example, LLM)',
+}
+
+export enum ModelStateLabel {
+  STOPPED = 'Stopped',
+  STOPPING = 'Stopping',
+  STARTING = 'Starting',
+  STARTED = 'Started',
+  RUNNING = 'Running',
+  FAILED_TO_LOAD = 'Failed to load',
+}
+
+export enum ModelStateToggleLabel {
+  START = 'Start',
+  STOP = 'Stop',
+}
+
+export enum WizardStepTitle {
+  MODEL_DETAILS = 'Model details',
+  MODEL_DEPLOYMENT = 'Model deployment',
+  ADVANCED_SETTINGS = 'Advanced settings',
+  REVIEW = 'Review',
+}
+
+export enum YAMLViewerToggleOption {
+  YAML = 'YAML',
+  FORM = 'Form',
 }
 
 export type ModelLocationData = {
@@ -71,7 +106,11 @@ export type ModelLocationData = {
  * (from WizardField2Extension) can be added with any string key.
  */
 export type InitialWizardFormData = {
+  // wizard
   wizardStartIndex?: number;
+  isEditing?: boolean;
+  viewMode?: 'form' | 'yaml-preview' | 'yaml-edit';
+  // fields
   project?: ProjectKind | null;
   modelTypeField?: ModelTypeFieldData;
   k8sNameDesc?: K8sNameDescriptionFieldData;
@@ -84,15 +123,14 @@ export type InitialWizardFormData = {
   hardwareProfile?: Parameters<typeof useHardwareProfileConfig>;
   modelFormat?: SupportedModelFormats;
   modelLocationData?: ModelLocationData;
-  modelServer?: ModelServerOption;
-  isEditing?: boolean;
+  modelServer?: ModelServerSelectFieldData;
   connections?: LabeledConnection[];
   initSelectedConnection?: LabeledConnection | undefined;
   modelAvailability?: ModelAvailabilityFieldsData;
   createConnectionData?: CreateConnectionData;
   deploymentStrategy?: DeploymentStrategyFieldData;
-  transformData?: { metadata?: { labels?: Record<string, string> } };
-  // Add more field handlers as needed
+  // deploying — serializable metadata merged onto the deployment during assembly
+  navSourceMetadata?: K8sResourceCommon['metadata'];
 } & Record<string, unknown>;
 
 export type WizardFormData = {
@@ -113,7 +151,21 @@ export type WizardFormData = {
     modelServer: ReturnType<typeof useModelServerSelectField>;
     createConnectionData: ReturnType<typeof useCreateConnectionData>;
     deploymentStrategy: ReturnType<typeof useDeploymentStrategyField>;
+    canCreateRoleBindings: boolean;
   } & Record<string, unknown>;
+};
+
+export type WizardReviewItem = {
+  key: string;
+  label: string;
+  value: (wizardState: WizardFormData['state']) => React.ReactNode;
+  optional?: boolean;
+  isVisible?: (wizardState: WizardFormData['state']) => boolean;
+};
+
+export type WizardReviewSection = {
+  title?: string;
+  items: WizardReviewItem[];
 };
 // wizard form data
 
@@ -149,18 +201,47 @@ export type DeploymentWizardFieldBase<ID extends DeploymentWizardFieldId | strin
   isActive: (wizardFormData: RecursivePartial<WizardFormData['state']>) => boolean;
 };
 
-export type WizardField<T = unknown> = DeploymentWizardFieldBase<string> & {
-  type: 'addition';
+export type GenericFieldProps = {
+  isEditing?: boolean;
+};
+
+export type WizardField<
+  FieldData = unknown,
+  ExternalData = unknown,
+  Dependencies extends Record<string, unknown> = Record<string, unknown>,
+> = DeploymentWizardFieldBase<string> & {
+  type: 'addition' | 'replacement';
   parentId?: string;
   step?: 'modelSource' | 'modelDeployment' | 'advancedOptions' | 'summary'; // used for validation of the entire step. Ideally this should be dynamic from the parent field.
   reducerFunctions: {
-    // TODO: make dispatch function that clears if this field's dependencies are changing
-    setFieldData: (fieldData: T) => T;
-    getInitialFieldData: (fieldData?: T) => T;
-    validationSchema?: z.ZodSchema<T>;
+    setFieldData: (fieldData: FieldData) => FieldData;
+    getInitialFieldData: (
+      existingFieldData?: FieldData,
+      externalData?: ExternalData,
+      dependencies?: Dependencies,
+    ) => FieldData;
+    resolveDependencies?: (formData: WizardFormData['state']) => Dependencies;
+    validationSchema?: z.ZodSchema<FieldData>;
   };
-  // externalDataHook: ... // TODO: add this if we need to fetch data for the field.
-  component: React.FC<{ id: string; value: T; onChange: (value: T) => void }>;
+  externalDataHook?: (initialData?: InitialWizardFormData) => {
+    data: ExternalData;
+    loaded: boolean;
+    loadError?: Error;
+  };
+  component: React.FC<
+    {
+      id: string;
+      value: FieldData;
+      onChange: (value: FieldData) => void;
+      externalData?: { data: ExternalData; loaded: boolean; loadError?: Error };
+      dependencies?: Dependencies;
+    } & GenericFieldProps
+  >;
+  getReviewSections?: (
+    value: FieldData,
+    wizardState: WizardFormData['state'],
+    externalData?: ExternalData,
+  ) => WizardReviewSection[];
 };
 
 // actual fields
