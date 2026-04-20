@@ -34,11 +34,11 @@
       failureThreshold: 3
     resources:
       limits:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 300m
+        memory: 512Mi
       requests:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 300m
+        memory: 512Mi
     ports:
       - containerPort: 8043
         name: mr-ui
@@ -107,11 +107,11 @@
       failureThreshold: 3
     resources:
       limits:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 300m
+        memory: 512Mi
       requests:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 300m
+        memory: 512Mi
     ports:
       - containerPort: 8143
         name: gen-ai-ui
@@ -145,6 +145,23 @@
       - '--bundle-paths=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem,/var/run/secrets/kubernetes.io/serviceaccount/ca.crt,/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt,/etc/pki/tls/certs/odh-ca-bundle.crt,/etc/pki/tls/certs/odh-trusted-ca-bundle.crt'
     env:
       - name: GATEWAY_DOMAIN
+        value: ""
+      # BFF Service Discovery for inter-BFF communication (RHOAIENG-49012)
+      - name: POD_NAMESPACE
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.namespace
+      - name: BFF_MAAS_SERVICE_NAME
+        value: "odh-dashboard"
+      - name: BFF_MAAS_SERVICE_PORT
+        value: "8243"
+      - name: BFF_MAAS_TLS_ENABLED
+        value: "true"
+      - name: BFF_MAAS_AUTH_METHOD
+        value: "user_token"
+      - name: BFF_MAAS_AUTH_TOKEN_HEADER
+        value: "x-forwarded-access-token"
+      - name: BFF_MAAS_AUTH_TOKEN_PREFIX
         value: ""
     securityContext:
       allowPrivilegeEscalation: false
@@ -180,11 +197,11 @@
       failureThreshold: 3
     resources:
       limits:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 300m
+        memory: 512Mi
       requests:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 300m
+        memory: 512Mi
     ports:
       - containerPort: 8243
         name: maas-ui
@@ -257,11 +274,11 @@
       failureThreshold: 3
     resources:
       limits:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 300m
+        memory: 512Mi
       requests:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 300m
+        memory: 512Mi
     ports:
       - containerPort: 8343
         name: mlflow-ui
@@ -328,11 +345,11 @@
       failureThreshold: 3
     resources:
       limits:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 300m
+        memory: 512Mi
       requests:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 300m
+        memory: 512Mi
     ports:
       - containerPort: 8543
         name: eval-hub-ui
@@ -399,11 +416,11 @@
       failureThreshold: 3
     resources:
       limits:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 300m
+        memory: 512Mi
       requests:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 300m
+        memory: 512Mi
     ports:
       - containerPort: 8643
         name: automl-ui
@@ -469,11 +486,11 @@
       failureThreshold: 3
     resources:
       limits:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 300m
+        memory: 512Mi
       requests:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 300m
+        memory: 512Mi
     ports:
       - containerPort: 8743
         name: autorag-ui

@@ -1,4 +1,5 @@
 import { APIOptions } from 'mod-arch-core';
+// eslint-disable-next-line no-relative-import-paths/no-relative-import-paths, import/order
 import {
   ModelCatalogTask,
   ModelCatalogProvider,
@@ -30,7 +31,7 @@ export type CatalogSource = {
   name: string;
   labels: string[];
   enabled?: boolean;
-  status?: 'available' | 'error' | 'disabled';
+  status?: 'available' | 'partially-available' | 'error' | 'disabled';
   error?: string;
 };
 

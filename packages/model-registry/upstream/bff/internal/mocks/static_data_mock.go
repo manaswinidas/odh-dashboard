@@ -760,6 +760,35 @@ Granite 3.1 Instruct Models are primarily finetuned using instruction-response p
 		Language:    []string{"en"},
 		SourceId:    stringToPointer("huggingface"),
 		LibraryName: stringToPointer("transformers"),
+		Readme: stringToPointer(`# BERT Base Uncased
+
+BERT is a transformers model pretrained on a large corpus of English data.
+
+## Installation
+
+` + "```bash" + `
+pip install transformers torch
+` + "```" + `
+
+## Quick Start
+
+` + "```python" + `
+from transformers import BertTokenizer, BertModel
+
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+model = BertModel.from_pretrained('bert-base-uncased')
+
+text = "Replace this with your text"
+encoded = tokenizer(text, return_tensors='pt')
+output = model(**encoded)
+` + "```" + `
+
+## Using with Pipeline
+
+` + "```bash" + `
+python -c "from transformers import pipeline; nlp = pipeline('fill-mask', model='bert-base-uncased'); print(nlp('The capital of France is [MASK].'))"
+` + "```" + `
+`),
 	}
 
 	huggingFaceModel2 := models.CatalogModel{
@@ -2370,6 +2399,7 @@ func GetMcpServerMocks() []models.McpServer {
 		Version:     stringToPointer("0.9.2"),
 		License:     stringToPointer("Apache 2.0"),
 		LicenseLink: stringToPointer("https://www.apache.org/licenses/LICENSE-2.0"),
+		Logo:        stringToPointer("https://raw.githubusercontent.com/cncf/artwork/main/projects/prometheus/icon/color/prometheus-icon-color.svg"),
 		Tags:        []string{"metrics", "monitoring", "alerting"},
 		ToolCount:   15,
 		Transports:  []models.McpTransportType{models.McpTransportTypeHTTP},
@@ -2407,6 +2437,33 @@ func GetMcpServerMocks() []models.McpServer {
 		SourceCode:    stringToPointer("prometheus-community/prometheus-mcp"),
 		RepositoryURL: stringToPointer("https://github.com/prometheus-community/prometheus-mcp"),
 		LastUpdated:   stringToPointer("1706745600000"),
+		RuntimeMetadata: &models.McpRuntimeMetadata{
+			DefaultPort: func() *int32 { p := int32(9090); return &p }(),
+			McpPath:     stringToPointer("/sse"),
+			DefaultArgs: []string{"--config", "/etc/prometheus/config.yaml"},
+			RequiredEnvironmentVariables: []models.McpEnvVarMetadata{
+				{Name: "PROMETHEUS_URL", Description: "Prometheus server URL", Example: stringToPointer("http://prometheus:9090")},
+			},
+			OptionalEnvironmentVariables: []models.McpEnvVarMetadata{
+				{Name: "LOG_LEVEL", Description: "Logging level", DefaultValue: stringToPointer("info")},
+			},
+			Prerequisites: &models.McpPrerequisites{
+				ServiceAccount: &models.McpServiceAccountRequirement{
+					Required:      &trueVal,
+					SuggestedName: stringToPointer("prometheus-mcp-sa"),
+					Hint:          stringToPointer("Needs prometheus-reader ClusterRole binding"),
+				},
+				Secrets: []models.McpSecretRequirement{
+					{
+						Name:        "prometheus-credentials",
+						Description: "Prometheus auth credentials",
+						Keys: []models.McpSecretKey{
+							{Key: "token", Description: "Bearer token for Prometheus API", EnvVarName: stringToPointer("PROM_TOKEN"), Required: &trueVal},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	kubernetesMcp := models.McpServer{
@@ -2418,6 +2475,7 @@ func GetMcpServerMocks() []models.McpServer {
 		Version:     stringToPointer("1.2.0"),
 		License:     stringToPointer("Apache 2.0"),
 		LicenseLink: stringToPointer("https://www.apache.org/licenses/LICENSE-2.0"),
+		Logo:        stringToPointer("https://raw.githubusercontent.com/kubernetes/kubernetes/master/logo/logo.svg"),
 		Tags:        []string{"kubernetes", "containers", "orchestration"},
 		ToolCount:   23,
 		Transports:  []models.McpTransportType{models.McpTransportTypeHTTP, models.McpTransportTypeSSE},
@@ -2504,6 +2562,7 @@ func GetMcpServerMocks() []models.McpServer {
 		Version:     stringToPointer("1.1.0"),
 		License:     stringToPointer("AGPL-3.0"),
 		LicenseLink: stringToPointer("https://www.gnu.org/licenses/agpl-3.0.html"),
+		Logo:        stringToPointer("https://raw.githubusercontent.com/grafana/grafana/main/public/img/grafana_icon.svg"),
 		Tags:        []string{"dashboards", "visualization", "monitoring"},
 		ToolCount:   12,
 		Transports:  []models.McpTransportType{models.McpTransportTypeHTTP},
@@ -2515,6 +2574,9 @@ func GetMcpServerMocks() []models.McpServer {
 			VerifiedSource: &trueVal,
 			SecureEndpoint: &trueVal,
 			ReadOnlyTools:  &trueVal,
+		},
+		Endpoints: &models.McpEndpoints{
+			HTTP: stringToPointer("https://api.mcpservers.org/grafana-mcp/v1"),
 		},
 	}
 
@@ -2570,6 +2632,7 @@ func GetMcpServerMocks() []models.McpServer {
 		Version:     stringToPointer("0.8.1"),
 		License:     stringToPointer("BSD-3-Clause"),
 		LicenseLink: stringToPointer("https://opensource.org/licenses/BSD-3-Clause"),
+		Logo:        stringToPointer("https://raw.githubusercontent.com/redis/redis-io/master/public/images/redis-white.png"),
 		Tags:        []string{"cache", "database", "messaging"},
 		ToolCount:   14,
 		Transports:  []models.McpTransportType{models.McpTransportTypeHTTP, models.McpTransportTypeSSE},
@@ -3183,10 +3246,11 @@ func GetMcpDeploymentMocks() []models.McpDeployment {
 	return []models.McpDeployment{
 		{
 			Name:              "kubernetes-mcp",
+			DisplayName:       "Kubernetes MCP Server",
 			Namespace:         "mcp-servers",
+			UID:               "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 			CreationTimestamp: "2026-03-10T14:30:00Z",
 			Image:             "quay.io/mcp-servers/kubernetes:1.0.0",
-			Port:              8080,
 			Phase:             models.McpDeploymentPhaseRunning,
 			Conditions: []models.McpDeploymentCondition{
 				{Type: "Available", Status: "True", LastTransitionTime: "2026-03-10T14:32:00Z", Reason: "DeploymentAvailable"},
@@ -3195,10 +3259,11 @@ func GetMcpDeploymentMocks() []models.McpDeployment {
 		},
 		{
 			Name:              "slack-mcp",
+			DisplayName:       "Slack MCP Server",
 			Namespace:         "mcp-servers",
+			UID:               "b2c3d4e5-f6a7-8901-bcde-f12345678901",
 			CreationTimestamp: "2026-03-14T11:00:00Z",
 			Image:             "quay.io/mcp-servers/slack:0.5.0",
-			Port:              9090,
 			Phase:             models.McpDeploymentPhasePending,
 			Conditions: []models.McpDeploymentCondition{
 				{Type: "Available", Status: "False", LastTransitionTime: "2026-03-14T11:00:00Z", Reason: "MinimumReplicasUnavailable"},
@@ -3207,10 +3272,11 @@ func GetMcpDeploymentMocks() []models.McpDeployment {
 		},
 		{
 			Name:              "jira-mcp",
+			DisplayName:       "Jira MCP Server",
 			Namespace:         "mcp-servers",
+			UID:               "c3d4e5f6-a7b8-9012-cdef-123456789012",
 			CreationTimestamp: "2026-03-08T16:45:00Z",
 			Image:             "quay.io/mcp-servers/jira:1.2.0",
-			Port:              8080,
 			Phase:             models.McpDeploymentPhaseFailed,
 			Conditions: []models.McpDeploymentCondition{
 				{Type: "Available", Status: "False", LastTransitionTime: "2026-03-08T16:50:00Z", Reason: "MinimumReplicasUnavailable"},
@@ -3219,4 +3285,3 @@ func GetMcpDeploymentMocks() []models.McpDeployment {
 		},
 	}
 }
-

@@ -28,6 +28,15 @@ type MaasApiError struct {
 	Error string `json:"error"`
 }
 
+type MaasUpstreamError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *MaasUpstreamError) Error() string {
+	return e.Message
+}
+
 func NewMaasClient(logger *slog.Logger, prefix *url.URL) *MaasClient {
 	return &MaasClient{
 		httpClient: &http.Client{
@@ -71,6 +80,10 @@ func (c *MaasClient) SearchAPIKeys(ctx context.Context, request models.APIKeySea
 	err = c.sendRequest(ctx, "POST", endpoint, jsonRequest, &apiResponse)
 	if err != nil {
 		return nil, err
+	}
+
+	if apiResponse.Data == nil {
+		apiResponse.Data = []models.APIKey{}
 	}
 
 	return &apiResponse, nil
@@ -131,6 +144,30 @@ func (c *MaasClient) ListModels(ctx context.Context) ([]models.MaaSModel, error)
 	return apiResponse.Data, nil
 }
 
+func (c *MaasClient) ListSubscriptionsForApiKeys(ctx context.Context) ([]models.SubscriptionListItem, error) {
+	endpoint := c.prefix.JoinPath("subscriptions")
+
+	var apiResponse []models.SubscriptionListItem
+	err := c.sendRequest(ctx, "GET", endpoint, nil, &apiResponse)
+
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range apiResponse {
+		if apiResponse[i].ModelRefs == nil {
+			apiResponse[i].ModelRefs = []models.ModelRefInfo{}
+		}
+		for j := range apiResponse[i].ModelRefs {
+			if apiResponse[i].ModelRefs[j].TokenRateLimits == nil {
+				apiResponse[i].ModelRefs[j].TokenRateLimits = []models.TokenRateLimitInfo{}
+			}
+		}
+	}
+
+	return apiResponse, nil
+}
+
 func (c *MaasClient) sendRequest(ctx context.Context, method string, endpoint *url.URL, requestBody []byte, apiResponse any) error {
 	var bodyReader io.Reader
 	if requestBody != nil {
@@ -165,7 +202,7 @@ func (c *MaasClient) sendRequest(ctx context.Context, method string, endpoint *u
 		}
 
 		c.logger.Error("request to maas-api failed", "statusCode", response.StatusCode, "error", maasApiError.Error, "endpoint", endpoint.String(), "method", method)
-		return fmt.Errorf("request to maas-api failed: %s", maasApiError.Error)
+		return &MaasUpstreamError{StatusCode: response.StatusCode, Message: maasApiError.Error}
 	}
 
 	body, readBodyErr := io.ReadAll(io.LimitReader(response.Body, c.maxResponseSize))

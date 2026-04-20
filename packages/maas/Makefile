@@ -88,9 +88,9 @@ dev-install-dependencies:
 	cd frontend && npm install
 
 .PHONY: dev-bff
-dev-bff:
+dev-bff: ## Run BFF in mock mode with user_token auth (recommended for local dev)
 	trap 'exit 0' INT; \
-	cd bff && make run PORT=4000 MOCK_K8S_CLIENT=true MOCK_HTTP_CLIENT=true DEV_MODE=true DEPLOYMENT_MODE=standalone
+	cd bff && make run PORT=4000 MOCK_K8S_CLIENT=true MOCK_HTTP_CLIENT=true DEV_MODE=true DEPLOYMENT_MODE=standalone AUTH_METHOD=user_token
 
 .PHONY: dev-frontend
 dev-frontend:
@@ -154,6 +154,20 @@ dev-start-mock-federated:
 	@trap 'exit 0' INT; \
 	make -j 2 dev-bff-federated-mock dev-frontend-federated-mock
 
+
+############ E2E Test Targets ############
+# These targets are used by the GitHub Actions e2e workflow to start BFFs
+# Port is configurable via E2E_BFF_PORT environment variable for parallel runner support
+
+E2E_BFF_PORT ?= 8081
+
+.PHONY: dev-bff-e2e-mock
+dev-bff-e2e-mock: ## Run BFF for e2e tests (mock mode, no cluster required)
+	cd bff && make run PORT=$(E2E_BFF_PORT) LOG_LEVEL=info MOCK_K8S_CLIENT=true MOCK_HTTP_CLIENT=true DEV_MODE=true DEPLOYMENT_MODE=federated
+
+.PHONY: dev-bff-e2e-cluster
+dev-bff-e2e-cluster: ## Run BFF for e2e tests (federated mode, connected to cluster)
+	cd bff && make run PORT=$(E2E_BFF_PORT) LOG_LEVEL=info MOCK_K8S_CLIENT=false MOCK_HTTP_CLIENT=false DEV_MODE=true DEPLOYMENT_MODE=federated AUTH_METHOD=user_token AUTH_TOKEN_HEADER=x-forwarded-access-token AUTH_TOKEN_PREFIX="" INSECURE_SKIP_VERIFY=true
 
 ############ Build ############
 

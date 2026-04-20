@@ -1,12 +1,19 @@
 import React from 'react';
-import type { GenericFieldProps, WizardField } from '../types';
+import { resolveFieldValue, type GenericFieldProps, WizardField } from '../types';
 import type { UseModelDeploymentWizardState } from '../useDeploymentWizard';
 import type { ExternalDataMap } from '../ExternalDataLoader';
 import { getFieldDependencies } from '../dynamicFormUtils';
 
+const hasDisabledOverride = (value: unknown): value is { isDisabled: boolean } =>
+  typeof value === 'object' &&
+  value !== null &&
+  'isDisabled' in value &&
+  typeof value.isDisabled === 'boolean';
+
 type CommonProps = {
   wizardState: UseModelDeploymentWizardState;
   externalData?: ExternalDataMap;
+  isDisabled?: boolean;
 } & GenericFieldProps;
 
 type GenericFieldRendererProps = CommonProps &
@@ -18,37 +25,39 @@ export const GenericFieldRenderer: React.FC<GenericFieldRendererProps> = ({
   wizardState,
   externalData,
   isEditing,
+  isDisabled,
 }) => {
-  const fields: WizardField<unknown>[] = React.useMemo(() => {
+  const fields: WizardField[] = React.useMemo(() => {
     if (fieldId) {
       return wizardState.fields.filter((f) => f.id === fieldId);
     }
     return wizardState.fields.filter((f) => f.parentId === parentId);
   }, [parentId, fieldId, wizardState.fields]);
 
-  if (!fields.length) {
-    return null;
-  }
-
   return (
     <>
-      {fields.map((field) => (
-        <React.Fragment key={field.id}>
-          {field.component({
-            id: field.id,
-            value: wizardState.state[field.id],
-            onChange: (value) => {
-              wizardState.dispatch({
-                type: 'setFieldData',
-                payload: { id: field.id, data: value },
-              });
-            },
-            externalData: externalData?.[field.id] ?? undefined,
-            dependencies: getFieldDependencies(field, wizardState.state),
-            isEditing,
-          })}
-        </React.Fragment>
-      ))}
+      {fields.map((field) => {
+        const FieldComponent = field.component;
+        return (
+          <React.Fragment key={field.id}>
+            <FieldComponent
+              id={field.id}
+              value={resolveFieldValue(field, wizardState.state)}
+              initialValue={wizardState.initialData?.[field.id]}
+              onChange={(value: unknown) => {
+                wizardState.dispatch({
+                  type: 'setFieldData',
+                  payload: { id: field.id, data: value },
+                });
+              }}
+              externalData={externalData?.[field.id] ?? undefined}
+              dependencies={getFieldDependencies(field, wizardState.state)}
+              isEditing={isEditing}
+              isDisabled={isDisabled || hasDisabledOverride(wizardState.state[field.id])}
+            />
+          </React.Fragment>
+        );
+      })}
     </>
   );
 };

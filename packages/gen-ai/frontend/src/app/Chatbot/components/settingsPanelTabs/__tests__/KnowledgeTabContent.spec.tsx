@@ -12,6 +12,11 @@ jest.mock('~/app/Chatbot/hooks/useDarkMode', () => ({
   default: jest.fn(() => false),
 }));
 
+jest.mock('~/app/hooks/useAiAssetVectorStoresEnabled', () => ({
+  __esModule: true,
+  default: jest.fn(() => false),
+}));
+
 jest.mock('@odh-dashboard/internal/concepts/analyticsTracking/segmentIOUtils', () => ({
   fireMiscTrackingEvent: jest.fn(),
 }));
@@ -58,13 +63,13 @@ describe('KnowledgeTabContent', () => {
   ): UseSourceManagementReturn => ({
     selectedSourceSettings: null,
     isSourceSettingsOpen: false,
-    isRawUploaded: false,
+    autoEnableRag: false,
     filesWithSettings: [],
     currentFileForSettings: null,
     pendingFiles: [],
     isUploading: false,
     uploadProgress: { current: 0, total: 0 },
-    setIsRawUploaded: jest.fn(),
+    setAutoEnableRag: jest.fn(),
     handleSourceDrop: jest.fn(),
     removeUploadedSource: jest.fn(),
     handleSourceSettingsSubmit: jest.fn(),

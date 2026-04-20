@@ -196,6 +196,7 @@ export const mockDeploymentWizardState = (
           data: undefined,
           setData: jest.fn(),
           shouldAutoCheck: false,
+          isDisabled: false,
         },
         runtimeArgs: {
           data: undefined,
@@ -215,6 +216,7 @@ export const mockDeploymentWizardState = (
             useCase: '',
           },
           setData: jest.fn(),
+          isGenAiEnabled: true,
         },
         modelServer: {
           data: undefined,
