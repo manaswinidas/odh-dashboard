@@ -591,9 +591,13 @@ const CreateModal: React.FC<CreateModalProps> = ({ onClose, refresh, modelRegist
                             value={database}
                             onBlur={() => setIsDatabaseTouched(true)}
                             onChange={(_e, value) => setDatabase(value)}
-                            validated={isDatabaseTouched && hasDatabaseError ? 'error' : 'default'}
+                            validated={
+                              (isDatabaseTouched && isDatabaseEmpty) || hasInvalidDatabaseChars
+                                ? 'error'
+                                : 'default'
+                            }
                           />
-                          {isDatabaseTouched && hasDatabaseError && (
+                          {((isDatabaseTouched && isDatabaseEmpty) || hasInvalidDatabaseChars) && (
                             <HelperText>
                               <HelperTextItem variant="error" data-testid="mr-database-error">
                                 {isDatabaseEmpty
