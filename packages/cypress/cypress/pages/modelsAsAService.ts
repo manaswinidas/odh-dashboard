@@ -495,7 +495,7 @@ export const subscriptionPopover = new SubscriptionPopover();
 
 class BulkRevokeAPIKeyModal extends Modal {
   constructor() {
-    super('Revoke all your active keys?');
+    super('Revoke all API keys?');
   }
 
   findRevokeButton(): Cypress.Chainable<JQuery<HTMLElement>> {
@@ -653,7 +653,7 @@ class CopyApiKeyModal extends Modal {
 
 class AdminBulkRevokeAPIKeyModal extends Modal {
   constructor() {
-    super('Revoke all active keys for a single user?');
+    super('Revoke user API keys?');
   }
 
   findUsernameInput(): Cypress.Chainable<JQuery<HTMLElement>> {
@@ -742,6 +742,14 @@ class SubscriptionsPage {
 class SubscriptionTableRow extends TableRow {
   findName(): Cypress.Chainable<JQuery<HTMLElement>> {
     return this.find().find('[data-label="Name"]');
+  }
+
+  findActionsToggle(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return this.find().findByLabelText('Kebab toggle');
+  }
+
+  findTitleButton(): Cypress.Chainable<JQuery<HTMLAnchorElement>> {
+    return this.find().findByTestId('table-row-title').find('a');
   }
 
   findPhase(): Cypress.Chainable<JQuery<HTMLElement>> {
@@ -1034,6 +1042,18 @@ class ViewSubscriptionPage {
   findDetailsTab(): Cypress.Chainable<JQuery<HTMLElement>> {
     return cy.findByTestId('subscription-details-tab');
   }
+
+  findActionsToggle(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return cy.findByTestId('subscription-actions-toggle');
+  }
+
+  findDeleteActionButton(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return cy.findByRole('menuitem', { name: 'Delete' });
+  }
+
+  findEditActionButton(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return cy.findByRole('menuitem', { name: 'Edit' });
+  }
 }
 
 class PolicyPage {
@@ -1141,6 +1161,14 @@ class AuthPoliciesPage {
   findEmptyState(): Cypress.Chainable<JQuery<HTMLElement>> {
     return cy.findByTestId('empty-state-title');
   }
+
+  findKeywordFilterInput(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return cy.findByTestId('auth-policies-filter-name-input');
+  }
+
+  clearAllFilters(): void {
+    cy.findByRole('button', { name: 'Clear all filters' }).click();
+  }
 }
 
 class AuthPolicyTableRow extends TableRow {
@@ -1169,7 +1197,11 @@ class AuthPolicyTableRow extends TableRow {
   }
 
   findActionsToggle(): Cypress.Chainable<JQuery<HTMLElement>> {
-    return this.find().find('[data-testid="auth-policy-actions"]');
+    return this.find().findByLabelText('Kebab toggle');
+  }
+
+  findTitleButton(): Cypress.Chainable<JQuery<HTMLAnchorElement>> {
+    return this.find().findByTestId('table-row-title').find('a');
   }
 }
 
@@ -1232,6 +1264,14 @@ class ViewAuthPolicyPage {
 
   findActionsToggle(): Cypress.Chainable<JQuery<HTMLElement>> {
     return cy.findByTestId('policy-actions-toggle');
+  }
+
+  findDeleteActionButton(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return cy.findByRole('menuitem', { name: 'Delete' });
+  }
+
+  findEditActionButton(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return cy.findByRole('menuitem', { name: 'Edit' });
   }
 
   findPageError(): Cypress.Chainable<JQuery<HTMLElement>> {
