@@ -14,6 +14,10 @@ on:
         default: false
         type: boolean
 
+concurrency:
+  group: release-sync-${{ github.workflow }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
@@ -54,6 +58,7 @@ jobs:
             echo "description=main" >> $GITHUB_OUTPUT
             echo "short_sha=" >> $GITHUB_OUTPUT
           fi
+
       - name: Sync main into odh-release
         id: sync
         run: |
@@ -63,13 +68,16 @@ jobs:
           
           MERGE_REF="${{ steps.target.outputs.ref }}"
           MERGE_DESC="${{ steps.target.outputs.description }}"
+
           # Check if there are any changes to merge
           if git diff --quiet HEAD.."$MERGE_REF" 2>/dev/null; then
             echo "No changes to merge - odh-release is already up to date with $MERGE_DESC"
             echo "has_changes=false" >> $GITHUB_OUTPUT
             exit 0
           fi
+
           echo "has_changes=true" >> $GITHUB_OUTPUT
+
           # Attempt merge, handle known conflicts by keeping odh-release version
           if git merge "$MERGE_REF" -m "Auto-merge $MERGE_DESC into odh-release"; then
             echo "Merge completed successfully"
@@ -117,9 +125,11 @@ jobs:
             # Complete the merge
             git commit -m "Auto-merge $MERGE_DESC into odh-release (resolved conflicts)"
           fi
+
           # Push directly to odh-release
           git push origin odh-release
           echo "Synced $MERGE_DESC to odh-release"
+
       - name: Create version bump branch
         id: branch
         if: ${{ steps.sync.outputs.has_changes == 'true' && github.event.inputs.bump_version == 'true' }}
@@ -136,6 +146,7 @@ jobs:
           echo "Creating branch: $BRANCH_NAME"
           git checkout -b "$BRANCH_NAME"
           echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+
       - name: Bump z-stream version
         id: version
         if: ${{ steps.sync.outputs.has_changes == 'true' && github.event.inputs.bump_version == 'true' }}
@@ -175,6 +186,7 @@ jobs:
           sed -i "s|gen-ai-ui-image=quay.io/opendatahub/odh-mod-arch-gen-ai:.*|gen-ai-ui-image=quay.io/opendatahub/odh-mod-arch-gen-ai:${NEW_VERSION}-odh|" manifests/modular-architecture/params.env
           sed -i "s|maas-ui-image=quay.io/opendatahub/mod-arch-maas:.*|maas-ui-image=quay.io/opendatahub/mod-arch-maas:${NEW_VERSION}-odh|" manifests/modular-architecture/params.env
           echo "Updated manifests/modular-architecture/params.env"
+
           # Keep per-module params.env in sync (kustomize load restrictions require local copies)
           PARENT=manifests/modular-architecture/params.env
           for params_file in manifests/modular-architecture/modules/*/params.env; do
@@ -193,6 +205,7 @@ jobs:
           git add frontend/.env manifests/odh/params.env manifests/modular-architecture/params.env manifests/modular-architecture/modules/*/params.env
           git commit -m "Bump version to ${NEW_VERSION}"
           echo "Version bump committed"
+
       - name: Push branch and create version bump PR
         if: ${{ steps.sync.outputs.has_changes == 'true' && github.event.inputs.bump_version == 'true' }}
         env:
@@ -210,20 +223,34 @@ jobs:
             --head "$BRANCH_NAME" \
             --title "Bump version to ${NEW_VERSION}" \
             --body "## Summary
+
           - Bump version to ${NEW_VERSION}
+
           ## Files updated
           - \`frontend/.env\`
           - \`manifests/odh/params.env\`
           - \`manifests/modular-architecture/params.env\`
           - \`manifests/modular-architecture/modules/*/params.env\`
+
           ---
           *This PR was automatically created by the release-auto-merge workflow.*"
+
   sync-rhoai:
     needs: sync
     if: ${{ needs.sync.outputs.has_changes == 'true' }}
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check rhoai-release branch exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh api "repos/${{ github.repository }}/branches/rhoai-release" --silent 2>/dev/null; then
+            echo "ERROR: Branch 'rhoai-release' does not exist. Skipping sync."
+            exit 1
+          fi
+          echo "Branch 'rhoai-release' exists."
+
       - name: Checkout rhoai-release
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -233,17 +260,22 @@ jobs:
       - name: Fast-forward rhoai-release to odh-release
         run: |
           git fetch origin odh-release
+
+          echo "rhoai-release before: $(git rev-parse HEAD)"
+          echo "odh-release target:   $(git rev-parse origin/odh-release)"
+
           if [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/odh-release)" ]]; then
             echo "No changes — rhoai-release is already up to date with odh-release"
             exit 0
           fi
+
           if ! git merge-base --is-ancestor HEAD origin/odh-release; then
             echo "ERROR: Cannot fast-forward. rhoai-release has diverged from odh-release."
-            echo "rhoai-release HEAD: $(git rev-parse HEAD)"
-            echo "odh-release HEAD:   $(git rev-parse origin/odh-release)"
             echo "Manual intervention required."
             exit 1
           fi
+
           git merge --ff-only origin/odh-release
+          echo "rhoai-release after:  $(git rev-parse HEAD)"
           git push origin rhoai-release
           echo "Fast-forwarded rhoai-release to odh-release"
