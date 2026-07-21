@@ -131,35 +131,28 @@ class EnvironmentVariableTypeField extends Contextual<HTMLElement> {
   }
 
   selectEnvDataType(name: string) {
-    this.find()
-      .findByTestId('env-data-type-field')
-      .findByRole('button', { name: 'Options menu' })
-      .findSelectOption(name)
-      .click();
+    this.find().findByTestId('env-data-type-field').findByRole('radio', { name }).click();
   }
 
   selectEnvDataTypeByTestId(testId: string) {
     this.find()
       .findByTestId('env-data-type-field')
-      .findByRole('button', { name: 'Options menu' })
+      .findByTestId(`env-data-type-radio-${testId}`)
       .click();
-    cy.findByTestId(testId).click();
   }
 
   selectEnvironmentVariableType(name: string) {
     this.find()
       .findByTestId('environment-variable-type-select')
-      .findByRole('button', { name: 'Options menu' })
-      .findSelectOption(name)
+      .findByRole('radio', { name })
       .click();
   }
 
   selectEnvironmentVariableTypeByTestId(testId: string) {
     this.find()
       .findByTestId('environment-variable-type-select')
-      .findByRole('button', { name: 'Options menu' })
+      .findByTestId(`env-type-radio-${testId}`)
       .click();
-    cy.findByTestId(testId).click();
   }
 
   findAnotherKeyValuePairButton() {
@@ -392,6 +385,20 @@ class NotebookRow extends TableRow {
     return this;
   }
 
+  shouldHaveFeatureStoreLinks(expected: Array<{ name: string; href: string }>) {
+    expected.forEach(({ name, href }) => {
+      this.findFeatureStoreList()
+        .findByTestId(`feature-store-link-${name}`)
+        .should('have.attr', 'href', href);
+    });
+    return this;
+  }
+
+  shouldNotHaveFeatureStoreLinks() {
+    this.findFeatureStoreList().find('a').should('not.exist');
+    return this;
+  }
+
   findFeatureStoreShowAll() {
     return this.findExpansion().findByTestId('feature-store-show-all');
   }
@@ -449,12 +456,16 @@ class AttachConnectionModal extends Modal {
   }
 
   selectConnectionOption(name: string) {
-    this.find().findByRole('button', { name: 'Connections' }).findSelectOption(name).click();
-    this.find().findByRole('button', { name: 'Connections' }).click();
+    this.find().findByRole('combobox', { name: 'Connections' }).findSelectOption(name).click();
   }
 
   findAttachButton() {
     return this.find().findByTestId('attach-button');
+  }
+
+  clickAttachButton() {
+    this.find().findByRole('combobox', { name: 'Connections' }).closeSelectMenu();
+    this.findAttachButton().click();
   }
 }
 
@@ -802,6 +813,13 @@ class CreateSpawnerPage {
     return this;
   }
 
+  shouldHaveFeatureStoreLink(projectName: string, href: string) {
+    this.findFeatureStoreConnectedTable()
+      .findByTestId(`feature-store-link-${projectName}`)
+      .should('have.attr', 'href', href);
+    return this;
+  }
+
   shouldNotHaveFeatureStoreSelected(projectName: string) {
     this.findFeatureStoreConnectedTable().should('not.contain.text', projectName);
     return this;
@@ -860,7 +878,7 @@ class CreateSpawnerPage {
   }
 
   findFeatureStoreSectionTitle() {
-    return this.findFeatureStoreSection().findByText('Feature stores');
+    return this.findFeatureStoreSection().findByText('Connected feature stores');
   }
 
   findFeatureStoreCodeBlockTitle() {
@@ -942,6 +960,10 @@ class WorkbenchStatusModal extends Modal {
     super('Workbench status');
   }
 
+  find(): Cypress.Chainable<JQuery<HTMLElement>> {
+    return cy.findByTestId('notebook-status-modal');
+  }
+
   findProgressTab() {
     return cy.findByTestId('expand-progress');
   }
@@ -950,15 +972,25 @@ class WorkbenchStatusModal extends Modal {
     return cy.findByTestId('notebook-startup-steps').find('[data-testid^="step-status-"]');
   }
 
-  getStepTitle($step: JQuery<HTMLElement>) {
-    return cy.wrap($step).find('[id$="-title"]').invoke('text');
+  findProgressStepByLabel(label: string) {
+    return cy.findByTestId('notebook-startup-steps').contains(label);
   }
 
-  assertStepSuccess($step: JQuery<HTMLElement>) {
+  findKueueSubStep() {
+    return cy.findByTestId('notebook-startup-steps').find('[id="kueue-"]');
+  }
+
+  findKueueToggle() {
     return cy
-      .wrap($step)
-      .should('have.attr', 'data-testid')
-      .and('match', /^step-status-Success/);
+      .findByTestId('notebook-startup-steps')
+      .contains('Pod assigned')
+      .closest('[role="treeitem"]')
+      .find('button')
+      .first();
+  }
+
+  findModalTitle() {
+    return cy.findByTestId('notebook-status-modal-header').find('h1,h2,h3,h4,h5,h6').first();
   }
 
   findEventlogTab() {
